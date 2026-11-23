@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from conftest import FakeEnv
-from nx2mac.runner import RunResult
+
 from nx2mac.pyenv import (
     InterpreterInfo,
     PyEnvError,
@@ -17,6 +17,7 @@ from nx2mac.pyenv import (
     probe_venv,
     required_pip_specs,
 )
+from nx2mac.runner import RunResult
 
 FAKE_PY = "/fake/py3"
 INTERP_312_ARM64 = InterpreterInfo(path=Path(FAKE_PY), major=3, minor=12, arch="arm64")

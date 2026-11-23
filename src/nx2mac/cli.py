@@ -66,7 +66,7 @@ def doctor():
     if xcode:
         import subprocess
 
-        dev = subprocess.run([xcode, "-p"], capture_output=True, text=True).stdout.strip()
+        dev = subprocess.run([xcode, "-p"], check=False, capture_output=True, text=True).stdout.strip()
         ok = "CommandLineTools" not in dev and bool(dev)
         rows.append(("xcode developer dir", f"[green]{dev}[/green]" if ok else "[red]Command Line Tools or unset: install full Xcode[/red]"))
 

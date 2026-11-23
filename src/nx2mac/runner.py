@@ -7,9 +7,10 @@ tests pass a fake.
 
 import shutil
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, Sequence
+from typing import Protocol
 
 
 @dataclass(frozen=True)
@@ -41,5 +42,6 @@ class RealEnv:
         return Path(found) if found is not None else None
 
     def run(self, args: Sequence[str], *, cwd: Path | None = None) -> RunResult:
-        proc = subprocess.run(list(args), capture_output=True, text=True, cwd=cwd or None)
+        # check=False: callers (and tests via the Env protocol) inspect returncode.
+        proc = subprocess.run(list(args), check=False, capture_output=True, text=True, cwd=cwd or None)
         return RunResult(stdout=proc.stdout, stderr=proc.stderr, returncode=proc.returncode)

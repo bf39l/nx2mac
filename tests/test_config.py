@@ -3,8 +3,8 @@
 from pathlib import Path
 
 import pytest
-
 from conftest import FakeEnv  # noqa: F401  (kept so fixtures stay uniform across tests)
+
 from nx2mac.config import Config, ConfigError, config_path, load, save
 
 

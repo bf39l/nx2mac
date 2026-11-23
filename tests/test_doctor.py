@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from conftest import FakeEnv
+
 from nx2mac.doctor import (
     BUILD_PREFLIGHT_EXCLUDE,
     Check,

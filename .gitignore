@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+build/
+dist/
+.cache/
+logs/
+*.egg-info/
+
+# Local reference checkouts (symlinks) - engine sources are fetched from GitHub
+# at build time, never from these copies. See AGENT.md.
+/nxnative
+/NX2Apple
+
+# Local project memory (kept out of version control)
+.memory/

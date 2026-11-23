@@ -26,7 +26,14 @@ def config_path() -> Path:
 
 
 def cache_root() -> Path:
-    """Root for engine checkouts and the managed Python venv."""
+    """Root for engine checkouts and the managed Python venv.
+
+    Honours the NX2MAC_CACHE_ROOT environment variable (used by tests and
+    users who want a non-default location).
+    """
+    override = os.environ.get("NX2MAC_CACHE_ROOT")
+    if override:
+        return Path(override)
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Caches" / "nx2mac"
     base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")

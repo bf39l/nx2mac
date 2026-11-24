@@ -128,7 +128,9 @@ support dir, logs, saves, cheats and screenshots inside that folder instead of `
 | `DM_LOG_DIR` | `<game>/logs` — added by our patch |
 | `DM_SAVE` / `DM_CHEATS` / `DM_ALBUM_DIR` | `<game>/saves`, `<game>/cheats`, `<game>/screenshots` |
 
-`nx2mac player --create NAME` adds a player; each player is **user 1 in their own save store**
+Players are **library-wide** (`<library>/players.json`, one list for every game, mirroring
+NX2Apple's launcher-wide `PlayerProfileStore`): the GUI picks the active player at the top of the
+Games tab, and `nx2mac player` rewrites *every* built game's env. `nx2mac player --create NAME` adds a player; each player is **user 1 in their own save store**
 (`<game>/players/<id>/saves`) with `DM_NICK=<name>` in `<game>/support/env.txt`, which the launcher
 reads after the baked file and lets win. That is the only way to give every player a custom name:
 the engine reads `DM_NICK` for user 1 only and hard-codes "Player 2"..8.

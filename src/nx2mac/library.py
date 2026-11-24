@@ -184,9 +184,14 @@ def _slug(text: str, taken: set[str]) -> str:
     return slug
 
 
-def load_players(library: Path, title_id: str) -> tuple[list[Player], str | None]:
-    """The game's players and the active one's id (empty list when none exist yet)."""
-    path = save_dir(library, title_id) / PLAYERS_FILE
+def players_file(library: Path) -> Path:
+    """The library's player list (one list for every game, as NX2Apple keeps it)."""
+    return library / PLAYERS_FILE
+
+
+def load_players(library: Path) -> tuple[list[Player], str | None]:
+    """The library's players and the active one's id (empty list when none exist yet)."""
+    path = players_file(library)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -200,10 +205,10 @@ def load_players(library: Path, title_id: str) -> tuple[list[Player], str | None
     return players, active if any(player.id == active for player in players) else (players[0].id if players else None)
 
 
-def save_players(library: Path, title_id: str, players: list[Player], active: str | None) -> Path:
-    """Write the player list (and which one plays) into the game's save folder."""
-    save_dir(library, title_id).mkdir(parents=True, exist_ok=True)
-    path = save_dir(library, title_id) / PLAYERS_FILE
+def save_players(library: Path, players: list[Player], active: str | None) -> Path:
+    """Write the library's player list (and which one plays)."""
+    mark_library(library)
+    path = players_file(library)
     payload = {"active": active, "players": [player.to_dict() for player in players]}
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return path
@@ -214,52 +219,65 @@ def player_save_dir(library: Path, title_id: str, player_id: str) -> Path:
     return profiles_dir(library, title_id) / player_id
 
 
-def active_player(library: Path, title_id: str) -> Player | None:
-    players, active = load_players(library, title_id)
+def active_player(library: Path) -> Player | None:
+    players, active = load_players(library)
     return next((player for player in players if player.id == active), None)
 
 
-def create_player(library: Path, title_id: str, name: str) -> Player:
+def create_player(library: Path, name: str) -> Player:
     """Add a player with a preferred name and make them the active one."""
     wanted = name.strip()
     if not wanted:
         raise LibraryError("a player needs a name")
     if len(wanted) > 32:
         raise LibraryError("a player name can be at most 32 characters (the engine's limit)")
-    players, _ = load_players(library, title_id)
+    players, _ = load_players(library)
     if len(players) >= MAX_PLAYERS:
         raise LibraryError(f"this game already has {MAX_PLAYERS} players")
     if any(player.name.casefold() == wanted.casefold() for player in players):
         raise LibraryError(f"a player called {wanted!r} already exists")
     player = Player(id=_slug(wanted, {entry.id for entry in players}), name=wanted, created=_now())
-    player_save_dir(library, title_id, player.id).mkdir(parents=True, exist_ok=True)
     players.append(player)
-    save_players(library, title_id, players, player.id)
+    save_players(library, players, player.id)
+    for entry in list_games(library):
+        if entry.title_id:
+            player_save_dir(library, entry.title_id, player.id).mkdir(parents=True, exist_ok=True)
     return player
 
 
-def select_player(library: Path, title_id: str, name: str) -> Player:
+def select_player(library: Path, name: str) -> Player:
     """Make an existing player (by name or id) the one who plays."""
-    players, _ = load_players(library, title_id)
+    players, _ = load_players(library)
     wanted = name.strip().casefold()
     player = next((entry for entry in players if entry.id.casefold() == wanted or entry.name.casefold() == wanted), None)
     if player is None:
-        raise LibraryError(f"no player called {name!r} in this game")
-    player_save_dir(library, title_id, player.id).mkdir(parents=True, exist_ok=True)
-    save_players(library, title_id, players, player.id)
+        raise LibraryError(f"no player called {name!r}")
+    for entry in list_games(library):
+        if entry.title_id:
+            player_save_dir(library, entry.title_id, player.id).mkdir(parents=True, exist_ok=True)
+    save_players(library, players, player.id)
     return player
 
 
-def delete_player(library: Path, title_id: str, name: str) -> Player:
+def delete_player(library: Path, name: str) -> Player:
     """Forget a player (their save folder is left on disk, so nothing is lost by accident)."""
-    players, active = load_players(library, title_id)
+    players, active = load_players(library)
     wanted = name.strip().casefold()
     player = next((entry for entry in players if entry.id.casefold() == wanted or entry.name.casefold() == wanted), None)
     if player is None:
         raise LibraryError(f"no player called {name!r} in this game")
     remaining = [entry for entry in players if entry.id != player.id]
-    save_players(library, title_id, remaining, None if active == player.id else active)
+    save_players(library, remaining, None if active == player.id else active)
     return player
+
+
+def write_all_player_envs(library: Path) -> list[Path]:
+    """Point every built game at the active player (called when the player changes)."""
+    written: list[Path] = []
+    for entry in list_games(library):
+        if entry.title_id:
+            written.append(write_player_env(library, entry.title_id))
+    return written
 
 
 def _now() -> str:
@@ -456,7 +474,7 @@ def write_player_env(library: Path, title_id: str) -> Path:
     managed: dict[str, str] = {
         "DM_SAVE": str(save_dir(library, title_id)),
     }
-    player = active_player(library, title_id)
+    player = active_player(library)
     if player is not None:
         store = player_save_dir(library, title_id, player.id)
         store.mkdir(parents=True, exist_ok=True)

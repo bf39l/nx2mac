@@ -139,16 +139,21 @@ and tool checkouts shows no phantom entries; the GUI's **Games** tab lists only 
 name and version, with Play (records "recently played"), a Players menu and a Data menu for
 saves/logs/mods/cheats/screenshots.
 
-### Players
+### Players (library-wide, like NX2Apple)
+
+Players are one list for the whole library, so the picker sits at the top of the **Games** tab and
+applies to every game — each game keeps a save store per player:
 
 ```bash
 nx2mac player --create "Ada"          # add a player with your preferred name (max 8)
-nx2mac player --select Ada            # choose who plays
+nx2mac player --select Ada            # choose who plays (updates every built game's env)
 nx2mac player                         # list them; * marks the active one
 ```
 
-Each player gets their own save store and their own `DM_NICK`, which is how every player keeps a
-custom name (the engine hard-codes user 2..8, and only reads `DM_NICK` for user 1).
+`<library>/players.json` holds the list; each player's store is
+`<library>/save/<TITLEID>/profiles/<player>`, and selecting a player rewrites every game's
+`support/<TITLEID>/env.txt` (`DM_SAVE`, `DM_NICK`). Each player gets their own save store and their
+own `DM_NICK`, which is how every player keeps a custom name (the engine hard-codes user 2..8, and only reads `DM_NICK` for user 1).
 
 ## Engine sources
 

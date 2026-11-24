@@ -44,8 +44,9 @@ final class BuildModel: ObservableObject {
     /// True while a game is being launched (so its row can show a spinner).
     @Published private(set) var playing: String?
 
-    /// Players of each library game, by the game's folder path.
-    @Published private(set) var players: [String: PlayersPayload] = [:]
+    /// The library's players (one list for every game) and which one plays.
+    @Published private(set) var libraryPlayers: [PlayerEntry] = []
+    @Published private(set) var activePlayerID: String?
 
     // MARK: Engine
 
@@ -301,44 +302,48 @@ final class BuildModel: ObservableObject {
         games = []
     }
 
-    /// Read the players of every game in the library (one `player --json` per game).
+    /// The name of the player who plays, for the picker's label.
+    var activePlayerName: String? {
+        libraryPlayers.first { $0.id == activePlayerID }?.name
+    }
+
+    /// Read the library's players (one list for every game).
     func refreshPlayers() async {
         guard let cli else { return }
-        for game in games {
-            guard let result = try? await Self.run(cli, ["player", "--game", game.path, "--json"]),
-                  let data = result.stdout.data(using: .utf8),
-                  let payload = try? JSONDecoder().decode(PlayersPayload.self, from: data)
-            else { continue }
-            players[game.path] = payload
-        }
+        guard let result = try? await Self.run(cli, ["player", "--json"]),
+              let data = result.stdout.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(PlayersPayload.self, from: data)
+        else { return }
+        libraryPlayers = payload.players
+        activePlayerID = payload.active
     }
 
-    /// Add a player to a game and make them the active one.
+    /// Add a player (library-wide) and make them the active one.
     @discardableResult
-    func createPlayer(for game: LibraryGame, name: String) async -> Bool {
-        await runPlayerCommand(game, ["--create", name])
+    func createPlayer(name: String) async -> Bool {
+        await runPlayerCommand(["--create", name])
     }
 
-    /// Make an existing player the one who plays.
-    func selectPlayer(_ player: PlayerEntry, for game: LibraryGame) async {
-        _ = await runPlayerCommand(game, ["--select", player.id])
+    /// Make an existing player the one who plays, in every game.
+    func selectPlayer(_ player: PlayerEntry) async {
+        _ = await runPlayerCommand(["--select", player.id])
     }
 
-    /// Forget a player; their save folder stays on disk.
-    func deletePlayer(_ player: PlayerEntry, for game: LibraryGame) async {
-        _ = await runPlayerCommand(game, ["--delete", player.id])
+    /// Forget a player; their save folders stay on disk.
+    func deletePlayer(_ player: PlayerEntry) async {
+        _ = await runPlayerCommand(["--delete", player.id])
     }
 
-    /// Run `nx2mac player …` for one game and keep the returned payload.
+    /// Run `nx2mac player …` and keep the returned list.
     @discardableResult
-    private func runPlayerCommand(_ game: LibraryGame, _ extra: [String]) async -> Bool {
+    private func runPlayerCommand(_ extra: [String]) async -> Bool {
         guard let cli else { return false }
-        let arguments = ["player", "--game", game.path, "--json"] + extra
-        guard let result = try? await Self.run(cli, arguments),
+        guard let result = try? await Self.run(cli, ["player", "--json"] + extra),
               let data = result.stdout.data(using: .utf8),
               let payload = try? JSONDecoder().decode(PlayersPayload.self, from: data)
         else { return false }
-        players[game.path] = payload
+        libraryPlayers = payload.players
+        activePlayerID = payload.active
         return true
     }
 

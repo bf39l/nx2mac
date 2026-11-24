@@ -27,8 +27,8 @@ from nx2mac.library import (
     app_metadata,
     build_dir,
     build_env_path,
-    check_library_choice,
     cheats_dir,
+    check_library_choice,
     create_player,
     delete_player,
     describe_library,
@@ -38,7 +38,6 @@ from nx2mac.library import (
     list_games,
     load_players,
     logs_dir,
-    mark_library,
     mods_dir,
     player_save_dir,
     profiles_dir,
@@ -147,62 +146,73 @@ def test_build_env_points_every_kind_at_the_library(tmp_path: Path) -> None:
     assert "~/Library" not in text
 
 
-def test_players_get_their_own_store_under_profiles(tmp_path: Path) -> None:
+def test_players_are_library_wide_and_get_a_store_per_game(tmp_path: Path) -> None:
+    """Players belong to the library (NX2Apple does the same), one store per game."""
     library = _library(tmp_path)
-    mark_library(library)
+    other = _app(library, name="Metal Slug", title_id="01003D901D24A000")
+    first = _app(library, name="Dead Cells", title_id=TID)
+    for app, tid in ((first, TID), (other, "01003D901D24A000")):
+        write_manifest(app.with_suffix(".nx2mac.json"), name=app.stem, app_path=app, title_id=tid,
+                       version="1.0", engine_source="fork", engine_ref="main",
+                       engine_commit="c" * 40, patches=(), inputs={})
 
-    ada = create_player(library, TID, "Ada")
-    grace = create_player(library, TID, "Grace")
+    ada = create_player(library, "Ada")
+    grace = create_player(library, "Grace")
 
-    assert load_players(library, TID)[1] == grace.id  # the newest player plays
-    assert player_save_dir(library, TID, ada.id) == profiles_dir(library, TID) / "ada"
-    assert player_save_dir(library, TID, ada.id).is_dir()
-    assert (save_dir(library, TID) / PLAYERS_FILE).is_file()
+    assert load_players(library)[1] == grace.id  # the newest player plays
+    assert (library / PLAYERS_FILE).is_file()  # one list for the whole library
+    for tid in (TID, "01003D901D24A000"):
+        assert player_save_dir(library, tid, ada.id) == profiles_dir(library, tid) / "ada"
+        assert player_save_dir(library, tid, ada.id).is_dir()
 
-    select_player(library, TID, "ada")
-    assert active_player(library, TID).name == "Ada"
+    select_player(library, "ada")
+    assert active_player(library).name == "Ada"
 
 
 def test_player_names_are_validated(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    create_player(library, TID, "Ada")
+    create_player(library, "Ada")
 
     with pytest.raises(LibraryError, match="already exists"):
-        create_player(library, TID, "ada")
+        create_player(library, "ada")
     with pytest.raises(LibraryError, match="needs a name"):
-        create_player(library, TID, "  ")
+        create_player(library, "  ")
     with pytest.raises(LibraryError, match="32 characters"):
-        create_player(library, TID, "x" * 40)
+        create_player(library, "x" * 40)
     with pytest.raises(LibraryError, match="no player called"):
-        select_player(library, TID, "Nobody")
+        select_player(library, "Nobody")
     for index in range(MAX_PLAYERS - 1):
-        create_player(library, TID, f"P{index}")
+        create_player(library, f"P{index}")
     with pytest.raises(LibraryError, match="already has 8 players"):
-        create_player(library, TID, "One Too Many")
+        create_player(library, "One Too Many")
 
 
 def test_delete_player_keeps_the_saves(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    ada = create_player(library, TID, "Ada")
+    app = _app(library)  # a built game, so the player gets a store there
+    write_manifest(app.with_suffix(".nx2mac.json"), name="Dead Cells", app_path=app, title_id=TID,
+                   version="1.0", engine_source="fork", engine_ref="main",
+                   engine_commit="c" * 40, patches=(), inputs={})
+    ada = create_player(library, "Ada")
     store = player_save_dir(library, TID, ada.id)
     (store / "save.dat").write_bytes(b"\x00")
 
-    delete_player(library, TID, "Ada")
+    delete_player(library, "Ada")
 
-    assert load_players(library, TID) == ([], None)
+    assert load_players(library) == ([], None)
     assert (store / "save.dat").is_file()
 
 
 def test_player_env_follows_the_active_player(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    grace = create_player(library, TID, "Grace")
+    grace = create_player(library, "Grace")
 
     text = write_player_env(library, TID).read_text(encoding="utf-8")
     assert support_env_path(support_dir(library, TID)).is_file()
     assert f"DM_SAVE={player_save_dir(library, TID, grace.id)}" in text
     assert "DM_NICK=Grace" in text
 
-    ada = create_player(library, TID, "Ada")
+    ada = create_player(library, "Ada")
     text = write_player_env(library, TID).read_text(encoding="utf-8")
     assert "DM_NICK=Ada" in text and "DM_NICK=Grace" not in text
     assert f"DM_SAVE={player_save_dir(library, TID, ada.id)}" in text

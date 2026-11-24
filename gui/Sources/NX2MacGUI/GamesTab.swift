@@ -23,6 +23,7 @@ struct GamesTab: View {
                 }
                 Spacer()
                 if model.libraryDir != nil {
+                    playerPicker
                     Button {
                         Task { await model.refreshLibrary() }
                     } label: {
@@ -37,6 +38,51 @@ struct GamesTab: View {
             content
         }
         .task { await model.refreshLibrary() }
+    }
+
+    /// The library's players (one list for every game), chosen here for all of them.
+    private var playerPicker: some View {
+        Menu {
+            let players = model.libraryPlayers
+            if players.isEmpty {
+                Text("No players yet")
+            } else {
+                ForEach(players) { player in
+                    Button {
+                        Task { await model.selectPlayer(player) }
+                    } label: {
+                        if player.id == model.activePlayerID {
+                            Label(player.name, systemImage: "checkmark")
+                        } else {
+                            Text(player.name)
+                        }
+                    }
+                }
+                Divider()
+            }
+            Button("New player…") { createPlayer() }
+        } label: {
+            Label(model.activePlayerName ?? "Players", systemImage: "person.crop.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .frame(width: 150)
+        .help("Who plays: every game keeps a save store per player")
+    }
+
+    private func createPlayer() {
+        let alert = NSAlert()
+        alert.messageText = "New player"
+        alert.informativeText = "The name the games show for this player. They get their own saves in every game."
+        alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.placeholderString = "Player name"
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        Task { await model.createPlayer(name: name) }
     }
 
     @ViewBuilder
@@ -108,8 +154,6 @@ private struct GameRow: View {
                 .disabled(!game.hasApp)
             }
 
-            playersMenu
-
             Menu {
                 Button("Saves") { open(game.saves) }
                 Button("Logs") { open(game.logs) }
@@ -164,49 +208,6 @@ private struct GameRow: View {
                     .frame(width: 44, height: 44)
             }
         }
-    }
-
-    /// Who plays this game: pick an existing player or add one with a preferred name.
-    private var playersMenu: some View {
-        Menu {
-            let entry = model.players[game.path]
-            if let entry, !entry.players.isEmpty {
-                ForEach(entry.players) { player in
-                    Button {
-                        Task { await model.selectPlayer(player, for: game) }
-                    } label: {
-                        if player.id == entry.active {
-                            Label(player.name, systemImage: "checkmark")
-                        } else {
-                            Text(player.name)
-                        }
-                    }
-                }
-                Divider()
-            }
-            Button("New player…") { createPlayer() }
-        } label: {
-            Image(systemName: "person.crop.circle")
-        }
-        .menuStyle(.borderlessButton)
-        .frame(width: 40)
-        .help(model.players[game.path]?.activeName.map { "Playing as \($0)" } ?? "Choose who plays")
-    }
-
-    private func createPlayer() {
-        let alert = NSAlert()
-        alert.messageText = "New player"
-        alert.informativeText = "The name the game shows for this player. They get their own saves."
-        alert.addButton(withTitle: "Create")
-        alert.addButton(withTitle: "Cancel")
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
-        field.placeholderString = "Player name"
-        alert.accessoryView = field
-        alert.window.initialFirstResponder = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
-        Task { await model.createPlayer(for: game, name: name) }
     }
 
     private func open(_ path: String) {

@@ -451,7 +451,6 @@ def probe(
 def player(
     ctx: typer.Context,
     json_flag: bool = _json_option(),
-    game: str | None = typer.Option(None, "--game", metavar="GAME", help="library game (default: the last played)."),
     create: str | None = typer.Option(None, "--create", metavar="NAME", help="add a player and make them active."),
     select: str | None = typer.Option(None, "--select", metavar="NAME", help="make an existing player active."),
     delete: str | None = typer.Option(None, "--delete", metavar="NAME", help="forget a player (their saves stay)."),
@@ -464,43 +463,35 @@ def player(
     except library_mod.LibraryError as error:
         _fail(ctx, str(error))
 
-    games = library_mod.list_games(library_dir)
-    if not games:
-        _fail(ctx, f"no games in {library_dir}; build one first")
-    chosen = library_mod.find_game(library_dir, game) if game else games[0]
-    if not chosen.title_id:
-        _fail(ctx, f"{chosen.name} has no title ID yet; build it once so nx2mac can key its folders")
-    key = str(chosen.title_id)
-
     try:
         if create is not None:
-            library_mod.create_player(library_dir, key, create)
+            library_mod.create_player(library_dir, create)
         elif select is not None:
-            library_mod.select_player(library_dir, key, select)
+            library_mod.select_player(library_dir, select)
         elif delete is not None:
-            library_mod.delete_player(library_dir, key, delete)
-        players, active = library_mod.load_players(library_dir, key)
-        env_path = library_mod.write_player_env(library_dir, key)  # DM_SAVE/DM_NICK for the active player
+            library_mod.delete_player(library_dir, delete)
+        players, active = library_mod.load_players(library_dir)
+        # every built game reads the active player from its own env file
+        env_files = library_mod.write_all_player_envs(library_dir)
     except library_mod.LibraryError as error:
         _fail(ctx, str(error))
 
     payload = {
-        "game": chosen.name,
-        "path": str(chosen.path),
+        "library": str(library_dir),
         "players": [entry.to_dict() for entry in players],
         "active": active,
-        "env_file": str(env_path) if env_path is not None else None,
+        "env_files": [str(path) for path in env_files],
     }
     if machine_readable:
         emit.emit(payload)
         return
     if not players:
-        console.print(f"[yellow]{chosen.name} has no players yet.[/] Add one: nx2mac player --create \"Your name\"")
+        console.print("[yellow]No players yet.[/] Add one: nx2mac player --create \"Your name\"")
         return
-    console.print(f"[bold]{chosen.name}[/] players:")
+    console.print(f"[bold]{library_dir}[/] players:")
     for entry in players:
         marker = "[green]*[/]" if entry.id == active else " "
-        console.print(f" {marker} {entry.name} [dim]({library_mod.player_save_dir(library_dir, key, entry.id)})[/]")
+        console.print(f" {marker} {entry.name}")
 
 
 @app.command()

@@ -315,18 +315,11 @@ struct PlayerEntry: Decodable, Identifiable, Hashable {
     let created: String?
 }
 
-/// `nx2mac player --json`
+/// `nx2mac player --json` (the library's players, one list for every game)
 struct PlayersPayload: Decodable, Equatable {
-    let game: String
-    let path: String
+    let library: String
     let players: [PlayerEntry]
     let active: String?
-    let envFile: String?
-
-    enum CodingKeys: String, CodingKey {
-        case game, path, players, active
-        case envFile = "env_file"
-    }
 
     var activeName: String? { players.first { $0.id == active }?.name }
 }

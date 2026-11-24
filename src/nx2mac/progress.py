@@ -45,7 +45,10 @@ class Translator:
         self._on_event = on_event
         self._interval = interval
         self._stage: Stage | None = None
-        self._last_logged = 0.0
+        #: When the last counter line was logged; None = nothing logged for this stage yet.
+        #: (A 0.0 sentinel was tempting but wrong: it means "the epoch", and time.monotonic() is
+        #: seconds since boot, so on a freshly booted machine the first counter was swallowed.)
+        self._last_logged: float | None = None
 
     # ---- what the callers ask for ----
 
@@ -93,7 +96,7 @@ class Translator:
         )
         step = str(payload.get("step") or "")
         self._log(f"[{self._stage.label()}]" + (f" · {step}" if step else "") + " …")
-        self._last_logged = 0.0
+        self._last_logged = None
 
     def _step(self, payload: dict[str, object]) -> None:
         stage = self._stage
@@ -131,7 +134,7 @@ class Translator:
         text = f"{prefix} {step + ': ' if step else ''}{counted}" + (f" ({note})" if note else "")
 
         now = time.monotonic()
-        if force or now - self._last_logged >= self._interval:
+        if force or self._last_logged is None or now - self._last_logged >= self._interval:
             self._log(text)
             self._last_logged = now
 

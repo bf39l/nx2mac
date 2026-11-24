@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from nx2mac.probe import probe
 
 
@@ -163,6 +165,24 @@ def test_translator_throttles_the_log_but_not_the_events() -> None:
     # the stage line, then the first counter; the rest of the burst is throttled
     assert len(lines) == 2 and "10/19,592" in lines[1]
     assert len([event for event in events if event["kind"] == "progress"]) == 3
+
+
+def test_first_counter_is_logged_right_after_boot(monkeypatch: pytest.MonkeyPatch) -> None:
+    """time.monotonic() is seconds since boot, so the interval must not be measured from 0.
+
+    A machine up for less than the interval (a CI runner, a Mac that just restarted) used to lose
+    the first shader counter line entirely.
+    """
+    from nx2mac.progress import Translator
+
+    monkeypatch.setattr("nx2mac.progress.time.monotonic", lambda: 3.0)
+    lines: list[str] = []
+    translator = Translator(lines.append, None, interval=60)
+
+    translator.feed(STAGE)
+    translator.feed(PROGRESS)
+
+    assert lines == ["[5/7 Mac shaders] · compiling …", "[5/7 Mac shaders] compiling: 1,203/19,592 shaders"]
 
 
 def test_translator_shows_say_lines_and_plain_text() -> None:

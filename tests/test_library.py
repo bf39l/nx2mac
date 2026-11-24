@@ -747,6 +747,43 @@ def test_a_code_patch_that_anchored_may_be_enabled_with_a_warning(tmp_path: Path
     assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "ZR health\n"
 
 
+def test_a_pointer_chain_data_cheat_is_not_mistaken_for_code(tmp_path: Path) -> None:
+    """The opcode walker must skip the operand words of 5/6/7, else a value word gets read as an
+    opcode-0 write and a working HP data cheat is blocked as an `udf` sentinel.
+
+    Dead Cells' EdiZon HP cheat (`580F0000 … 640F0000`) is exactly this: a pointer chain that
+    writes a value through main+0x268B4A8, never an instruction.
+    """
+    from nx2mac.library import entry_code_writes
+
+    compiled = (
+        "[HP]\n"
+        "580F0000 026F8300\n"
+        "580F1000 00000030\n"
+        "580F1000 00000098\n"
+        "780F0000 0000018C\n"
+        "640F0000 00000000 05F5E0FF\n"
+    )
+    assert entry_code_writes(compiled)["HP"] == []  # no main code write
+
+    library = _library(tmp_path)
+    folder = cheats_dir(library, TID)
+    folder.mkdir(parents=True)
+    (folder / "0123456789ABCDEF.txt").write_text(compiled, encoding="utf-8")
+    (folder / "0123456789ABCDEF.meta.tsv").write_text(
+        "name\tkind\tsection\ttype\taction\tvalue\task\tvalue_words\tonce\tpair\tresolved\tnote\taddress\n"
+        "HP\tcode\t\t\t\t\t\t\t\t\t4/4 refs (4 exact) through the slot 0x268B4A8\t\t\n",
+        encoding="utf-8",
+    )
+
+    listed = cheat_builds(library, TID)[0]["cheats"][0]  # type: ignore[index]
+    assert listed["blocked"] is None
+    assert listed["warning"] == ""  # a data cheat has nothing to warn about
+
+    set_cheat(library, TID, "0123456789ABCDEF", "HP", True)
+    assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "HP\n"
+
+
 def test_a_code_write_into_a_changed_word_is_blocked(tmp_path: Path) -> None:
     """`kind=code` anchored `exact`, but the write lands in `main.changed.tsv`: the host refuses it.
 

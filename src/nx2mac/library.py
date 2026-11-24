@@ -950,7 +950,7 @@ def cheat_blocked_reason(
         return "not checked yet — build the game once so the cheats can be anchored"
     if cheat.get("resolved") == "no anchors":
         return "could not be anchored to this build"
-    if not force:
+    if not force and cheat.get("meta_kind") in ("patch", "code"):
         for _offset, _width, values in code_writes:
             if any(_is_udf(value) for value in values):
                 return ("writes an undefined instruction (udf) — an ASM sentinel whose redirector "
@@ -1063,45 +1063,67 @@ def _entry_words(text: str) -> list[tuple[str, list[str]]]:
 
 
 def entry_code_writes(compiled_text: str) -> dict[str, list[tuple[int, int, list[int]]]]:
-    """Per entry, its writes into main (memory type 0) as `(offset, width, value words)`.
+    """Per entry, its instruction writes into main (memory type 0) as `(offset, width, value words)`.
 
-    Only opcode 0 (`0TMR00AA AAAAAAAA V…`, store static) writes a main offset directly; opcode 1 is
-    the guard (read + compare). Registers add to the address at run time but start at 0, and these
-    files store before loading a register, so the offset is the address.
+    Word lengths mirror the host (`hle_cheats.c` / `cheat_anchor.py decode`): only opcode 0
+    (`0TMR00AA AAAAAAAA V…`) writes a main offset directly, and only instruction-sized writes
+    (width 4 or 8) are recorded — those are what can carry an `udf` sentinel or hit a changed word.
+    Opcode 1 (the guard) reads + compares; opcodes 5/6/7 and the rest move values around without a
+    fixed main write, so their operand words are skipped by their exact lengths.
     """
     writes: dict[str, list[tuple[int, int, list[int]]]] = {}
     for name, words in _entry_words(compiled_text):
         entry: list[tuple[int, int, list[int]]] = []
         i = 0
         while i < len(words):
-            try:
-                op = int(words[i], 16)
-            except ValueError:
-                i += 1
+            w = int(words[i], 16)
+            op = w >> 28
+            if op >= 0xC:
+                op = op << 4 | (w >> 24) & 0xF
+            if op >= 0xF0:
+                op = op << 4 | (w >> 20) & 0xF
+            width = (w >> 24) & 0xF
+
+            if op in (0, 1):
+                n = 4 if width == 8 else 3
+            elif op in (2, 8, 0xC1, 0xC2, 0xC3, 0xFF0, 0xFF1):
+                n = 1
+            elif op == 3:
+                n = 1 if width else 2
+            elif op in (4, 6):
+                n = 3
+            elif op in (5, 7):
+                n = 2
+            elif op == 9:
+                n = 1 + ((2 if width == 8 else 1) if (w >> 8) & 0xF else 0)
+            elif op == 0xA:
+                o = (w >> 8) & 0xF
+                n = 2 if o in (2, 4, 5) else 1
+            elif op == 0xC0:
+                x = (w >> 8) & 0xF
+                n = 1 + (2 if width == 8 else 1) if x == 4 else 2 if x in (0, 2) else 1
+            elif op == 0xC4:
+                n = 3
+            elif op == 0xFFF:
+                x = (w >> 8) & 0xF
+                n = 2 if x in (0, 2) else 1
+            else:
+                i += 1  # unknown/truncated: step one word, as the host marks the cheat broken
                 continue
-            top = op >> 28
-            width = (op >> 24) & 0xF
-            if top == 0 and i + 2 < len(words):
-                memory = (op >> 20) & 0xF
-                address = int(words[i + 1], 16)
-                n_values = 2 if width == 8 else 1
-                values = [int(words[i + 2 + k], 16) for k in range(n_values) if i + 2 + k < len(words)]
-                if memory == 0:
+
+            if op == 0 and width in (4, 8) and i + n <= len(words):
+                mem = (w >> 20) & 0xF
+                if mem == 0:
+                    address = int(words[i + 1], 16)
+                    values = (
+                        [int(words[i + 2], 16)]
+                        if width != 8
+                        else [int(words[i + 2], 16), int(words[i + 3], 16)]
+                    )
                     entry.append((address, width, values))
-                i += 3 if width != 8 else 4
-                continue
-            if top == 1 and i + 2 < len(words):
-                i += 3 if width != 8 else 4  # memory conditional: no write, same operand span
-                continue
-            i += 1
+            i += n
         writes[name] = entry
     return writes
-
-
-#: Names that were switched on when the game last died, and how often. The engine only sets its
-#: safe-mode marker after an *unclean* exit with cheats on, so that marker plus `.enabled` is real
-#: evidence: these entries were running when the host crashed.
-CRASH_LEDGER: str = ".crashes.json"
 
 
 def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:

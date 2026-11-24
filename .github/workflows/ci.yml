@@ -7,8 +7,10 @@ name: CI
 #                    finishes. Tags are excluded: release.yml owns those.
 on:
   pull_request:
+  # Only main pushes run here: branch work is covered by its PR run, and a push that also opens a
+  # PR would otherwise fire a second, redundant run on every commit (those push runs failed).
   push:
-    branches: ["**"]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:

@@ -58,7 +58,6 @@ hdiutil create \
   -srcfolder "$stage" \
   -fs HFS+ \
   -format UDZO \
-  -quiet \
   "$dmg"
 
 test -s "$dmg" || { echo "make_dmg.sh: hdiutil produced no image" >&2; exit 1; }

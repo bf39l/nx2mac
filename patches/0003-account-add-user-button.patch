@@ -1,5 +1,5 @@
 diff --git a/dm/host/user_select_mac.h b/dm/host/user_select_mac.h
-index 3ed5a7fa..11f1d243 100644
+index 3ed5a7fa..3a294f1c 100644
 --- a/dm/host/user_select_mac.h
 +++ b/dm/host/user_select_mac.h
 @@ -7,8 +7,9 @@ static inline int user_select_mac(const front_user *users, int count, int allow_
@@ -14,16 +14,24 @@ index 3ed5a7fa..11f1d243 100644
      if (allow_skip) [alert addButtonWithTitle:@"Skip"];
      NSPopUpButton *list = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 300, 28) pullsDown:NO];
      // A slot label distinguishes equal nicknames; an open user remains selectable
-@@ -17,10 +18,15 @@ static inline int user_select_mac(const front_user *users, int count, int allow_
+@@ -17,10 +18,21 @@ static inline int user_select_mac(const front_user *users, int count, int allow_
          [list addItemWithTitle:[NSString stringWithFormat:@"%s (user %d)%s", users[i].nickname, users[i].slot + 1, users[i].open ? " - in use" : ""]];
          list.lastItem.tag = users[i].slot;
      }
 -    if (allow_create) { [list addItemWithTitle:@"Add user"]; list.lastItem.tag = FRONT_USER_CREATE; }
-     alert.buttons.firstObject.enabled = list.numberOfItems > 0;
+-    alert.buttons.firstObject.enabled = list.numberOfItems > 0;
++    // An empty list must not disable the only useful button: with no user yet the first one adds
++    // one, and a dialog that can only cancel makes the game quit (RES_ACC_CANCELED).
++    alert.buttons.firstObject.enabled = count > 0 ? list.numberOfItems > 0 : allow_create;
      alert.accessoryView = list; alert.window.initialFirstResponder = list;
      NSModalResponse r = [alert runModal];
-     if (r == NSAlertFirstButtonReturn && list.selectedItem) return (int)list.selectedItem.tag;
+-    if (r == NSAlertFirstButtonReturn && list.selectedItem) return (int)list.selectedItem.tag;
 -    return r == NSAlertThirdButtonReturn && allow_skip ? FRONT_USER_SKIP : FRONT_USER_CANCEL;
++    if (r == NSAlertFirstButtonReturn) {
++        if (count && list.selectedItem) return (int)list.selectedItem.tag;
++        if (!count && allow_create) return FRONT_USER_CREATE;
++        return FRONT_USER_CANCEL;
++    }
 +    // Adding a user is its own button: choosing it is unambiguous, while Cancel stays "no user"
 +    // (a game quits on that, so it must not be what an add-user pick means). AppKit only names
 +    // the first three returns, so the fourth button's value is the third plus one.

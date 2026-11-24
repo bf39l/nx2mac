@@ -50,7 +50,6 @@ struct SetupTab: View {
             }
 
             librarySection
-            cloudSection
 
             ScrollView {
                 LazyVStack(spacing: 6) {
@@ -113,52 +112,6 @@ struct SetupTab: View {
         }
         .padding(9)
         .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    /// Where the engine copies each game's save (it stays local too).
-    private var cloudSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text("Cloud saves")
-                    .font(.callout.weight(.medium))
-                if model.cloudDir.isEmpty {
-                    Text("off — saves stay only in the game library")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                } else {
-                    Text(model.cloudDir)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(model.cloudDir)
-                }
-                Spacer()
-                Button("Choose folder…") { chooseCloud() }
-                if !model.cloudDir.isEmpty {
-                    Button("Off") { Task { await model.clearCloud() } }
-                }
-            }
-            Text("Point this at a synced folder (iCloud Drive, Dropbox, …): the engine keeps playing from "
-                 + "the local save and copies it to <folder>/<title id>/save.dmsync (one folder per player).")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-        }
-        .padding(9)
-        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    private func chooseCloud() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Sync saves here"
-        panel.message = "Pick a folder that syncs (iCloud Drive, Dropbox, …). The game keeps its local save."
-        if panel.runModal() == .OK, let url = panel.url {
-            Task { await model.setCloud(url) }
-        }
     }
 
     private func chooseLibrary() {

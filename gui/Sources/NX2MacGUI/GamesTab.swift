@@ -23,6 +23,7 @@ struct GamesTab: View {
                 }
                 Spacer()
                 if model.libraryDir != nil {
+                    cloudMenu
                     playerPicker
                     Button {
                         Task { await model.refreshLibrary() }
@@ -38,6 +39,40 @@ struct GamesTab: View {
             content
         }
         .task { await model.refreshLibrary() }
+    }
+
+    /// Where the engine copies each game's save (iCloud Drive, Dropbox, …); local first.
+    private var cloudMenu: some View {
+        Menu {
+            if model.cloudDir.isEmpty {
+                Text("Saves stay in the library only")
+            } else {
+                Text(model.cloudDir)
+                Divider()
+            }
+            Button("Choose folder…") { chooseCloud() }
+            if !model.cloudDir.isEmpty {
+                Button("Off (local only)") { Task { await model.clearCloud() } }
+            }
+        } label: {
+            Label(model.cloudDir.isEmpty ? "Cloud: off" : "Cloud saves", systemImage: "arrow.triangle.2.circlepath.icloud")
+        }
+        .menuStyle(.borderlessButton)
+        .frame(width: 130)
+        .help("Keep saves local and copy them into a synced folder")
+    }
+
+    private func chooseCloud() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Sync saves here"
+        panel.message = "Pick a folder that syncs (iCloud Drive, Dropbox, …). The game keeps its local save."
+        if panel.runModal() == .OK, let url = panel.url {
+            Task { await model.setCloud(url) }
+        }
     }
 
     /// The library's players (one list for every game), chosen here for all of them.

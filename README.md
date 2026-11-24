@@ -1,15 +1,50 @@
-# nx2mac
+<p align="center">
+  <img src="docs/images/banner.png" alt="nx2mac — Nintendo Switch games, as native macOS apps" width="100%">
+</p>
 
-Build Nintendo Switch and Switch 2 games into native macOS `.app` bundles, by driving the
-[nxnative](https://github.com/seedds/nxnative) build script against a fresh engine checkout from
-GitHub (upstream `seedds/nxnative` or your own fork), pinned to a reported branch + commit.
+<p align="center">
+  <a href="../../releases/latest"><img src="https://img.shields.io/github/v/release/bf39l/nx2mac?color=5959ed&label=download" alt="latest release"></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B%20%C2%B7%20arm64-0e1116?logo=apple&logoColor=white" alt="macOS 14+ arm64">
+  <a href=".github/workflows/ci.yml"><img src="https://github.com/bf39l/nx2mac/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/python-3.11%2B-2ed1c2" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/swift-5.9%2B-f05138?logo=swift&logoColor=white" alt="Swift">
+  <img src="https://img.shields.io/badge/license-MIT-5959ed" alt="MIT">
+</p>
 
-- **CLI** (`nx2mac`): prerequisites, setup, engine pinning, builds — every command has a
-  machine-readable `--json` form.
-- **GUI** (`nx2mac.app`): a small SwiftUI wrapper around the CLI with a Build and a Setup tab.
+**nx2mac turns a Nintendo Switch (or Switch 2) game into a native macOS app.** Point it at your game
+dump, press Build, and it fetches the [nxnative](https://github.com/seedds/nxnative) engine from
+GitHub at a reported commit, builds the Metal host and the shaders, and files the resulting
+`Game.app` into your library — with that game's saves, players, mods, cheats and logs beside it.
 
-Agent-oriented documentation (dependency checklist, engine policy, JSON contract) lives in
-[AGENT.md](AGENT.md).
+One engine, two front ends: a **SwiftUI app** for everyday use and a **CLI** the app itself drives
+through `--json`, so anything the GUI does is scriptable.
+
+<p align="center"><img src="docs/images/pipeline.png" alt="what happens on Build" width="100%"></p>
+
+### What you get
+
+- **A real Mac app per game** — double-clickable, ad-hoc signed, self-contained.
+- **A library, not a pile of leftovers** — one folder you choose, holding each game's `.app` plus
+  its saves, logs, screenshots, players, mods and cheats.
+- **Updates and DLC from anywhere** — pick the update and any number of DLC packages where they
+  live; nx2mac stages them into the single folder the engine expects.
+- **Players** with their own save store and nickname, plus optional **cloud saves** into any folder.
+- **Mods** (RomFS overlays) and **cheats**: the cheat file is re-anchored against your build, so only
+  entries that can actually work on this port are switchable.
+- **Live progress** — the current step and shader counters (`1,037/1,262 shaders`), in the GUI and
+  in the terminal.
+- **Engine tracking** — pin upstream or your own fork by branch + commit, re-pin for the newest
+  engine when you want it; local fixes ride along in `patches/`.
+
+### Screenshots
+
+| **Setup** — every prerequisite, with a fix per item | **Games** — library, players, cloud saves |
+| --- | --- |
+| ![](docs/images/setup.png) | ![](docs/images/games.png) |
+
+**Build** — engine and inputs first, then the engine's own log, live.
+
+![](docs/images/build.png)
 
 ## Install
 
@@ -29,10 +64,13 @@ open ~/Applications/nx2mac.app
 uv tool install .
 ```
 
-The GUI does **not** need a separately installed CLI — `gui/build.sh` freezes the Python CLI
-with PyInstaller into the bundle (≈31 MB) and the app prefers that copy. Installing the CLI is
-only useful if you also want `nx2mac …` in a terminal. From a checkout, `uv run nx2mac …` works
-without installing anything.
+The GUI does **not** need a separately installed CLI — `gui/build.sh` freezes the Python CLI with
+PyInstaller into the bundle (≈31 MB) and the app prefers that copy. Installing the CLI is only
+useful if you also want `nx2mac …` in a terminal. From a checkout, `uv run nx2mac …` works without
+installing anything.
+
+Agent-oriented documentation (dependency checklist, engine policy, JSON contract) lives in
+[AGENT.md](AGENT.md).
 
 ## Quick start
 
@@ -422,7 +460,14 @@ swift test --package-path gui   # 27 tests
 
 Layout: `src/nx2mac/` (CLI: `cli`, `doctor`, `remedies`, `installer`, `engines`, `builder`,
 `staging`, `pyenv`, `config`, `runner`, `emit`), `gui/` (SwiftUI app + icon tool), `packaging/`
-(PyInstaller entry point for the bundled CLI), `patches/` (engine fixes).
+(PyInstaller entry point and the DMG script), `patches/` (engine fixes), `docs/images/` (banner,
+diagrams and screenshots) with `docs/tools/make_artwork.swift` drawing the first three — the
+screenshots are real captures of the app.
+
+```bash
+swift docs/tools/make_artwork.swift docs/images   # banner.png, pipeline.png, icon.png
+swift gui/tools/make_icon.swift gui/Resources/AppIcon.icns
+```
 
 ## Credits
 

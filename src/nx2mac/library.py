@@ -30,9 +30,9 @@ from .inputs import GAME_EXTENSIONS
 #: Manifest written into every library game folder.
 MANIFEST_NAME: str = "nx2mac.json"
 
-#: One folder per game, holding everything it writes (kept like NX2Apple's layout):
-#:   <chosen folder>/game_lib/<Game>.app              the built app
-#:   <chosen folder>/game_lib/<Game>.nx2mac.json      what was built, from which engine
+#: The built apps sit in the folder the user chose; nx2mac's own data sits in `game_lib/`:
+#:   <chosen folder>/<Game>.app                       the built app
+#:   <chosen folder>/<Game>.nx2mac.json               what was built, from which engine
 #:   <chosen folder>/game_lib/players.json            the library's players (every game)
 #:   <chosen folder>/game_lib/<TITLEID>/
 #:   ├── save/                         DM_SAVE - the base store (save.users/.work land here)
@@ -196,7 +196,7 @@ def _slug(text: str, taken: set[str]) -> str:
 
 def players_file(library: Path) -> Path:
     """The library's player list (one list for every game, as NX2Apple keeps it)."""
-    return root_of(library) / PLAYERS_FILE
+    return data_root(library) / PLAYERS_FILE
 
 
 def load_players(library: Path) -> tuple[list[Player], str | None]:
@@ -358,29 +358,38 @@ def app_metadata(app: Path) -> dict[str, str | None]:
     return {"name": name, "title_id": title_id, "version": str(info.get("CFBundleShortVersionString") or "") or None}
 
 
-def root_of(folder: Path) -> Path:
-    """nx2mac's own folder inside the one the user chose (`<chosen>/game_lib`)."""
+def app_root(folder: Path) -> Path:
+    """Where the built apps go: the folder the user chose."""
     resolved = folder.expanduser()
-    if resolved.name == LIBRARY_SUBDIR:
-        return resolved
-    return resolved / LIBRARY_SUBDIR
+    return resolved.parent if resolved.name == LIBRARY_SUBDIR else resolved
+
+
+def data_root(folder: Path) -> Path:
+    """nx2mac's data folder inside the user's choice (`<chosen>/game_lib`)."""
+    return app_root(folder) / LIBRARY_SUBDIR
+
+
+def root_of(folder: Path) -> Path:
+    """The data folder (`<chosen>/game_lib`) — kept as the old name for callers."""
+    return data_root(folder)
 
 
 def is_library(folder: Path) -> bool:
-    """Whether this folder holds an nx2mac library (the visible `game_lib` folder)."""
-    return (folder.expanduser() / LIBRARY_SUBDIR).is_dir() or any(folder.expanduser().glob("*.app"))
+    """Whether this folder holds built games or nx2mac's `game_lib` data folder."""
+    base = app_root(folder)
+    return (base / LIBRARY_SUBDIR).is_dir() or any(base.glob("*.app"))
 
 
 def mark_library(folder: Path) -> Path:
-    """Create nx2mac's folder inside the user's choice (nothing hidden is written)."""
-    root = root_of(folder)
+    """Create nx2mac's data folder inside the user's choice (nothing hidden is written)."""
+    root = data_root(folder)
     root.mkdir(parents=True, exist_ok=True)
     return root
 
 
 def game_root(library: Path, title_id: str) -> Path:
     """Everything one game writes: `<library>/game_lib/<TITLEID>/`."""
-    return root_of(library) / title_id
+    return data_root(library) / title_id
 
 
 def game_save_root(library: Path, title_id: str) -> Path:
@@ -658,7 +667,7 @@ def list_games(library: Path) -> list[GameEntry]:
     listed too, since `-o` can put them there.
     """
     entries: list[GameEntry] = []
-    base = root_of(library)
+    base = app_root(library)
     if not base.is_dir():
         return entries
 
@@ -669,6 +678,7 @@ def list_games(library: Path) -> list[GameEntry]:
             continue
         entry = _entry(directory, next(iter(sorted(directory.glob("*.app"))), None))
         entries.append(replace(entry, library=library))
+
 
     for app in sorted(base.glob("*.app")):
         entry = _entry(base, app, manifest_path=app.with_suffix(".nx2mac.json"))
@@ -699,10 +709,9 @@ def find_game(library: Path, needle: str) -> GameEntry:
         wanted_path = wanted_path.resolve()
     except OSError:
         wanted_path = Path(raw)
-    root = root_of(library)
     for entry in list_games(library):
         candidates = {entry.path.resolve(), (entry.app_path or entry.path).resolve()}
-        if wanted_path in candidates or wanted_path in {root, root.parent}:
+        if wanted_path in candidates or wanted_path in {app_root(library), data_root(library)}:
             return entry
         if wanted in {entry.path.name.lower(), entry.name.lower(), (entry.title_id or "").lower()}:
             return entry

@@ -400,6 +400,9 @@ def clean(
     json_flag: bool = _json_option(),
     game: str | None = typer.Option(None, "--game", metavar="GAME", help="only this game (default: every library)."),
     library: Path | None = typer.Option(None, "--library", metavar="DIR", help="only this library."),
+    manifests: bool = typer.Option(
+        False, "--manifests", help="also remove each game's <Game>.nx2mac.json (rebuilt next time)."
+    ),
 ) -> None:
     """Delete the extracted files and shader caches of finished builds (the game itself stays)."""
     machine_readable = _enter(ctx, json_flag)
@@ -422,6 +425,12 @@ def clean(
             size = sum(path.stat().st_size for path in build.rglob("*") if path.is_file())
             shutil.rmtree(build, ignore_errors=True)
             removed.append({"game": entry.name, "path": str(build), "freed": size})
+
+            manifest = (entry.app_path or build).with_suffix(".nx2mac.json")
+            if manifests and manifest.is_file():
+                freed = manifest.stat().st_size
+                manifest.unlink()
+                removed.append({"game": entry.name, "path": str(manifest), "freed": freed})
 
     if machine_readable:
         emit.emit({"removed": removed, "freed": sum(int(item["freed"]) for item in removed)})

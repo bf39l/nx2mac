@@ -9,20 +9,10 @@ struct GamesTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            libraryList
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Games").font(.title2.weight(.semibold))
-                    // No library set: say nothing here rather than an empty-state paragraph.
-                    if !model.libraryDirs.isEmpty {
-                        Text(model.libraryDirs.count == 1
-                             ? model.libraryDirs[0]
-                             : "\(model.libraryDirs.count) libraries")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .help(model.libraryDirs.joined(separator: "\n"))
-                    }
                 }
                 Spacer()
                 if !model.libraryDirs.isEmpty {
@@ -37,9 +27,6 @@ struct GamesTab: View {
                 }
             }
 
-            Divider()
-
-            libraryList
             content
         }
         .task { await model.refreshLibrary() }

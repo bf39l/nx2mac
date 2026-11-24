@@ -318,7 +318,7 @@ final class BuildModel: ObservableObject {
     @discardableResult
     func cleanBuilds(game: String? = nil) async -> String? {
         guard let cli else { return nil }
-        var arguments = ["clean", "--json"]
+        var arguments = ["clean", "--json", "--manifests"]
         if let game { arguments += ["--game", game] }
         guard let result = try? await Self.run(cli, arguments),
               let data = result.stdout.data(using: .utf8),

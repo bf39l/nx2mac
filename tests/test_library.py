@@ -152,8 +152,8 @@ def test_build_env_points_every_kind_at_the_library(tmp_path: Path) -> None:
 def test_players_are_library_wide_and_get_a_store_per_game(tmp_path: Path) -> None:
     """Players belong to the library (NX2Apple does the same), one store per game."""
     library = _library(tmp_path)
-    other = _app(library / LIBRARY_SUBDIR, name="Metal Slug", title_id="01003D901D24A000")
-    first = _app(library / LIBRARY_SUBDIR, name="Dead Cells", title_id=TID)
+    other = _app(library, name="Metal Slug", title_id="01003D901D24A000")
+    first = _app(library, name="Dead Cells", title_id=TID)
     for app, tid in ((first, TID), (other, "01003D901D24A000")):
         write_manifest(app.with_suffix(".nx2mac.json"), name=app.stem, app_path=app, title_id=tid,
                        version="1.0", engine_source="fork", engine_ref="main",
@@ -240,7 +240,7 @@ def test_app_metadata_reads_the_bundle(tmp_path: Path) -> None:
 
 def test_root_app_with_sidecar_manifest_is_a_game(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    app = _app(library / LIBRARY_SUBDIR)
+    app = _app(library)
     write_manifest(
         app.with_suffix(".nx2mac.json"),
         name="Dead Cells",
@@ -269,7 +269,7 @@ def test_root_app_with_sidecar_manifest_is_a_game(tmp_path: Path) -> None:
 
 def test_app_without_manifest_still_shows_name_and_version(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    _app(library / LIBRARY_SUBDIR, name="Hand Built", title_id="01003D901D24A000", version="1.0.1")
+    _app(library, name="Hand Built", title_id="01003D901D24A000", version="1.0.1")
 
     game = list_games(library)[0]
 
@@ -283,7 +283,7 @@ def test_only_built_games_are_listed(tmp_path: Path) -> None:
     (library / "0Dead_Cells[0100646009FBE000]" / "base.nsp").write_bytes(b"\x00")
     (library / "nxnative-dev").mkdir()
     (library / "prod.keys").write_text("k\n", encoding="utf-8")
-    _app(library / LIBRARY_SUBDIR, name="Dead Cells")
+    _app(library, name="Dead Cells")
 
     names = [game.name for game in list_games(library)]
 
@@ -293,7 +293,7 @@ def test_only_built_games_are_listed(tmp_path: Path) -> None:
 
 def test_legacy_per_game_folder_is_still_listed(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    legacy = library / LIBRARY_SUBDIR / "Old Entry"
+    legacy = library / "Old Entry"
     (legacy / "Old.app" / "Contents").mkdir(parents=True)
     (legacy / "Old.app" / "Contents" / "Info.plist").write_bytes(
         plistlib.dumps({"CFBundleName": "Old", "CFBundleShortVersionString": "0.9"})
@@ -307,8 +307,8 @@ def test_legacy_per_game_folder_is_still_listed(tmp_path: Path) -> None:
 
 def test_touch_last_played_moves_a_game_to_the_top(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    first = _app(library / LIBRARY_SUBDIR, name="First", title_id="0100000000001000")
-    second = _app(library / LIBRARY_SUBDIR, name="Second", title_id="0100000000002000")
+    first = _app(library, name="First", title_id="0100000000001000")
+    second = _app(library, name="Second", title_id="0100000000002000")
     for app, name in ((first, "First"), (second, "Second")):
         write_manifest(app.with_suffix(".nx2mac.json"), name=name, app_path=app, title_id=None,
                        version=None, engine_source="upstream", engine_ref="main",
@@ -322,7 +322,7 @@ def test_touch_last_played_moves_a_game_to_the_top(tmp_path: Path) -> None:
 
 def test_find_game_by_name_path_or_title_id(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    app = _app(library / LIBRARY_SUBDIR)
+    app = _app(library)
     write_manifest(app.with_suffix(".nx2mac.json"), name="Dead Cells", app_path=app, title_id=TID,
                    version="1.25.0", engine_source="fork", engine_ref="main",
                    engine_commit="c" * 40, patches=(), inputs={})
@@ -340,13 +340,13 @@ def test_describe_library_payload(tmp_path: Path) -> None:
     payload = describe_library(library)
 
     assert payload["dir"] == str(library) and payload["exists"] is True and payload["games"] == []
-    _app(library / LIBRARY_SUBDIR, name="One")
+    _app(library, name="One")
     assert describe_library(library)["games"][0]["name"] == "One"  # type: ignore[index]
 
 
 def test_manifest_round_trip(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    app = _app(library / LIBRARY_SUBDIR)
+    app = _app(library)
     path = write_manifest(app.with_suffix(".nx2mac.json"), name="Dead Cells", app_path=app, title_id=TID,
                           version="1.25.0", engine_source="fork", engine_ref="fork-customizations",
                           engine_commit="69513b66656d", patches=(), inputs={"game": "/dumps"})

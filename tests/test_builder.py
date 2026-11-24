@@ -392,11 +392,11 @@ def test_run_build_files_the_game_into_the_library(tmp_path: Path, monkeypatch) 
     result = run_build(env, cache, _engine(tmp_path), package, prod_keys=keys, library_dir=library)
 
     tid = "0100646009FBE000"
-    assert result.library_dir == (library / "game_lib").resolve()
-    assert result.out_dir == (library / "game_lib").resolve()
+    assert result.library_dir == library.resolve()      # the folder the user chose
+    assert result.out_dir == library.resolve()           # the app is written there
     # the app is renamed to the game's own name and carries a sidecar manifest
-    assert result.app_path == library / "game_lib" / "Dead Cells.app"
-    manifest = json.loads((library / "game_lib" / "Dead Cells.nx2mac.json").read_text(encoding="utf-8"))
+    assert result.app_path == library / "Dead Cells.app"
+    manifest = json.loads((library / "Dead Cells.nx2mac.json").read_text(encoding="utf-8"))
     assert manifest["name"] == "Dead Cells" and manifest["title_id"] == tid
     assert manifest["engine"]["commit"] == SHA
     # everything the game writes is in the library, keyed by the title ID
@@ -446,9 +446,9 @@ def test_rebuilding_replaces_the_app_in_place(tmp_path: Path, monkeypatch) -> No
     run_build(env, cache, _engine(tmp_path), package, prod_keys=keys, library_dir=library)
     second = run_build(env, cache, _engine(tmp_path), package, prod_keys=keys, library_dir=library)
 
-    assert second.app_path == library / "game_lib" / "Dead Cells.app"
+    assert second.app_path == library / "Dead Cells.app"
     assert (library / "keep.me").is_file()  # nothing else clobbered
-    assert [p.name for p in (library / "game_lib").glob("*.app")] == ["Dead Cells.app"]  # no duplicate
+    assert [p.name for p in library.glob("*.app")] == ["Dead Cells.app"]  # no duplicate
 
 
 def test_run_build_rejects_a_missing_library(tmp_path: Path, monkeypatch) -> None:

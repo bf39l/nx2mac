@@ -170,11 +170,13 @@ Nothing else is written there.
 
 ```bash
 nx2mac clean              # drop the extracted files + shader caches of every game
-nx2mac clean --game "Dead Cells"
+nx2mac clean --game "Dead Cells"           # one game
+nx2mac clean --manifests                   # also the <Game>.nx2mac.json sidecars
 ```
 
 The app and its saves stay; the next build extracts again (a few minutes). The GUI offers the same
-as **Clean build files** right after a build finishes.
+as **Clean build files** right after a build finishes (it also removes the
+`<Game>.nx2mac.json` — the next build writes a fresh one).
 
 ```bash
 nx2mac cloud --set "~/Library/Mobile Documents/com~apple~CloudDocs/nx2mac"

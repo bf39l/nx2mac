@@ -58,171 +58,137 @@ final class BuildModel: ObservableObject {
     @Published private(set) var engineBusy = false
     @Published private(set) var pinned: ResolvedEngine?
 
-    // MARK: Inputs
+    // MARK: Build queue
 
-    /// The dump folder (optional) and the package file inside it. Picking a folder
-    /// auto-selects its game package; picking a file by hand overrides that.
-    @Published private(set) var gameURL: URL?
-    @Published private(set) var gameDirURL: URL?
-    /// True while `gameURL` is just what the folder scan found (not user-chosen).
-    @Published private(set) var gameFileIsAuto = false
-    /// What `nx2mac probe` found in the folder, for the list under the rows.
-    @Published private(set) var packages: [GamePackage] = []
-    @Published var keysURL: URL?
-    /// Where the .app and its build folder go. Until the user picks one, this is
-    /// the game library (when set) or the game's own directory.
-    @Published private(set) var outDirURL: URL?
-    /// True while `outDirURL` is the default rather than something the user chose.
-    @Published private(set) var outDirIsAuto = true
-    /// The update package to build with (one, like the game file). Empty = none.
-    @Published private(set) var updateURL: URL?
-    /// True while the update row is just the newest update found beside the game.
-    @Published private(set) var updateIsAuto = false
-    /// Optional DLC packages/folders picked outside the game folder (staged by the CLI).
-    @Published var dlcURLs: [URL] = []
-
-    // MARK: Build
-
-    @Published private(set) var state: BuildState = .idle
-    @Published private(set) var log: [String] = []
-    @Published private(set) var stage: String = ""
-    @Published private(set) var appURL: URL?
-    /// A stop the engine can be told to ignore (`--allow-damaged`, `--allow-other-metal`, …).
-    @Published private(set) var buildAnyway: BuildResult.BuildFailure?
-
-    private var process: Process?
-    /// Lines waiting for the next UI tick: a build prints in bursts, and one published
-    /// change per line would make SwiftUI re-lay-out hundreds of times a second.
-    private var pendingLog: [String] = []
-    private var logTimer: Timer?
+    /// The build setups, one per game; the Build tab edits them and the queue runs them in order.
+    @Published var setups: [BuildSetup] = [BuildSetup()]
+    /// The setup currently streaming a build, or nil while the queue is idle.
+    @Published private(set) var runningIndex: Int? = nil
 
     init() {
         refreshCLI()
     }
 
-    var isRunning: Bool { state == .running }
+    var isRunning: Bool { runningIndex != nil }
 
-    /// The request the Build button would send right now.
-    var request: BuildRequest? {
-        guard let game = buildPath else { return nil }
+    /// The request the Build button would send for one setup.
+    func request(for setup: BuildSetup) -> BuildRequest? {
+        guard let game = buildPath(for: setup) else { return nil }
         // A default output folder means "let the CLI file it into the library".
-        let chosenOutDir = outDirIsAuto ? nil : outDirURL
+        let chosenOutDir = setup.outDirIsAuto ? nil : setup.outDirURL
         return BuildRequest(
             game: game,
-            keys: keysURL,
+            keys: setup.keysURL,
             library: chosenOutDir == nil ? libraryURL : nil,
             outDir: chosenOutDir,
-            updates: updateURL.map { [$0] } ?? [],
-            dlcs: dlcURLs,
+            updates: setup.updateURL.map { [$0] } ?? [],
+            dlcs: setup.dlcURLs,
             source: engineChoice,
             ref: engineRef
         )
     }
 
-    /// Everything the CLI needs before a build can start.
-    var readyToBuild: Bool {
-        cli != nil && gameURL != nil && !isRunning
+    /// Everything the CLI needs before one setup can start.
+    func readyToBuild(for setup: BuildSetup) -> Bool {
+        cli != nil && setup.gameURL != nil && !setup.isRunning
     }
 
     var firstFailure: DoctorCheck? { doctor?.failedChecks.first }
 
-    /// Choose a dump folder: the package inside it is picked for you.
-    func setGameDir(_ url: URL?) async {
-        gameDirURL = url
-        packages = []
+    /// Choose a dump folder for one setup: the package inside it is picked for you.
+    func setGameDir(_ setup: BuildSetup, _ url: URL?) async {
+        setup.gameDirURL = url
+        setup.packages = []
         guard let url else {
-            gameURL = nil
-            gameFileIsAuto = false
-            if outDirIsAuto { outDirURL = nil }
+            setup.gameURL = nil
+            setup.gameFileIsAuto = false
+            if setup.outDirIsAuto { setup.outDirURL = nil }
             return
         }
-        if outDirIsAuto { outDirURL = defaultOutDir }
-        await scanGameDir(url)
-        await refreshCheatFile()
+        if setup.outDirIsAuto { setup.outDirURL = defaultOutDir(for: setup) }
+        await scanGameDir(setup, url)
+        await refreshCheatFile(setup)
     }
 
     /// Choose the update yourself (nil clears it): this wins over the folder scan.
-    func setUpdate(_ url: URL?) {
-        updateURL = url
-        updateIsAuto = false
+    func setUpdate(_ setup: BuildSetup, _ url: URL?) {
+        setup.updateURL = url
+        setup.updateIsAuto = false
     }
 
     /// Pick the package file yourself (or a .nup): this wins over the folder scan.
-    func setGameFile(_ url: URL?) {
-        gameURL = url
-        gameFileIsAuto = false
-        if outDirIsAuto { outDirURL = defaultOutDir }
-        Task { await refreshCheatFile() }
+    func setGameFile(_ setup: BuildSetup, _ url: URL?) {
+        setup.gameURL = url
+        setup.gameFileIsAuto = false
+        if setup.outDirIsAuto { setup.outDirURL = defaultOutDir(for: setup) }
+        Task { await refreshCheatFile(setup) }
     }
 
     /// Ask the CLI what the folder holds, and pre-select its game package.
-    func scanGameDir(_ url: URL) async {
+    func scanGameDir(_ setup: BuildSetup, _ url: URL) async {
         guard let cli else { return }
         guard let result = try? await Self.run(cli, ["probe", url.path, "--json"]),
               let data = result.stdout.data(using: .utf8),
               let payload = try? JSONDecoder().decode(ProbePayload.self, from: data)
         else {
-            packages = []
+            setup.packages = []
             return
         }
-        packages = payload.packages
+        setup.packages = payload.packages
         if let chosen = payload.gameFile {
-            gameURL = URL(fileURLWithPath: chosen)
-            gameFileIsAuto = true
+            setup.gameURL = URL(fileURLWithPath: chosen)
+            setup.gameFileIsAuto = true
         } else {
-            gameURL = nil
-            gameFileIsAuto = false
+            setup.gameURL = nil
+            setup.gameFileIsAuto = false
         }
         // The newest update beside the game is chosen for you; clear or add your own to change it.
-        if updateIsAuto || updateURL == nil {
+        if setup.updateIsAuto || setup.updateURL == nil {
             if let newest = payload.update {
-                updateURL = URL(fileURLWithPath: newest)
-                updateIsAuto = true
+                setup.updateURL = URL(fileURLWithPath: newest)
+                setup.updateIsAuto = true
             } else {
-                updateURL = nil
-                updateIsAuto = false
+                setup.updateURL = nil
+                setup.updateIsAuto = false
             }
         }
     }
 
-    /// The package the build will use, when the folder scan knows it.
-    var chosenPackage: GamePackage? {
-        packages.first { $0.path == gameURL?.path }
-    }
-
-    /// Which path the build receives: the file you chose, else the folder (so the
+    /// Which path the build receives for one setup: the file you chose, else the folder (so the
     /// engine still sees updates/DLC kept beside the game).
-    var buildPath: URL? {
-        if let gameURL, !gameFileIsAuto { return gameURL }
-        return gameDirURL ?? gameURL
+    func buildPath(for setup: BuildSetup) -> URL? {
+        if let gameURL = setup.gameURL, !setup.gameFileIsAuto { return gameURL }
+        return setup.gameDirURL ?? setup.gameURL
     }
 
     /// The user picked an output folder: stop following the library/game.
-    func chooseOutDir(_ url: URL) {
-        outDirURL = url
-        outDirIsAuto = false
+    func chooseOutDir(_ setup: BuildSetup, _ url: URL) {
+        setup.outDirURL = url
+        setup.outDirIsAuto = false
     }
 
     /// Drop back to the default: the game library when one is set, else the game's folder.
-    func resetOutDir() {
-        outDirIsAuto = true
-        outDirURL = defaultOutDir
+    func resetOutDir(_ setup: BuildSetup) {
+        setup.outDirIsAuto = true
+        setup.outDirURL = defaultOutDir(for: setup)
     }
 
     /// The library the build files into (the first one configured).
     var libraryURL: URL? { libraryDirs.first.map { URL(fileURLWithPath: $0) } }
 
     /// Apply the library folders (the CLI's answer, or a test's): keeps the shown
-    /// output folder in step while it is still the default.
+    /// output folders in step while they are still the default.
     func applyLibraries(_ directories: [String]) {
         libraryDirs = directories
-        if outDirIsAuto { outDirURL = defaultOutDir }
+        for setup in setups where setup.outDirIsAuto {
+            setup.outDirURL = defaultOutDir(for: setup)
+        }
     }
 
-    /// The output folder to show/use while the user has not chosen one.
-    var defaultOutDir: URL? {
+    /// The output folder to show/use for a setup while the user has not chosen one.
+    func defaultOutDir(for setup: BuildSetup) -> URL? {
         if let libraryURL { return libraryURL }
-        return gameURL.map(Self.directory(of:))
+        return setup.gameURL.map(Self.directory(of:))
     }
 
     /// The directory holding *url*: itself for a folder, the parent for a file.
@@ -254,7 +220,7 @@ final class BuildModel: ObservableObject {
         await refreshCloud()
         // The game may already have a cheat file in the library from an earlier build; show it
         // without making the user pick the game again.
-        await refreshCheatFile()
+        if let first = setups.first { await refreshCheatFile(first) }
     }
 
     private func refreshVersion(_ cli: CLICommand) async {
@@ -354,7 +320,6 @@ final class BuildModel: ObservableObject {
               let payload = try? JSONDecoder().decode(CleanPayload.self, from: data)
         else { return nil }
         let freed = ByteCountFormatter.string(fromByteCount: Int64(payload.freed), countStyle: .file)
-        log.append(payload.removed.isEmpty ? "Nothing to clean." : "Cleaned build files: freed \(freed).")
         return freed
     }
 
@@ -364,15 +329,17 @@ final class BuildModel: ObservableObject {
         struct Removed: Decodable { let game: String; let path: String }
     }
 
-    /// The game's one cheat file, shown in the Build tab (a build re-anchors it).
-    @Published private(set) var cheatFileURL: URL?
+    /// The file the Build tab shows: the first build's cheat file, which is the library copy
+    /// (`<library>/nx2mac_game_lib/<title id>/mods/cheats/<build id>.txt`), not the file the user
+    /// imported from.
+    nonisolated static func cheatFile(in payload: CheatsPayload) -> URL? {
+        payload.games.first?.builds.first.map { URL(fileURLWithPath: $0.file) }
+    }
 
-    var cheatFileName: String? { cheatFileURL?.lastPathComponent }
-
-    /// Read the selected game's cheat file, if it has one.
-    func refreshCheatFile() async {
-        guard let cli, let game = cheatGameName else {
-            cheatFileURL = nil
+    /// Read a setup's cheat file (a build re-anchors it), if the game has one.
+    func refreshCheatFile(_ setup: BuildSetup) async {
+        guard let cli, let game = cheatGameName(for: setup) else {
+            setup.cheatFileURL = nil
             return
         }
         var arguments = ["cheats", "--game", game, "--json"]
@@ -382,59 +349,46 @@ final class BuildModel: ObservableObject {
               let payload = try? JSONDecoder().decode(CheatsPayload.self, from: data),
               let file = Self.cheatFile(in: payload)
         else {
-            cheatFileURL = nil
+            setup.cheatFileURL = nil
             return
         }
-        cheatFileURL = file
+        setup.cheatFileURL = file
     }
 
-    /// The file the Build tab shows: the first build's cheat file, which is the library copy
-    /// (`<library>/nx2mac_game_lib/<title id>/mods/cheats/<build id>.txt`), not the file the user
-    /// imported from.
-    nonisolated static func cheatFile(in payload: CheatsPayload) -> URL? {
-        payload.games.first?.builds.first.map { URL(fileURLWithPath: $0.file) }
-    }
-
-    /// Delete the game's cheat file (nx2mac keeps one).
-    func clearCheats() async {
-        await runCheats(["--remove"])
-    }
-
-    /// The title ID of the game being built (from the probe), when it is known.
-    var gameTitleID: String? {
-        chosenPackage?.titleID ?? packages.first(where: { $0.role == "base" })?.titleID
-            ?? packages.compactMap(\.titleID).first
+    /// Delete a setup's cheat file (nx2mac keeps one).
+    func clearCheats(_ setup: BuildSetup) async {
+        await runCheats(setup, ["--remove"])
     }
 
     /// What the cheat commands address: the title ID (how the library finds the game), else its name.
-    var cheatGameName: String? {
-        guard gameURL != nil else { return nil }
-        if let title = gameTitleID { return title }
-        if let dir = gameDirURL { return dir.lastPathComponent }
-        return gameURL?.deletingPathExtension().lastPathComponent
+    func cheatGameName(for setup: BuildSetup) -> String? {
+        guard setup.gameURL != nil else { return nil }
+        if let title = setup.gameTitleID { return title }
+        if let dir = setup.gameDirURL { return dir.lastPathComponent }
+        return setup.gameURL?.deletingPathExtension().lastPathComponent
     }
 
-    /// Run a `cheats` sub-command and put whatever the CLI says into the build log.
+    /// Run a `cheats` sub-command for a setup and put whatever the CLI says into its log.
     @discardableResult
-    private func runCheats(_ arguments: [String]) async -> Bool {
-        guard let cli, let game = cheatGameName else {
-            log.append("Cheats: choose a game folder first.")
+    private func runCheats(_ setup: BuildSetup, _ arguments: [String]) async -> Bool {
+        guard let cli, let game = cheatGameName(for: setup) else {
+            setup.log.append("Cheats: choose a game folder first.")
             return false
         }
         var arguments = ["cheats", "--game", game, "--json"] + arguments
         if let library = libraryURL { arguments += ["--library", library.path] }
         guard let result = try? await Self.run(cli, arguments) else {
-            log.append("Cheats: could not run the CLI.")
+            setup.log.append("Cheats: could not run the CLI.")
             return false
         }
         for line in (result.stdout + result.stderr).split(separator: "\n") {
             if let data = String(line).data(using: .utf8),
                let failure = try? JSONDecoder().decode(CheatErrorPayload.self, from: data) {
-                log.append("Cheats: \(failure.message)")
+                setup.log.append("Cheats: \(failure.message)")
                 return false
             }
         }
-        await refreshCheatFile()
+        await refreshCheatFile(setup)
         return true
     }
 
@@ -443,14 +397,14 @@ final class BuildModel: ObservableObject {
         let message: String
     }
 
-    /// Copy cheat files into the game's cheats folder.
-    func importCheats(_ urls: [URL]) async {
+    /// Copy cheat files into a setup's game cheats folder.
+    func importCheats(_ setup: BuildSetup, _ urls: [URL]) async {
         for url in urls {
-            await runCheats(["--import", url.path])
+            await runCheats(setup, ["--import", url.path])
         }
         // `runCheats` already re-reads the game's file; do it once more so a multi-file import ends
         // on the file the CLI keeps (nx2mac keeps exactly one per game).
-        await refreshCheatFile()
+        await refreshCheatFile(setup)
     }
 
     /// Read a game's cheat files, their switches and the engine's master/safe flags.
@@ -570,7 +524,7 @@ final class BuildModel: ObservableObject {
         await refreshCloud()
         // The game may already have a cheat file in the library from an earlier build; show it
         // without making the user pick the game again.
-        await refreshCheatFile()
+        if let first = setups.first { await refreshCheatFile(first) }
     }
 
     private func refreshEngine(_ cli: CLICommand) async {
@@ -668,132 +622,172 @@ final class BuildModel: ObservableObject {
     func pinEngine() async {
         guard let cli else { return }
         engineBusy = true
-        state = .idle
         defer { engineBusy = false }
         let arguments = EngineCommand.pin(source: engineChoice, ref: engineRef)
         do {
             let result = try await Self.run(cli, arguments)
-            guard let data = result.stdout.data(using: .utf8) else { return }
-            if let pin = try? JSONDecoder().decode(EnginePin.self, from: data) {
+            if let data = result.stdout.data(using: .utf8),
+               let pin = try? JSONDecoder().decode(EnginePin.self, from: data) {
                 pinned = pin.engine
-                stage = ""
-                log = ["Engine pinned: \(pin.engine.summary)", "checkout: \(pin.engine.path)"]
-            } else if let data = result.stdout.data(using: .utf8),
-                      let error = try? JSONDecoder().decode(ErrorPayload.self, from: data) {
-                state = .failed(error.message)
             }
             await refreshEngine(cli)
         } catch {
-            state = .failed(error.localizedDescription)
+            await refreshEngine(cli)
         }
     }
 
     // MARK: - Build
 
-    func startBuild(extra: [String] = [], cheatsOnly: Bool = false) {
-        guard let cli, let request, !isRunning else { return }
-        pendingLog.removeAll()
-        buildAnyway = nil
-        log = []
-        stage = ""
-        appURL = nil
-        state = .running
-        log.append("Extras: \(request.extrasSummary)")
+    func startBuild(_ setup: BuildSetup, extra: [String] = [], cheatsOnly: Bool = false, onFinished: ((Int32) -> Void)? = nil) {
+        guard let cli, let request = request(for: setup), !setup.isRunning else { return }
+        setup.pendingLog.removeAll()
+        setup.buildAnyway = nil
+        setup.log = []
+        setup.stage = ""
+        setup.appURL = nil
+        setup.state = .running
+        setup.log.append("Extras: \(request.extrasSummary)")
 
         do {
             let arguments = request.arguments + (cheatsOnly ? ["--cheats-only"] : []) + extra
-            process = try CLIRunner.stream(
+            setup.process = try CLIRunner.stream(
                 cli,
                 arguments,
                 onLine: { [weak self] line in
-                    Task { @MainActor in self?.handle(line: line) }
+                    Task { @MainActor in self?.handle(setup: setup, line: line) }
                 },
                 onExit: { [weak self] code in
-                    Task { @MainActor in self?.finish(exitCode: code) }
+                    Task { @MainActor in
+                        self?.finish(setup: setup, exitCode: code)
+                        onFinished?(code)
+                    }
                 }
             )
         } catch {
-            state = .failed(error.localizedDescription)
+            setup.state = .failed(error.localizedDescription)
         }
     }
 
-    /// Re-run the build with the engine flag that gets past the last stop ("Build anyway").
-    func retryBuildAnyway(_ flag: String) async {
-        buildAnyway = nil
-        startBuild(extra: [flag])
+    /// Re-run one build with the engine flag that gets past the last stop ("Build anyway").
+    func retryBuildAnyway(_ setup: BuildSetup, _ flag: String) async {
+        setup.buildAnyway = nil
+        startBuild(setup, extra: [flag])
     }
 
-    func cancelBuild() {
-        process?.terminate()
-        process = nil
+    func cancelBuild(_ setup: BuildSetup) {
+        setup.process?.terminate()
+        setup.process = nil
+    }
+
+    func cancelQueue() {
+        for setup in setups {
+            setup.process?.terminate()
+            setup.process = nil
+        }
+        runningIndex = nil
     }
 
     /// Queue one line; the timer publishes the batch a moment later.
-    private func appendLog(_ text: String) {
-        pendingLog.append(text)
-        guard logTimer == nil else { return }
-        logTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.flushLog() }
+    private func appendLog(_ setup: BuildSetup, _ text: String) {
+        setup.pendingLog.append(text)
+        guard setup.logTimer == nil else { return }
+        setup.logTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.flushLog(setup) }
         }
     }
 
-    private func flushLog() {
-        logTimer?.invalidate()
-        logTimer = nil
-        guard !pendingLog.isEmpty else { return }
-        let batch = pendingLog
-        pendingLog.removeAll()
-        log.append(contentsOf: batch)
-        if let last = batch.last, let step = Progress.stage(from: last) { stage = step }
+    private func flushLog(_ setup: BuildSetup) {
+        setup.logTimer?.invalidate()
+        setup.logTimer = nil
+        guard !setup.pendingLog.isEmpty else { return }
+        let batch = setup.pendingLog
+        setup.pendingLog.removeAll()
+        setup.log.append(contentsOf: batch)
+        if let last = batch.last, let step = Progress.stage(from: last) { setup.stage = step }
     }
 
-    private func handle(line: String) {
+    private func handle(setup: BuildSetup, line: String) {
         guard let event = BuildEvent.parse(line) else {
-            if !line.isEmpty { appendLog(line) }
+            if !line.isEmpty { appendLog(setup, line) }
             return
         }
         switch event {
         case .engine(let engine):
             pinned = engine
-            appendLog("Engine: \(engine.source.label) — \(engine.summary)")
+            appendLog(setup, "Engine: \(engine.source.label) — \(engine.summary)")
         case .progress(let update):
             // The engine's live counters: shaders compiled out of the total, files copied, …
-            if let label = Optional(update.label), !label.isEmpty { stage = label }
+            if let label = Optional(update.label), !label.isEmpty { setup.stage = label }
         case .log(let text):
-            appendLog(text)
+            appendLog(setup, text)
         case .error(let message):
-            appendLog("error: \(message)")
-            flushLog()
-            state = .failed(message)
+            appendLog(setup, "error: \(message)")
+            flushLog(setup)
+            setup.state = .failed(message)
         case .result(let result):
-            flushLog()
-            buildAnyway = (result.ok ? nil : result.failure).flatMap { $0.override == nil ? nil : $0 }
-            appURL = result.appPath
+            flushLog(setup)
+            setup.buildAnyway = (result.ok ? nil : result.failure).flatMap { $0.override == nil ? nil : $0 }
+            setup.appURL = result.appPath
             if result.ok {
-                state = .succeeded
-                stage = "done"
+                setup.state = .succeeded
+                setup.stage = "done"
             } else {
-                state = .failed("the engine exited with code \(result.returncode)")
+                setup.state = .failed("the engine exited with code \(result.returncode)")
             }
         case .unknown(let raw):
-            appendLog(raw)
+            appendLog(setup, raw)
         }
     }
 
-    private func finish(exitCode: Int32) {
-        flushLog()
-        process = nil
+    private func finish(setup: BuildSetup, exitCode: Int32) {
+        flushLog(setup)
+        setup.process = nil
         // A build anchors the game's cheat file and files it under the library, so the row now
         // points at `<library>/nx2mac_game_lib/<title id>/mods/cheats/<build>.txt`.
-        Task { await refreshCheatFile() }
+        Task { await refreshCheatFile(setup) }
         Task { await refreshLibrary() }
-        switch state {
+        switch setup.state {
         case .running where exitCode != 0:
-            state = .failed("nx2mac exited with code \(exitCode)")
+            setup.state = .failed("nx2mac exited with code \(exitCode)")
         case .running:
-            state = .succeeded
+            setup.state = .succeeded
         default:
             break  // a result/error event already decided the outcome
+        }
+    }
+
+    // MARK: - Queue
+
+    func addSetup() {
+        setups.append(BuildSetup())
+    }
+
+    func removeSetup(_ setup: BuildSetup) {
+        guard setups.count > 1 else { return }  // always keep at least one
+        setups.removeAll { $0.id == setup.id }
+    }
+
+    /// Run every setup in order, one after another, stopping at the first failure.
+    func startQueue() {
+        guard runningIndex == nil else { return }
+        runNext(from: 0)
+    }
+
+    private func runNext(from index: Int) {
+        guard index < setups.count else {
+            runningIndex = nil
+            return
+        }
+        runningIndex = index
+        let setup = setups[index]
+        startBuild(setup) { [weak self] code in
+            guard let self else { return }
+            let ok = code == 0 || setup.state == .succeeded
+            if ok {
+                self.runNext(from: index + 1)
+            } else {
+                self.runningIndex = nil  // stop the queue; the failed row shows why
+            }
         }
     }
 

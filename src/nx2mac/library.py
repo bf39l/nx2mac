@@ -923,22 +923,33 @@ def parse_cheat_file(text: str, meta: str | None = None) -> list[dict[str, objec
 
 
 def cheat_blocked_reason(cheat: dict[str, object]) -> str | None:
-    """Why this entry must not be switched on here, or None when it is safe.
+    """Why this entry must not be switched on here, or None when it is allowed.
 
-    The three refusals, in the order a build discovers them:
-    * not compiled yet — nothing knows what the entry writes (build the game once);
-    * an instruction patch — the port runs code its rewriter produced;
-    * not anchored — its addresses belong to another build.
+    Only evidence blocks an entry:
+    * the file has not been compiled yet — nothing knows what its addresses mean (build once);
+    * the compile could not anchor it (`no anchors`) — its addresses belong to another build, so a
+      write lands on unrelated code (that is what crashed Dead Cells);
+    * it is not a switchable cheat at all (a label, a one-pass entry, the off half of a pair).
+
+    An entry that *did* anchor — even one that patches code — is allowed: the tool checked that the
+    words it writes are the ones this build has there (Metal Slug Tactics' ZR cheats anchor
+    `exact` and work), and the game's own Cheats menu offers the same. `warning` below says when it
+    writes code, so the UI can mention the risk without hiding the switch.
     """
     if cheat.get("meta_kind") in (None, "") and cheat.get("resolved") in (None, ""):
         return "not checked yet — build the game once so the cheats can be anchored"
-    if cheat.get("meta_kind") == "patch":
-        return "code patch — this port rewrote that code"
     if cheat.get("resolved") == "no anchors":
         return "could not be anchored to this build"
     if not cheat.get("switchable", True):
         return "not a switchable cheat"
     return None
+
+
+def cheat_warning(cheat: dict[str, object]) -> str:
+    """A caution for an allowed entry that rewrites the game's code, or ""."""
+    if cheat.get("meta_kind") in ("patch", "code"):
+        return "writes code — anchored for this build, but the port may have rewritten it"
+    return ""
 
 
 def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
@@ -978,6 +989,7 @@ def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
         ]
         for row in rows:
             row["blocked"] = cheat_blocked_reason(row) if row["switchable"] else None
+            row["warning"] = cheat_warning(row) if row["blocked"] is None and row["switchable"] else ""
         builds.append(
             {
                 "build": build,

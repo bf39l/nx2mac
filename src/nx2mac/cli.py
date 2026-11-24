@@ -642,6 +642,8 @@ def cheats(
                 note = ""
                 if cheat.get("blocked"):
                     note = f"  [yellow]{cheat['blocked']} — cannot be enabled[/]"
+                elif cheat.get("warning"):
+                    note = f"  [dim]{cheat['warning']}[/]"
                 elif cheat["enabled"]:
                     note = "  [green](on)[/]"
                 console.print(f"    {marker} {cheat['name']}{note}")

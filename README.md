@@ -278,7 +278,7 @@ one nx2mac cannot run is marked with the reason and has **no toggle** (`--enable
 | state | shown as |
 | --- | --- |
 | plain data cheat, anchored (`HP`) | toggle, enabled freely |
-| `code patch` (writes the Switch's instructions) | *"code patch — this port rewrote that code"*, no toggle |
+| entry that writes code, anchored `exact` | toggle, with *"writes code — anchored for this build, but the port may have rewritten it"* |
 | `resolved = no anchors` (bound to another build) | *"could not be anchored to this build"*, no toggle |
 | file not compiled yet | *"not checked yet — build the game once…"*, no toggle |
 

@@ -15,7 +15,7 @@ from pathlib import Path
 from . import library as library_mod
 from .cheats import CheatToolError, anchor_build_cheats
 from .doctor import BUILD_PREFLIGHT_EXCLUDE, DoctorContext, run_checks
-from .engines import ResolvedEngine, default_icon_path
+from .engines import ResolvedEngine, fallback_icon_path
 from .inputs import GAME_EXTENSIONS, KEYS_FILENAMES, NSO_EXTENSION, SWITCH1_EXTENSIONS
 from .probe import probe as probe_path
 from .pyenv import ensure_venv
@@ -531,7 +531,7 @@ def run_build(
         extra_args,
         work_dir=work_dir,
         env_file=env_file,
-        fallback_icon=default_icon_path(),
+        fallback_icon=fallback_icon_path(title_id),
     )
     returncode = env.run_stream(argv, cwd=engine.path, on_line=watch)
 

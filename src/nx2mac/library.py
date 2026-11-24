@@ -1023,6 +1023,21 @@ def cheat_anchor_script(engine_root: Path) -> Path | None:
     return script if script.is_file() else None
 
 
+def build_id_of_app(app: Path | None) -> str | None:
+    """The game build ID a packed Mac app records (`# BUILD_ID <hex>` in dm/main.fixups.tsv)."""
+    if app is None:
+        return None
+    fixups = app / "Contents" / "Resources" / "dm" / "main.fixups.tsv"
+    try:
+        for line in fixups.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("# BUILD_ID"):
+                candidate = line.split()[-1].strip().upper()
+                return candidate if _is_build_id(candidate) else None
+    except OSError:
+        return None
+    return None
+
+
 def import_cheats(library: Path, title_id: str, sources: Sequence[Path], enable: bool = False) -> list[Path]:
     """Copy a cheat file in, replacing whatever was there (one cheat file per game)."""
     """Copy cheat files (`<build id>.txt`, and a sibling `.meta.tsv`) into the game's folder.
@@ -1041,11 +1056,19 @@ def import_cheats(library: Path, title_id: str, sources: Sequence[Path], enable:
         if path.suffix.lower() == ".tsv" and stem.endswith(".meta"):
             stem = stem[: -len(".meta")]
         if not _is_build_id(stem):
-            raise LibraryError(
-                f"{path.name} is not named after a build ID (16 hex digits, e.g. 6E35EE0A24029143.txt); "
-                "cheat sites name their files that way"
-            )
-        target = folder / path.name
+            # A pasted/renamed file: name it after the built game's build ID, which is what the host
+            # matches the file against (the app records it in dm/main.fixups.tsv).
+            detected = build_id_of_app(next(iter(sorted(app_root(library).glob("*.app"))), None))
+            if path.suffix.lower() in (".txt", ".tsv") and detected:
+                stem = detected
+            else:
+                raise LibraryError(
+                    f"{path.name} is not named after a build ID (16 hex digits, e.g. {detected or '6E35EE0A24029143'}.txt); "
+                    "cheat sites name their files that way"
+                )
+        suffix = ".tsv" if path.name.endswith(".meta.tsv") else path.suffix
+        renamed = path.name if path.name.startswith(stem) else f"{stem}{'.meta.tsv' if suffix == '.tsv' else suffix}"
+        target = folder / renamed
         data = path.read_text(encoding="utf-8", errors="replace")
         rebased, changed = rebase_cheats(data)
         if changed:

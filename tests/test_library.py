@@ -619,3 +619,19 @@ def test_unanchored_entries_lose_their_code(tmp_path: Path) -> None:
     assert dropped == ["Credits"]
     assert "{Credits}" in cleaned and "11111111" not in cleaned  # header kept, code gone
     assert "04010000 0013AAA4 00005431" in cleaned  # the anchored one keeps its code
+
+
+def test_import_names_a_pasted_file_after_the_build_id(tmp_path: Path) -> None:
+    """A pasted cheat file is stored as <build id>.txt, which is what the host matches."""
+    library = _library(tmp_path)
+    app = _app(library)
+    (app / "Contents" / "Resources" / "dm").mkdir(parents=True, exist_ok=True)
+    (app / "Contents" / "Resources" / "dm" / "main.fixups.tsv").write_text(
+        "# BUILD_ID 6E35EE0A24029143\n", encoding="utf-8"
+    )
+    pasted = tmp_path / "zr-cheats.txt"
+    pasted.write_text("[按住ZR 生命值]\n04000000 04800158 4B140108\n", encoding="utf-8")
+
+    written = import_cheats(library, TID, [pasted])
+
+    assert [path.name for path in written] == ["6E35EE0A24029143.txt"]

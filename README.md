@@ -3,9 +3,9 @@
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><img src="https://img.shields.io/github/v/release/bf39l/nx2mac?color=5959ed&label=download" alt="latest release"></a>
+  <a href=".github/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/bf39l/nx2mac/ci.yml?branch=main&label=build&logo=github&logoColor=white&color=5959ed" alt="build status"></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/github/v/release/bf39l/nx2mac?color=2ed1c2&label=download" alt="latest release"></a>
   <img src="https://img.shields.io/badge/macOS-14%2B%20%C2%B7%20arm64-0e1116?logo=apple&logoColor=white" alt="macOS 14+ arm64">
-  <a href=".github/workflows/ci.yml"><img src="https://github.com/bf39l/nx2mac/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/python-3.11%2B-2ed1c2" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/swift-5.9%2B-f05138?logo=swift&logoColor=white" alt="Swift">
   <img src="https://img.shields.io/badge/license-MIT-5959ed" alt="MIT">

@@ -478,15 +478,15 @@ def run_build(
 
     title_id = title_id_of(game) if (library is not None or out_dir is not None) else None
     key = title_id or library_mod.safe_name(game.path.stem if game.path.is_file() else game.path.name)
-    # The app icon lives beside the game's data; fetch the known art now, before the build, so a
-    # game that carries none (a Switch 2 NUP, a dump) still gets its real icon.
     game_folder: Path | None = library_mod.game_root(library, key) if library is not None else None
-    icons.ensure_game_icon(game_folder, title_id, env)
     work_dir: Path | None = None
     env_file: Path | None = None
     if library is not None:
         # keeps the engine's support dir, logs, saves, cheats and screenshots here
-        env_file = library_mod.write_build_env(library, key)
+        env_file = library_mod.write_build_env(library, key)  # also creates the game folder
+        # The app icon lives beside the game's data; fetch the known art once the folder exists, so
+        # a game that carries none (a Switch 2 NUP, a dump) still gets its real icon.
+        icons.ensure_game_icon(game_folder, title_id, env)
         work_dir = library_mod.build_dir(library, key)
         out_dir = library_mod.app_root(library)
         if output is None:

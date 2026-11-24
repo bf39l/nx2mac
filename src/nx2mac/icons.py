@@ -87,6 +87,7 @@ def download_icon(title_id: str, dest: Path, env: Env, timeout: float = 20.0) ->
         return False
     if not data or not _is_image(data):
         return False
+    dest.parent.mkdir(parents=True, exist_ok=True)  # the game's library folder may not exist yet
     raw = dest.with_name(dest.name + ".download")
     raw.write_bytes(data)
     try:

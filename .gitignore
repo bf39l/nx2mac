@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 build/
+.build/
 dist/
 .cache/
 logs/
@@ -15,3 +16,8 @@ logs/
 
 # Local project memory (kept out of version control)
 .memory/
+
+# Swift GUI build products
+gui/.build/
+*.xcodeproj
+.DS_Store

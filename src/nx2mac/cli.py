@@ -403,45 +403,62 @@ def clean(
     manifests: bool = typer.Option(
         False, "--manifests", help="also remove each game's <Game>.nx2mac.json (rebuilt next time)."
     ),
+    cache: bool = typer.Option(
+        False,
+        "--cache",
+        help="also drop nx2mac's own scratch caches (staging + managed venv). Never the engine checkouts.",
+    ),
 ) -> None:
-    """Delete the extracted files and shader caches of finished builds (the game itself stays)."""
+    """Delete what a finished build no longer needs: extracted files, shader caches, temp files.
+
+    It only ever touches nx2mac's own data — `game_lib/<TITLEID>/build`, the `temp` folders, and
+    (with `--manifests`) the sidecar. The app, the saves, the engine checkouts and your game dumps
+    are never removed.
+    """
     machine_readable = _enter(ctx, json_flag)
     cfg = load_config()
     libraries = [library_mod.require_library(library)] if library is not None else [
         Path(entry) for entry in cfg.library_dirs
     ]
-    if not libraries:
+    if not libraries and not cache:
         _fail(ctx, "no game library set; add one with `nx2mac library --add <folder>`")
 
     removed: list[dict[str, object]] = []
+
+    def drop(target: Path, what: str, name: str) -> None:
+        """Remove one path we own, reporting how much it freed."""
+        if not target.exists():
+            return
+        size = sum(path.stat().st_size for path in target.rglob("*") if path.is_file()) if target.is_dir() else target.stat().st_size
+        shutil.rmtree(target, ignore_errors=True) if target.is_dir() else target.unlink(missing_ok=True)
+        removed.append({"game": name, "path": str(target), "freed": size, "what": what})
+
     for directory in libraries:
         games = [library_mod.find_game(directory, game)] if game else library_mod.list_games(directory)
         for entry in games:
             if not entry.title_id:
                 continue
-            build = library_mod.build_dir(directory, entry.title_id)
-            if not build.is_dir():
-                continue
-            size = sum(path.stat().st_size for path in build.rglob("*") if path.is_file())
-            shutil.rmtree(build, ignore_errors=True)
-            removed.append({"game": entry.name, "path": str(build), "freed": size})
+            # only nx2mac's own folders, inside the game's folder in the library
+            drop(library_mod.build_dir(directory, entry.title_id), "build", entry.name)
+            drop(library_mod.support_dir(directory, entry.title_id) / "temp", "temp", entry.name)
+            if manifests and entry.app_path is not None:
+                drop(entry.app_path.with_suffix(".nx2mac.json"), "manifest", entry.name)
 
-            manifest = (entry.app_path or build).with_suffix(".nx2mac.json")
-            if manifests and manifest.is_file():
-                freed = manifest.stat().st_size
-                manifest.unlink()
-                removed.append({"game": entry.name, "path": str(manifest), "freed": freed})
+    if cache:
+        root = cache_root()
+        drop(root / "staging", "staging", "nx2mac")
+        drop(root / "python", "venv", "nx2mac")
 
     if machine_readable:
         emit.emit({"removed": removed, "freed": sum(int(item["freed"]) for item in removed)})
         return
     if not removed:
-        console.print("[dim]Nothing to clean: no build folders left.[/]")
+        console.print("[dim]Nothing to clean.[/]")
         return
     for item in removed:
-        console.print(f"[green]Removed[/] {item['path']} [dim]({int(item['freed']) / 2**30:.2f} GB)[/]")
+        console.print(f"[green]Removed[/] {item['path']} [dim]({int(item['freed']) / 2**20:.0f} MB)[/]")
     console.print(f"[bold]Freed {sum(int(item['freed']) for item in removed) / 2**30:.2f} GB.[/] "
-                  "The games keep running; the next build extracts again.")
+                  "The app, its saves, the engine checkout and your dumps are untouched.")
 
 
 @app.command()

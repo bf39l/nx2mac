@@ -174,7 +174,10 @@ nx2mac clean --game "Dead Cells"           # one game
 nx2mac clean --manifests                   # also the <Game>.nx2mac.json sidecars
 ```
 
-The app and its saves stay; the next build extracts again (a few minutes). The GUI offers the same
+It only ever removes nx2mac's own data — `game_lib/<TITLEID>/build` and `temp` folders,
+`--manifests` adds the sidecar, `--cache` adds nx2mac's staging folder and managed venv. **The app,
+its saves, the engine checkout and your game dumps are never touched**; the next build extracts
+again (a few minutes). The GUI offers the same
 as **Clean build files** right after a build finishes (it also removes the
 `<Game>.nx2mac.json` — the next build writes a fresh one).
 

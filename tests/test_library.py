@@ -392,3 +392,45 @@ def test_each_player_syncs_to_its_own_cloud_folder(tmp_path: Path) -> None:
 
     assert f"DM_SAVE_SYNC={cloud / 'players' / ada.id}" in text
     assert cloud_value(cloud, ada.id) == str(cloud / "players" / ada.id)
+
+
+def test_clean_never_touches_the_app_its_saves_the_engine_or_a_dump(tmp_path: Path, monkeypatch) -> None:
+    """`nx2mac clean` only removes nx2mac's own build/temp folders and the sidecar."""
+    from typer.testing import CliRunner
+
+    from nx2mac.cli import app
+
+    library = _library(tmp_path)
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("NX2MAC_CACHE_ROOT", str(cache))
+    dump = tmp_path / "Dump" / "Game [0100646009FBE000]"
+    dump.mkdir(parents=True)
+    (dump / "base.nsp").write_bytes(b"save me")
+    engine = cache / "engines" / "bf39l-nxnative_main"
+    (engine / "scripts").mkdir(parents=True)
+    (engine / "scripts" / "build_ipa_from_nsp.py").write_text("x", encoding="utf-8")
+
+    app_path = _app(library)
+    write_manifest(app_path.with_suffix(".nx2mac.json"), name="Dead Cells", app_path=app_path, title_id=TID,
+                   version="1.25.0", engine_source="fork", engine_ref="main",
+                   engine_commit="c" * 40, patches=(), inputs={"game": str(dump)})
+    build = build_dir(library, TID)
+    (build / "extract").mkdir(parents=True)
+    (build / "extract" / "big.bin").write_bytes(b"\x00" * 4096)
+    temp = support_dir(library, TID) / "temp"
+    temp.mkdir(parents=True)
+    store = save_dir(library, TID)
+    store.mkdir(parents=True)
+    (store / "save.dat").write_bytes(b"progress")
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["clean", "--library", str(library), "--manifests"])
+
+    assert result.exit_code == 0
+    assert not build.exists() and not temp.exists()  # nx2mac's own folders go
+    assert not app_path.with_suffix(".nx2mac.json").exists()  # asked for with --manifests
+    assert app_path.is_dir()  # the game stays
+    assert (store / "save.dat").is_file()  # the save stays
+    assert (dump / "base.nsp").is_file()  # the dump stays
+    assert (engine / "scripts" / "build_ipa_from_nsp.py").is_file()  # the engine stays

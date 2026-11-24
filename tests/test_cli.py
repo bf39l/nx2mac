@@ -501,11 +501,11 @@ def test_build_json_emits_progress_events(isolated_paths: Path, monkeypatch: pyt
     """The engine's --progress json is translated: a log line and a progress event for the UI."""
     tmp = isolated_paths
     env = _make_env(tmp)
-    env.stream_lines = [
-        '{"ev": "stage", "k": 6, "n": 8, "name": "Mac shaders", "step": "compiling"}',
+    counted = (
         '{"ev": "progress", "k": 6, "name": "Mac shaders", "step": "compiling", "done": 721, '
-        '"total": 1262, "unit": "shaders"}',
-    ]
+        '"total": 1262, "unit": "shaders"}'
+    )
+    env.stream_lines = ['{"ev": "stage", "k": 6, "n": 8, "name": "Mac shaders", "step": "compiling"}', counted]
     _prepare_checkout(tmp)
     monkeypatch.setattr(cli_module, "_get_env", lambda: env)
 

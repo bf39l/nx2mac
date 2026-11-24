@@ -128,7 +128,7 @@ support dir, logs, saves, cheats and screenshots inside that folder instead of `
 | --- | --- |
 | `DM_SUPPORT_DIR` | `<game>/support` (its env.txt, temp, user registry) — added by our patch |
 | `DM_LOG_DIR` | `<game>/logs` — added by our patch |
-| `DM_SAVE` / `DM_CHEATS` / `DM_ALBUM_DIR` | `save/<TID>/save` (or `…/profiles/<player>`), `cheats/<TID>`, `screenshots/<TID>` |
+| `DM_SAVE` / `DM_CHEATS` / `DM_ALBUM_DIR` | `<TID>/save` (players: `<TID>/players/<player>/save`), `<TID>/mods/cheats`, `<TID>/screenshots` |
 | `DM_PSO_USER` | `save/<TID>/pso_user.tsv` — the shared pipeline cache, one per game |
 | `DM_SAVE_SYNC` | the synced folder from `nx2mac cloud --set` (off by default) |
 

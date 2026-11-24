@@ -30,20 +30,25 @@ from .inputs import GAME_EXTENSIONS
 #: Manifest written into every library game folder.
 MANIFEST_NAME: str = "nx2mac.json"
 
-#: The library's own layout, keyed by title ID (NX2Apple keeps saves the same way):
-#:   save/<TID>/save/       DM_SAVE - the base store (its .users/.work siblings land in <TID>/)
-#:   save/<TID>/profiles/   one store per player
-#:   save/<TID>/pso_user.tsv  DM_PSO_USER - the game's shared pipeline cache
-#:   logs/<TID>.log         DM_LOG_DIR=<library>/logs (the launcher names the file)
-#:   mods/<TID>/            the game's mods: <mod>/romfs (or atmosphere/contents/<TID>/romfs)
-#:   mods/<TID>/cheats/     DM_CHEATS - cheat files live in the mods tree, like NX2Apple
-#:   screenshots/<TID>/     DM_ALBUM_DIR
-#:   support/<TID>/         DM_SUPPORT_DIR - the engine's state, env.txt, temp
-#:   build/<TID>_build/     the engine's work folder
+#: One folder per game, holding everything it writes (kept like NX2Apple's layout):
+#:   <chosen folder>/game_lib/<Game>.app              the built app
+#:   <chosen folder>/game_lib/<Game>.nx2mac.json      what was built, from which engine
+#:   <chosen folder>/game_lib/players.json            the library's players (every game)
+#:   <chosen folder>/game_lib/<TITLEID>/
+#:   ├── save/                         DM_SAVE - the base store (save.users/.work land here)
+#:   ├── players/<player>/save         one store per player
+#:   ├── mods/<mod>/romfs              mods (atmosphere/contents/<TID>/romfs also accepted)
+#:   ├── mods/cheats/                  DM_CHEATS
+#:   ├── logs/                         DM_LOG_DIR - the launcher writes <TITLEID>.log here
+#:   ├── screenshots/                  DM_ALBUM_DIR
+#:   ├── support/                      DM_SUPPORT_DIR - env.txt, temp
+#:   ├── build/                        the engine's work folder
+#:   └── pso_user.tsv                  DM_PSO_USER - the shared pipeline cache
 LIBRARY_DIRS: tuple[str, ...] = ("save", "logs", "mods", "screenshots", "support", "build")
 
-#: Marks a folder as an nx2mac library (NX2Apple uses the same idea).
-LIBRARY_MARKER: str = ".nx2mac-library"
+#: nx2mac keeps everything in this visible sub-folder of the folder the user chose —
+#: no dot-files, and the user's own folder stays as they left it.
+LIBRARY_SUBDIR: str = "game_lib"
 
 #: Sub-directories a per-game folder keeps (older layout, still read).
 GAME_SUBDIRS: tuple[str, ...] = ("saves", "logs", "mods", "cheats", "screenshots", "support")
@@ -130,7 +135,7 @@ class GameEntry:
             tid = self.title_id
             folders = {
                 "saves": game_save_root(self.library, tid),
-                "logs": logs_dir(self.library),
+                "logs": logs_dir(self.library, tid),
                 "mods": mods_dir(self.library, tid),
                 "cheats": cheats_dir(self.library, tid),
                 "screenshots": screenshots_dir(self.library, tid),
@@ -191,7 +196,7 @@ def _slug(text: str, taken: set[str]) -> str:
 
 def players_file(library: Path) -> Path:
     """The library's player list (one list for every game, as NX2Apple keeps it)."""
-    return library / PLAYERS_FILE
+    return root_of(library) / PLAYERS_FILE
 
 
 def load_players(library: Path) -> tuple[list[Player], str | None]:
@@ -221,7 +226,7 @@ def save_players(library: Path, players: list[Player], active: str | None) -> Pa
 
 def player_save_dir(library: Path, title_id: str, player_id: str) -> Path:
     """A player's own save store (what DM_SAVE points at), like NX2Apple's profiles."""
-    return profiles_dir(library, title_id) / player_id
+    return profiles_dir(library, title_id) / player_id / "save"
 
 
 def active_player(library: Path) -> Player | None:
@@ -353,22 +358,34 @@ def app_metadata(app: Path) -> dict[str, str | None]:
     return {"name": name, "title_id": title_id, "version": str(info.get("CFBundleShortVersionString") or "") or None}
 
 
+def root_of(folder: Path) -> Path:
+    """nx2mac's own folder inside the one the user chose (`<chosen>/game_lib`)."""
+    resolved = folder.expanduser()
+    if resolved.name == LIBRARY_SUBDIR:
+        return resolved
+    return resolved / LIBRARY_SUBDIR
+
+
 def is_library(folder: Path) -> bool:
-    """Whether *folder* is an nx2mac library (marker file, or games filed into it)."""
-    return (folder / LIBRARY_MARKER).is_file() or any(folder.glob("*.app"))
+    """Whether this folder holds an nx2mac library (the visible `game_lib` folder)."""
+    return (folder.expanduser() / LIBRARY_SUBDIR).is_dir() or any(folder.expanduser().glob("*.app"))
 
 
 def mark_library(folder: Path) -> Path:
-    """Mark the folder as a library so later setups recognise it."""
-    marker = folder / LIBRARY_MARKER
-    if not marker.exists():
-        marker.write_text("", encoding="utf-8")
-    return marker
+    """Create nx2mac's folder inside the user's choice (nothing hidden is written)."""
+    root = root_of(folder)
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def game_root(library: Path, title_id: str) -> Path:
+    """Everything one game writes: `<library>/game_lib/<TITLEID>/`."""
+    return root_of(library) / title_id
 
 
 def game_save_root(library: Path, title_id: str) -> Path:
-    """Everything one game saves: `<library>/save/<TID>/`."""
-    return library / "save" / title_id
+    """This game's save folder (the store and its players live inside it)."""
+    return game_root(library, title_id) / "save"
 
 
 def save_dir(library: Path, title_id: str) -> Path:
@@ -378,26 +395,30 @@ def save_dir(library: Path, title_id: str) -> Path:
     `<store>.work`, `<store>_device`) stay inside the game's `<TITLEID>/` folder
     instead of scattering over `save/`.
     """
-    return game_save_root(library, title_id) / "save"
+    return game_save_root(library, title_id)
 
 
 def pso_user_path(library: Path, title_id: str) -> Path:
     """The game's shared pipeline cache (DM_PSO_USER), one per game."""
-    return game_save_root(library, title_id) / "pso_user.tsv"
+    return game_root(library, title_id) / "pso_user.tsv"
 
 
 def profiles_dir(library: Path, title_id: str) -> Path:
     """Where the players of one game keep their own stores."""
-    return game_save_root(library, title_id) / "profiles"
+    return game_root(library, title_id) / "players"
 
 
-def logs_dir(library: Path) -> Path:
-    """One shared log folder: the launcher names each file <TITLEID>.log."""
-    return library / "logs"
+def logs_dir(library: Path, title_id: str) -> Path:
+    """This game's log folder: the launcher writes <TITLEID>/<TITLEID>.log inside it.
+
+    One folder per title keeps the shape of every other kind (`<kind>/<TITLEID>/…`),
+    and the engine names the file itself.
+    """
+    return game_root(library, title_id) / "logs"
 
 
 def mods_dir(library: Path, title_id: str) -> Path:
-    return library / "mods" / title_id
+    return game_root(library, title_id) / "mods"
 
 
 def cheats_dir(library: Path, title_id: str) -> Path:
@@ -406,17 +427,17 @@ def cheats_dir(library: Path, title_id: str) -> Path:
 
 
 def screenshots_dir(library: Path, title_id: str) -> Path:
-    return library / "screenshots" / title_id
+    return game_root(library, title_id) / "screenshots"
 
 
 def support_dir(library: Path, title_id: str) -> Path:
     """The engine's state folder for this game (DM_SUPPORT_DIR)."""
-    return library / "support" / title_id
+    return game_root(library, title_id) / "support"
 
 
 def build_dir(library: Path, title_id: str) -> Path:
     """The engine's work folder for this game."""
-    return library / "build" / f"{title_id}_build"
+    return game_root(library, title_id) / "build"
 
 
 def support_env_path(support: Path) -> Path:
@@ -433,9 +454,9 @@ def ensure_layout(library: Path, title_id: str) -> Path:
     """Create every folder this game uses in the library, and mark the library."""
     mark_library(library)
     for directory in (
+        game_root(library, title_id),
         save_dir(library, title_id),
-        game_save_root(library, title_id),
-        logs_dir(library),
+        logs_dir(library, title_id),
         mods_dir(library, title_id),
         cheats_dir(library, title_id),
         screenshots_dir(library, title_id),
@@ -456,7 +477,7 @@ def write_build_env(library: Path, title_id: str) -> Path:
     support = ensure_layout(library, title_id)
     managed = {
         "DM_SUPPORT_DIR": str(support),
-        "DM_LOG_DIR": str(logs_dir(library)),
+        "DM_LOG_DIR": str(logs_dir(library, title_id)),
         "DM_SAVE": str(save_dir(library, title_id)),
         "DM_PSO_USER": str(pso_user_path(library, title_id)),
         "DM_TEMP": str(support / "temp"),
@@ -622,7 +643,7 @@ def _entry(directory: Path, app: Path | None, manifest_path: Path | None = None)
 
 
 def _is_game_folder(directory: Path) -> bool:
-    """A built game: nx2mac's manifest, or an app bundle somebody built/put here."""
+    """An older per-game folder: a manifest or an app bundle inside it."""
     if (directory / MANIFEST_NAME).is_file():
         return True
     return any(directory.glob("*.app"))
@@ -637,10 +658,11 @@ def list_games(library: Path) -> list[GameEntry]:
     listed too, since `-o` can put them there.
     """
     entries: list[GameEntry] = []
-    if not library.is_dir():
+    base = root_of(library)
+    if not base.is_dir():
         return entries
 
-    for directory in sorted(library.iterdir()):
+    for directory in sorted(base.iterdir()):
         if not directory.is_dir() or directory.name.startswith("."):
             continue
         if not _is_game_folder(directory):
@@ -648,8 +670,8 @@ def list_games(library: Path) -> list[GameEntry]:
         entry = _entry(directory, next(iter(sorted(directory.glob("*.app"))), None))
         entries.append(replace(entry, library=library))
 
-    for app in sorted(library.glob("*.app")):
-        entry = _entry(library, app, manifest_path=app.with_suffix(".nx2mac.json"))
+    for app in sorted(base.glob("*.app")):
+        entry = _entry(base, app, manifest_path=app.with_suffix(".nx2mac.json"))
         entries.append(replace(entry, library=library))
 
     # "Recently played" first (like NX2Apple), then newest build, then name.
@@ -677,8 +699,10 @@ def find_game(library: Path, needle: str) -> GameEntry:
         wanted_path = wanted_path.resolve()
     except OSError:
         wanted_path = Path(raw)
+    root = root_of(library)
     for entry in list_games(library):
-        if entry.path.resolve() == wanted_path:
+        candidates = {entry.path.resolve(), (entry.app_path or entry.path).resolve()}
+        if wanted_path in candidates or wanted_path in {root, root.parent}:
             return entry
         if wanted in {entry.path.name.lower(), entry.name.lower(), (entry.title_id or "").lower()}:
             return entry

@@ -392,31 +392,32 @@ def test_run_build_files_the_game_into_the_library(tmp_path: Path, monkeypatch) 
     result = run_build(env, cache, _engine(tmp_path), package, prod_keys=keys, library_dir=library)
 
     tid = "0100646009FBE000"
-    assert result.library_dir == library.resolve() and result.out_dir == library.resolve()
+    assert result.library_dir == (library / "game_lib").resolve()
+    assert result.out_dir == (library / "game_lib").resolve()
     # the app is renamed to the game's own name and carries a sidecar manifest
-    assert result.app_path == library / "Dead Cells.app"
-    manifest = json.loads((library / "Dead Cells.nx2mac.json").read_text(encoding="utf-8"))
+    assert result.app_path == library / "game_lib" / "Dead Cells.app"
+    manifest = json.loads((library / "game_lib" / "Dead Cells.nx2mac.json").read_text(encoding="utf-8"))
     assert manifest["name"] == "Dead Cells" and manifest["title_id"] == tid
     assert manifest["engine"]["commit"] == SHA
     # everything the game writes is in the library, keyed by the title ID
-    assert result.work_dir == library / "build" / f"{tid}_build"
+    assert result.work_dir == library / "game_lib" / tid / "build"
     argv = env.stream_calls[0][0]
-    assert argv[argv.index("--work-dir") + 1] == str(library / "build" / f"{tid}_build")
-    build_env = (library / "support" / tid / "build-env.txt").read_text(encoding="utf-8")
-    assert f"DM_SUPPORT_DIR={library / 'support' / tid}" in build_env
-    assert f"DM_LOG_DIR={library / 'logs'}" in build_env
-    assert f"DM_SAVE={library / 'save' / tid}" in build_env
+    assert argv[argv.index("--work-dir") + 1] == str(library / "game_lib" / tid / "build")
+    build_env = (library / "game_lib" / tid / "support" / "build-env.txt").read_text(encoding="utf-8")
+    assert f"DM_SUPPORT_DIR={library / 'game_lib' / tid / 'support'}" in build_env
+    assert f"DM_LOG_DIR={library / 'game_lib' / tid / 'logs'}" in build_env
+    assert f"DM_SAVE={library / 'game_lib' / tid / 'save'}" in build_env
     for directory in ("logs", "screenshots", "mods", "save", "support", "build"):
-        assert (library / directory).is_dir()
+        assert (library / "game_lib" / tid / directory).is_dir()
     # cheats live inside the game's mods folder, as NX2Apple keeps them
-    assert (library / "mods" / tid / "cheats").is_dir()
+    assert (library / "game_lib" / tid / "mods" / "cheats").is_dir()
     assert not (library / "cheats").exists()
     # and the scan sees it
     from nx2mac.library import list_games
 
     entries = list_games(library)
     assert [entry.name for entry in entries] == ["Dead Cells"] and entries[0].version == "1.25.0"
-    assert str(entries[0].to_dict()["saves"]) == str(library / "save" / tid)
+    assert str(entries[0].to_dict()["saves"]) == str(library / "game_lib" / tid / "save")
 
 
 def test_rebuilding_replaces_the_app_in_place(tmp_path: Path, monkeypatch) -> None:
@@ -445,9 +446,9 @@ def test_rebuilding_replaces_the_app_in_place(tmp_path: Path, monkeypatch) -> No
     run_build(env, cache, _engine(tmp_path), package, prod_keys=keys, library_dir=library)
     second = run_build(env, cache, _engine(tmp_path), package, prod_keys=keys, library_dir=library)
 
-    assert second.app_path == library / "Dead Cells.app"
+    assert second.app_path == library / "game_lib" / "Dead Cells.app"
     assert (library / "keep.me").is_file()  # nothing else clobbered
-    assert [p.name for p in library.glob("*.app")] == ["Dead Cells.app"]  # no duplicate
+    assert [p.name for p in (library / "game_lib").glob("*.app")] == ["Dead Cells.app"]  # no duplicate
 
 
 def test_run_build_rejects_a_missing_library(tmp_path: Path, monkeypatch) -> None:

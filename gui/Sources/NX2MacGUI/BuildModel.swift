@@ -289,6 +289,11 @@ final class BuildModel: ObservableObject {
         await runLibraryCommand(["--remove", directory])
     }
 
+    /// Forget every library folder (nothing on disk is removed).
+    func clearLibraries() async {
+        await runLibraryCommand(["--clear"])
+    }
+
     /// Run a `library` sub-command and refresh what the tab shows.
     private func runLibraryCommand(_ extra: [String]) async {
         guard let cli else { return }
@@ -307,6 +312,27 @@ final class BuildModel: ObservableObject {
         games = payload.games
         await refreshPlayers()
         await refreshCloud()
+    }
+
+    /// Delete the extracted files and shader caches of finished builds (the app stays).
+    @discardableResult
+    func cleanBuilds(game: String? = nil) async -> String? {
+        guard let cli else { return nil }
+        var arguments = ["clean", "--json"]
+        if let game { arguments += ["--game", game] }
+        guard let result = try? await Self.run(cli, arguments),
+              let data = result.stdout.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(CleanPayload.self, from: data)
+        else { return nil }
+        let freed = ByteCountFormatter.string(fromByteCount: Int64(payload.freed), countStyle: .file)
+        log.append(payload.removed.isEmpty ? "Nothing to clean." : "Cleaned build files: freed \(freed).")
+        return freed
+    }
+
+    private struct CleanPayload: Decodable {
+        let freed: Int
+        let removed: [Removed]
+        struct Removed: Decodable { let game: String; let path: String }
     }
 
     /// Keep saves local and copy them into a synced folder (iCloud Drive, Dropbox, …).

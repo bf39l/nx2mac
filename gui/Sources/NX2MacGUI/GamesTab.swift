@@ -26,7 +26,6 @@ struct GamesTab: View {
                 }
                 Spacer()
                 if !model.libraryDirs.isEmpty {
-                    libraryMenu
                     cloudMenu
                     playerPicker
                     Button {
@@ -40,36 +39,85 @@ struct GamesTab: View {
 
             Divider()
 
+            libraryList
             content
         }
         .task { await model.refreshLibrary() }
     }
 
-    /// The library folders: add another one, or forget one.
-    private var libraryMenu: some View {
-        Menu {
-            ForEach(Array(model.libraryDirs.enumerated()), id: \.offset) { _, directory in
-                Menu(directory) {
-                    Button("Reveal in Finder") {
-                        NSWorkspace.shared.open(URL(fileURLWithPath: directory))
-                    }
-                    Button("Remove from libraries") {
-                        Task { await model.removeLibrary(directory) }
-                    }
+    /// The library folders, one row each (like the DLC list): remove one, add another.
+    @ViewBuilder
+    private var libraryList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text("Libraries").font(.callout.weight(.medium))
+                Text(model.libraryDirs.isEmpty ? "none yet" : "\(model.libraryDirs.count)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Add…") { chooseLibrary() }
+                if model.libraryDirs.count > 1 {
+                    Button("Clear all…") { confirmClearLibraries() }
                 }
             }
-            Divider()
-            Button("Add folder…") { chooseLibrary() }
-            if !model.libraryError.isEmpty {
-                Divider()
-                Text(model.libraryError)
+            if !model.libraryDirs.isEmpty {
+                VStack(spacing: 2) {
+                    ForEach(Array(model.libraryDirs.enumerated()), id: \.offset) { _, directory in
+                        HStack(spacing: 6) {
+                            Image(systemName: "folder")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text(directory)
+                                .font(.caption.monospaced())
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .help(directory)
+                            Spacer(minLength: 4)
+                            Button {
+                                confirmRemoveLibrary(directory)
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                            .help("Remove this library (nothing on disk is deleted)")
+                        }
+                        .padding(.vertical, 1)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, SelectionList.padding / 2)
+                .frame(height: SelectionList.height(for: model.libraryDirs.count))
+                .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
             }
-        } label: {
-            Label("Library", systemImage: "folder.badge.plus")
+            if !model.libraryError.isEmpty {
+                Text(model.libraryError).font(.caption2).foregroundStyle(.orange)
+            }
         }
-        .menuStyle(.borderlessButton)
-        .frame(width: 105)
-        .help("Folders that hold your built games (more than one is fine)")
+    }
+
+    /// Forgetting a library never deletes anything: say so before it happens.
+    private func confirmRemoveLibrary(_ directory: String) {
+        let alert = NSAlert()
+        alert.messageText = "Remove this library?"
+        alert.informativeText = "\(directory)\n\nnx2mac forgets the folder; the games, saves and mods in it "
+            + "stay exactly where they are."
+        alert.addButton(withTitle: "Remove")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task { await model.removeLibrary(directory) }
+    }
+
+    private func confirmClearLibraries() {
+        let alert = NSAlert()
+        alert.messageText = "Clear every library?"
+        alert.informativeText = "nx2mac forgets all \(model.libraryDirs.count) folders. Nothing on disk is deleted; "
+            + "add a folder again to see its games."
+        alert.addButton(withTitle: "Clear")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task { await model.clearLibraries() }
     }
 
     private func chooseLibrary() {

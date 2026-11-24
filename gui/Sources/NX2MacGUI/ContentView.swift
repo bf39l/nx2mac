@@ -330,6 +330,13 @@ struct BuildTab: View {
                         NSWorkspace.shared.activateFileViewerSelecting([app])
                     }
                     Button("Open") { NSWorkspace.shared.open(app) }
+                    Button {
+                        Task { await model.cleanBuilds() }
+                    } label: {
+                        Label("Clean build files", systemImage: "trash")
+                    }
+                    .help("Delete the extracted files and shader caches — the app keeps working, "
+                          + "the next build extracts them again")
                 }
             case .failed(let message):
                 Label(message, systemImage: "xmark.octagon.fill")

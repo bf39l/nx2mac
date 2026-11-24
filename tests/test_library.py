@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from nx2mac.library import (
-    LIBRARY_MARKER,
+    LIBRARY_SUBDIR,
     MAX_PLAYERS,
     PLAYERS_FILE,
     LibraryError,
@@ -35,7 +35,6 @@ from nx2mac.library import (
     describe_library,
     ensure_layout,
     find_game,
-    game_save_root,
     is_library,
     list_games,
     load_players,
@@ -61,6 +60,7 @@ TID = "0100646009FBE000"
 
 
 def _library(tmp_path: Path) -> Path:
+    """The folder the user picked; nx2mac keeps its files in `<it>/game_lib`."""
     library = tmp_path / "Games"
     library.mkdir()
     return library
@@ -104,7 +104,7 @@ def test_a_game_dump_cannot_be_the_library(tmp_path: Path) -> None:
     # an empty folder, or one that only holds built apps, is fine
     library = _library(tmp_path)
     assert check_library_choice(library) == library.resolve()
-    _app(library)
+    _app(library / LIBRARY_SUBDIR)
     assert check_library_choice(library) == library.resolve()
 
 
@@ -119,18 +119,18 @@ def test_ensure_layout_creates_one_folder_per_kind_and_marks_the_library(tmp_pat
 
     support = ensure_layout(library, TID)
 
-    assert support == library / "support" / TID
+    assert support == library / LIBRARY_SUBDIR / TID / "support"
     for directory in (
         save_dir(library, TID),
-        logs_dir(library),
+        logs_dir(library, TID),
         mods_dir(library, TID),
         cheats_dir(library, TID),
         screenshots_dir(library, TID),
         build_dir(library, TID),
     ):
         assert directory.is_dir()
-    assert (library / LIBRARY_MARKER).is_file() and is_library(library)
-    assert build_dir(library, TID).name == f"{TID}_build"
+    assert (library / LIBRARY_SUBDIR).is_dir() and is_library(library)
+    assert build_dir(library, TID) == library / LIBRARY_SUBDIR / TID / "build"
 
 
 def test_build_env_points_every_kind_at_the_library(tmp_path: Path) -> None:
@@ -141,9 +141,9 @@ def test_build_env_points_every_kind_at_the_library(tmp_path: Path) -> None:
 
     assert path == build_env_path(support_dir(library, TID))
     assert f"DM_SUPPORT_DIR={support_dir(library, TID)}" in text
-    assert f"DM_LOG_DIR={logs_dir(library)}" in text
-    assert f"DM_SAVE={game_save_root(library, TID) / 'save'}" in text
-    assert f"DM_PSO_USER={game_save_root(library, TID) / 'pso_user.tsv'}" in text
+    assert f"DM_LOG_DIR={logs_dir(library, TID)}" in text
+    assert f"DM_SAVE={library / LIBRARY_SUBDIR / TID / 'save'}" in text
+    assert f"DM_PSO_USER={library / LIBRARY_SUBDIR / TID / 'pso_user.tsv'}" in text
     assert f"DM_CHEATS={cheats_dir(library, TID)}" in text
     assert f"DM_ALBUM_DIR={screenshots_dir(library, TID)}" in text
     assert "~/Library" not in text
@@ -152,8 +152,8 @@ def test_build_env_points_every_kind_at_the_library(tmp_path: Path) -> None:
 def test_players_are_library_wide_and_get_a_store_per_game(tmp_path: Path) -> None:
     """Players belong to the library (NX2Apple does the same), one store per game."""
     library = _library(tmp_path)
-    other = _app(library, name="Metal Slug", title_id="01003D901D24A000")
-    first = _app(library, name="Dead Cells", title_id=TID)
+    other = _app(library / LIBRARY_SUBDIR, name="Metal Slug", title_id="01003D901D24A000")
+    first = _app(library / LIBRARY_SUBDIR, name="Dead Cells", title_id=TID)
     for app, tid in ((first, TID), (other, "01003D901D24A000")):
         write_manifest(app.with_suffix(".nx2mac.json"), name=app.stem, app_path=app, title_id=tid,
                        version="1.0", engine_source="fork", engine_ref="main",
@@ -163,9 +163,9 @@ def test_players_are_library_wide_and_get_a_store_per_game(tmp_path: Path) -> No
     grace = create_player(library, "Grace")
 
     assert load_players(library)[1] == grace.id  # the newest player plays
-    assert (library / PLAYERS_FILE).is_file()  # one list for the whole library
+    assert (library / LIBRARY_SUBDIR / PLAYERS_FILE).is_file()  # one list for the whole library
     for tid in (TID, "01003D901D24A000"):
-        assert player_save_dir(library, tid, ada.id) == profiles_dir(library, tid) / "ada"
+        assert player_save_dir(library, tid, ada.id) == profiles_dir(library, tid) / "ada" / "save"
         assert player_save_dir(library, tid, ada.id).is_dir()
 
     select_player(library, "ada")
@@ -192,7 +192,7 @@ def test_player_names_are_validated(tmp_path: Path) -> None:
 
 def test_delete_player_keeps_the_saves(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    app = _app(library)  # a built game, so the player gets a store there
+    app = _app(library / LIBRARY_SUBDIR)  # a built game, so the player gets a store there
     write_manifest(app.with_suffix(".nx2mac.json"), name="Dead Cells", app_path=app, title_id=TID,
                    version="1.0", engine_source="fork", engine_ref="main",
                    engine_commit="c" * 40, patches=(), inputs={})
@@ -226,7 +226,7 @@ def test_player_env_without_players_uses_the_base_store(tmp_path: Path) -> None:
 
     text = write_player_env(library, TID).read_text(encoding="utf-8")
 
-    assert f"DM_SAVE={game_save_root(library, TID) / 'save'}" in text and "DM_NICK=" not in text
+    assert f"DM_SAVE={library / LIBRARY_SUBDIR / TID / 'save'}" in text and "DM_NICK=" not in text
 
 
 def test_app_metadata_reads_the_bundle(tmp_path: Path) -> None:
@@ -240,7 +240,7 @@ def test_app_metadata_reads_the_bundle(tmp_path: Path) -> None:
 
 def test_root_app_with_sidecar_manifest_is_a_game(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    app = _app(library)
+    app = _app(library / LIBRARY_SUBDIR)
     write_manifest(
         app.with_suffix(".nx2mac.json"),
         name="Dead Cells",
@@ -262,14 +262,14 @@ def test_root_app_with_sidecar_manifest_is_a_game(tmp_path: Path) -> None:
     assert game.has_app and game.icon_path == app / "Contents" / "Resources" / "AppIcon.icns"
     assert game.engine_commit == "69513b66656d" and game.patches == ("0001-launcher-state-dirs.patch",)
     # the data folders come from the library layout, not from beside the app
-    assert Path(str(game.to_dict()["saves"])) == game_save_root(library, TID)  # <TID>/ holds save/ and profiles/
-    assert Path(str(game.to_dict()["logs"])) == logs_dir(library)
+    assert Path(str(game.to_dict()["saves"])) == library / LIBRARY_SUBDIR / TID / "save"
+    assert Path(str(game.to_dict()["logs"])) == logs_dir(library, TID)  # logs/<TID>/<TID>.log
     assert Path(str(game.to_dict()["cheats"])) == cheats_dir(library, TID)
 
 
 def test_app_without_manifest_still_shows_name_and_version(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    _app(library, name="Hand Built", title_id="01003D901D24A000", version="1.0.1")
+    _app(library / LIBRARY_SUBDIR, name="Hand Built", title_id="01003D901D24A000", version="1.0.1")
 
     game = list_games(library)[0]
 
@@ -283,7 +283,7 @@ def test_only_built_games_are_listed(tmp_path: Path) -> None:
     (library / "0Dead_Cells[0100646009FBE000]" / "base.nsp").write_bytes(b"\x00")
     (library / "nxnative-dev").mkdir()
     (library / "prod.keys").write_text("k\n", encoding="utf-8")
-    _app(library, name="Dead Cells")
+    _app(library / LIBRARY_SUBDIR, name="Dead Cells")
 
     names = [game.name for game in list_games(library)]
 
@@ -293,7 +293,7 @@ def test_only_built_games_are_listed(tmp_path: Path) -> None:
 
 def test_legacy_per_game_folder_is_still_listed(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    legacy = library / "Old Entry"
+    legacy = library / LIBRARY_SUBDIR / "Old Entry"
     (legacy / "Old.app" / "Contents").mkdir(parents=True)
     (legacy / "Old.app" / "Contents" / "Info.plist").write_bytes(
         plistlib.dumps({"CFBundleName": "Old", "CFBundleShortVersionString": "0.9"})
@@ -307,8 +307,8 @@ def test_legacy_per_game_folder_is_still_listed(tmp_path: Path) -> None:
 
 def test_touch_last_played_moves_a_game_to_the_top(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    first = _app(library, name="First", title_id="0100000000001000")
-    second = _app(library, name="Second", title_id="0100000000002000")
+    first = _app(library / LIBRARY_SUBDIR, name="First", title_id="0100000000001000")
+    second = _app(library / LIBRARY_SUBDIR, name="Second", title_id="0100000000002000")
     for app, name in ((first, "First"), (second, "Second")):
         write_manifest(app.with_suffix(".nx2mac.json"), name=name, app_path=app, title_id=None,
                        version=None, engine_source="upstream", engine_ref="main",
@@ -322,14 +322,14 @@ def test_touch_last_played_moves_a_game_to_the_top(tmp_path: Path) -> None:
 
 def test_find_game_by_name_path_or_title_id(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    app = _app(library)
+    app = _app(library / LIBRARY_SUBDIR)
     write_manifest(app.with_suffix(".nx2mac.json"), name="Dead Cells", app_path=app, title_id=TID,
                    version="1.25.0", engine_source="fork", engine_ref="main",
                    engine_commit="c" * 40, patches=(), inputs={})
 
     assert find_game(library, "Dead Cells").app_path == app
     assert find_game(library, TID.lower()).version == "1.25.0"
-    assert find_game(library, str(library)).name == "Dead Cells"  # the GUI passes the entry path
+    assert find_game(library, str(app)).name == "Dead Cells"  # the GUI passes the app path
     with pytest.raises(LibraryError, match="no game called"):
         find_game(library, "Zelda")
 
@@ -340,13 +340,13 @@ def test_describe_library_payload(tmp_path: Path) -> None:
     payload = describe_library(library)
 
     assert payload["dir"] == str(library) and payload["exists"] is True and payload["games"] == []
-    _app(library, name="One")
+    _app(library / LIBRARY_SUBDIR, name="One")
     assert describe_library(library)["games"][0]["name"] == "One"  # type: ignore[index]
 
 
 def test_manifest_round_trip(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    app = _app(library)
+    app = _app(library / LIBRARY_SUBDIR)
     path = write_manifest(app.with_suffix(".nx2mac.json"), name="Dead Cells", app_path=app, title_id=TID,
                           version="1.25.0", engine_source="fork", engine_ref="fork-customizations",
                           engine_commit="69513b66656d", patches=(), inputs={"game": "/dumps"})
@@ -362,9 +362,9 @@ def test_saves_live_in_one_folder_per_title_id(tmp_path: Path) -> None:
     library = _library(tmp_path)
 
     text = write_build_env(library, TID).read_text(encoding="utf-8")
-    root = game_save_root(library, TID)
+    root = library / LIBRARY_SUBDIR / TID
 
-    assert f"DM_SAVE={root / 'save'}" in text  # <store>.users/.work stay inside <TID>/
+    assert f"DM_SAVE={root / 'save'}" in text  # save.users/.work stay inside a folder of the game's
     assert f"DM_PSO_USER={root / 'pso_user.tsv'}" in text
     write_player_env(library, TID)
     assert (root / "save").is_dir()

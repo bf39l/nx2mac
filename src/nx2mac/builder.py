@@ -231,7 +231,7 @@ def _record_in_library(
         library_mod.bake_env(app_path, library_mod.write_build_env(library, key))
 
     manifest = library_mod.write_manifest(
-        app_path.with_suffix(".nx2mac.json") if app_path is not None else library / f"{key}.nx2mac.json",
+        app_path.with_suffix(".nx2mac.json") if app_path is not None else library_mod.root_of(library) / f"{key}.nx2mac.json",
         name=str(metadata.get("name") or key),
         app_path=app_path or library,
         title_id=title_id,
@@ -353,9 +353,9 @@ def run_build(
         # keeps the engine's support dir, logs, saves, cheats and screenshots here
         env_file = library_mod.write_build_env(library, key)
         work_dir = library_mod.build_dir(library, key)
-        out_dir = library
+        out_dir = library_mod.root_of(library)
         if output is None:
-            output = library / f"{key}.app"  # renamed to the game's name once it exists
+            output = library_mod.root_of(library) / f"{key}.app"  # renamed to the game's name once it exists
     elif out_dir is not None:
         out_dir.mkdir(parents=True, exist_ok=True)
         work_dir = work_dir_for(out_dir, game, title_id)
@@ -376,7 +376,7 @@ def run_build(
     app_path: Path | None = None
     if returncode == 0:
         if library is not None:
-            app_path = _file_app(library, key, output.expanduser().resolve() if output is not None else None)
+            app_path = _file_app(library_mod.root_of(library), key, output.expanduser().resolve() if output is not None else None)
         elif output is not None:
             app_path = output.expanduser().resolve()
         elif out_dir is not None:
@@ -395,7 +395,7 @@ def run_build(
         out_dir=out_dir,
         work_dir=work_dir,
         keys_path=keys,
-        library_dir=library,
+        library_dir=library_mod.root_of(library) if library is not None else None,
         manifest=manifest,
         env_file=player_env,
     )

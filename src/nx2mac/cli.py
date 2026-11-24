@@ -7,6 +7,7 @@ Human output is just a different renderer of the same core results, so the
 check/build logic never depends on typer.
 """
 
+import shutil
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -391,6 +392,47 @@ def library(
         return
     for game in games:  # type: ignore[assignment]
         console.print(f"  [green]{game['name']}[/] [dim]{game['version'] or ''} {game['title_id'] or ''}[/]")
+
+
+@app.command()
+def clean(
+    ctx: typer.Context,
+    json_flag: bool = _json_option(),
+    game: str | None = typer.Option(None, "--game", metavar="GAME", help="only this game (default: every library)."),
+    library: Path | None = typer.Option(None, "--library", metavar="DIR", help="only this library."),
+) -> None:
+    """Delete the extracted files and shader caches of finished builds (the game itself stays)."""
+    machine_readable = _enter(ctx, json_flag)
+    cfg = load_config()
+    libraries = [library_mod.require_library(library)] if library is not None else [
+        Path(entry) for entry in cfg.library_dirs
+    ]
+    if not libraries:
+        _fail(ctx, "no game library set; add one with `nx2mac library --add <folder>`")
+
+    removed: list[dict[str, object]] = []
+    for directory in libraries:
+        games = [library_mod.find_game(directory, game)] if game else library_mod.list_games(directory)
+        for entry in games:
+            if not entry.title_id:
+                continue
+            build = library_mod.build_dir(directory, entry.title_id)
+            if not build.is_dir():
+                continue
+            size = sum(path.stat().st_size for path in build.rglob("*") if path.is_file())
+            shutil.rmtree(build, ignore_errors=True)
+            removed.append({"game": entry.name, "path": str(build), "freed": size})
+
+    if machine_readable:
+        emit.emit({"removed": removed, "freed": sum(int(item["freed"]) for item in removed)})
+        return
+    if not removed:
+        console.print("[dim]Nothing to clean: no build folders left.[/]")
+        return
+    for item in removed:
+        console.print(f"[green]Removed[/] {item['path']} [dim]({int(item['freed']) / 2**30:.2f} GB)[/]")
+    console.print(f"[bold]Freed {sum(int(item['freed']) for item in removed) / 2**30:.2f} GB.[/] "
+                  "The games keep running; the next build extracts again.")
 
 
 @app.command()

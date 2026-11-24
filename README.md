@@ -19,6 +19,9 @@ GitHub at a reported commit, builds the Metal host and the shaders, and files th
 One engine, two front ends: a **SwiftUI app** for everyday use and a **CLI** the app itself drives
 through `--json`, so anything the GUI does is scriptable.
 
+Nothing from any game ships with this project: bring your own dumps and your own `prod.keys`, and
+read [Legal](#legal) before you build.
+
 <p align="center"><img src="docs/images/pipeline.png" alt="what happens on Build" width="100%"></p>
 
 ### What you get
@@ -487,6 +490,48 @@ people's work:
   stand on.
 
 Thanks to all of them. Bugs in nx2mac are ours, not theirs.
+
+## Legal
+
+**What this project is.** A build tool for games you already own, and the launcher around it. You
+point it at a dump of your own game and your own `prod.keys`; it fetches the
+[nxnative](https://github.com/seedds/nxnative) engine from GitHub, builds one macOS app on your own
+machine, and files it in your library. That is all it does.
+
+**What this repository and the releases contain.** Only nx2mac's own source: Python, Swift, shell,
+build scripts, documentation, artwork and a small patch series. **No** Nintendo code, art, text,
+data, shaders, firmware, **keys** or **game files** — nothing derived from a game — and no engine
+source either: nxnative is cloned at build time, by you, from its own repository. The
+`prod.keys` file and every `.nsp`/`.xci`/`.ncz` dump stay where you keep them, outside the project;
+nx2mac reads them in place and never copies them into a build, an app or the library.
+
+**What it cannot do.** There is no source of games or keys here: no key site, no downloader, no
+bundled firmware, no server it talks to. It does not bypass, strip or redistribute any copy
+protection — the engine opens *your* dumps with *your* keys, the way your console reads a
+cartridge you own. If you do not own the game, nx2mac cannot help you get it.
+
+**Your responsibility.** Rules for making a personal backup differ by country, and some places do not
+allow it at all. You are responsible for knowing and following the law where you live, and for never
+sharing game files, `prod.keys`, or the apps you build from them — a built `.app` contains the game's
+code and data, so treat it exactly like the dump it came from: personal use, your own hardware. If you
+enjoy a game, buy it.
+
+**Trademarks.** Not affiliated with, sponsored by or endorsed by Nintendo. "Nintendo", "Nintendo
+Switch", "Switch 2" and every game title are trademarks of Nintendo Co., Ltd. or their respective
+owners, and are named here only to describe what the tool works with.
+
+**Patches and third-party code.** `patches/` are nx2mac's own diffs against MIT-licensed engine
+source, applied to a checkout you fetch; they add nothing copyrighted from a game. The engine and
+NX2Apple are other people's MIT-licensed work, credited above and in [LICENSE](LICENSE), which keeps
+their copyright lines alongside ours.
+
+**Takedowns.** If you believe anything in this repository infringes your rights, open an issue or
+contact the maintainer directly. Valid claims will be actioned promptly, up to removing content or
+the repository.
+
+**No warranty.** Provided "as is", without warranty of any kind, per the MIT [LICENSE](LICENSE) —
+including no warranty that a build will boot, run correctly or not damage your data. Back up your
+saves.
 
 ## License
 

@@ -26,7 +26,9 @@ def test_make_dmg_fails_cleanly_without_a_bundle(tmp_path: Path) -> None:
         text=True,
     )
     assert result.returncode != 0
-    assert "no executable" in result.stderr or "no app bundle" in result.stderr
+    # Refused for a stated reason — no hdiutil (Linux CI), no bundle, or no executable.
+    assert result.stderr.startswith("make_dmg.sh: "), result.stderr
+    assert "hdiutil" in result.stderr or "no executable" in result.stderr or "no app bundle" in result.stderr
     assert not list(tmp_path.glob("*.dmg"))
 
 

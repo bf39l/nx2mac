@@ -25,14 +25,13 @@ PIP_SPECS: tuple[str, ...] = ("lz4", "capstone>=5,<6", "fonttools", "zbic")
 #: Ordered candidate interpreters; first match that is arm64 and new enough wins.
 _CANDIDATE_PATHS: tuple[Path, ...] = (
     Path("/opt/homebrew/bin/python3"),  # Apple-silicon Homebrew Python
-    Path("/usr/local/bin/python3"),     # Intel Homebrew Python (arch filter rejects it)
-    Path("/usr/bin/python3"),           # Xcode CLT bundled CPython
+    Path("/usr/local/bin/python3"),  # Intel Homebrew Python (arch filter rejects it)
+    Path("/usr/bin/python3"),  # Xcode CLT bundled CPython
 )
 
 #: Prints "MAJOR.MINOR MACHINE" using the interpreter's own view of itself.
 _INTERPRETER_PROBE = (
-    "import platform, sys\n"
-    'print(f"{sys.version_info.major}.{sys.version_info.minor} {platform.machine()}")'
+    'import platform, sys\nprint(f"{sys.version_info.major}.{sys.version_info.minor} {platform.machine()}")'
 )
 
 #: Imports every engine module in a fresh process and prints the missing names.
@@ -55,7 +54,7 @@ _MODULE_PROBE = (
     '        missing.append("capstone>=5,<6")\n'
     'if not (find("compression.zstd") or find("backports.zstd")):\n'
     '    missing.append("zstd")\n'
-    "print(\" \".join(missing))\n"
+    'print(" ".join(missing))\n'
 )
 
 
@@ -190,8 +189,7 @@ def ensure_venv(
     status = probe_venv(env, cache_root)
     if status is None:
         raise PyEnvError(
-            f"managed python env at {venv_path} looks broken; delete that folder and "
-            "re-run `nx2mac setup`"
+            f"managed python env at {venv_path} looks broken; delete that folder and re-run `nx2mac setup`"
         )
 
     if status.missing_modules:
@@ -201,12 +199,10 @@ def ensure_venv(
         if result.returncode != 0:
             raise PyEnvError(
                 f"pip install into the managed venv failed ({detail}). Retry manually:\n"
-                f'  {python} -m pip install ' + " ".join(specs)
+                f"  {python} -m pip install " + " ".join(specs)
             )
         status = probe_venv(env, cache_root)
         if status is None or not status.ok:
             still_missing = status.missing_modules if status else ("unknown",)
-            raise PyEnvError(
-                f"managed venv still missing modules after install: {', '.join(still_missing)}"
-            )
+            raise PyEnvError(f"managed venv still missing modules after install: {', '.join(still_missing)}")
     return status

@@ -33,3 +33,7 @@ ignore = ["B008"]
 testpaths = ["tests"]
 [tool.hatch.build.targets.wheel]
 packages = ["src/nx2mac"]
+
+# ship the engine patch series with installed packages
+[tool.hatch.build.targets.wheel.force-include]
+"patches" = "nx2mac/patches"

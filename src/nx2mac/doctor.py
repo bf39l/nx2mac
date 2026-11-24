@@ -41,6 +41,10 @@ class Check:
     detail: str  # human explanation of what was found or why it failed
     fix: str = ""  # command / action that resolves a failure (empty when none)
 
+    def to_dict(self) -> dict[str, object]:
+        """JSON-ready form used by `nx2mac doctor --json` / the GUI."""
+        return {"name": self.name, "ok": self.ok, "detail": self.detail, "fix": self.fix}
+
 
 @dataclass(frozen=True)
 class DoctorReport:
@@ -66,6 +70,15 @@ class DoctorReport:
             if check.fix:
                 seen.setdefault(check.fix)
         return list(seen)
+
+    def to_dict(self) -> dict[str, object]:
+        """JSON-ready form: overall verdict + every check + the fix list."""
+        return {
+            "ok": self.ok,
+            "checks": [check.to_dict() for check in self.checks],
+            "failures": [check.name for check in self.failures()],
+            "fixes": self.fix_commands(),
+        }
 
 
 @dataclass(frozen=True)
@@ -127,11 +140,18 @@ def check_xcode(ctx: DoctorContext) -> Check:
     select_fix = "sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
 
     if xcodebuild is None:
-        return Check(name="xcode", ok=False, detail="'xcodebuild' not found on PATH", fix=f"install Xcode from the App Store, then run {select_fix}")
+        return Check(
+            name="xcode",
+            ok=False,
+            detail="'xcodebuild' not found on PATH",
+            fix=f"install Xcode from the App Store, then run {select_fix}",
+        )
     if not dev_dir or "CommandLineTools" in dev_dir:
         label = "Command Line Tools only" if dev_dir else "no active developer dir"
         return Check(
-            name="xcode", ok=False, detail=f"{label} ({dev_dir!r})",
+            name="xcode",
+            ok=False,
+            detail=f"{label} ({dev_dir!r})",
             fix=f"install full Xcode and run: {select_fix}",
         )
     return Check(name="xcode", ok=True, detail=dev_dir)
@@ -147,7 +167,9 @@ def check_metal_toolchain(ctx: DoctorContext) -> Check:
         return Check(name="metal-toolchain", ok=True, detail=lines[0] if lines else "available")
     detail = ((result.stderr or result.stdout).strip()[:200]) or "'xcrun metal --version' failed"
     return Check(
-        name="metal-toolchain", ok=False, detail=detail,
+        name="metal-toolchain",
+        ok=False,
+        detail=detail,
         fix="run: xcodebuild -downloadComponent MetalToolchain (or Xcode > Settings > Components)",
     )
 
@@ -174,12 +196,14 @@ def check_engine_python(ctx: DoctorContext) -> Check:
     floor = f"{MIN_VERSION[0]}.{MIN_VERSION[1]}"
     if interpreter is None:
         return Check(
-            name="engine-python", ok=False,
+            name="engine-python",
+            ok=False,
             detail=f"no arm64 CPython >= {floor} found (looked for 'python3' plus standard locations)",
             fix=f"install one with Homebrew: brew install python@{MIN_VERSION[1]}",
         )
     return Check(
-        name="engine-python", ok=True,
+        name="engine-python",
+        ok=True,
         detail=f"{interpreter.path} ({interpreter.major}.{interpreter.minor}, {interpreter.arch})",
     )
 
@@ -190,12 +214,15 @@ def check_engine_venv(ctx: DoctorContext) -> Check:
     status = probe_venv(ctx.env, root)
     if status is None:
         return Check(
-            name="engine-venv", ok=False, detail=f"not created yet ({root / 'python'})",
+            name="engine-venv",
+            ok=False,
+            detail=f"not created yet ({root / 'python'})",
             fix="run: nx2mac setup (creates the venv and pip-installs lz4, capstone 5.x, fonttools, zbic, zstd)",
         )
     if not status.ok:
         return Check(
-            name="engine-venv", ok=False,
+            name="engine-venv",
+            ok=False,
             detail=f"missing modules in {status.python.parent.parent}: {', '.join(status.missing_modules)}",
             fix="run: nx2mac setup (or delete the venv folder under the cache root and re-run)",
         )

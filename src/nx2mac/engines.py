@@ -64,10 +64,23 @@ class ResolvedEngine:
     commit: str  # resolved full 40-char SHA
     branch: str | None  # remote branch name when the ref tracked one, else None (tag / bare SHA)
     path: Path  # directory of the working tree
+    patches: tuple[str, ...] = ()  # nx2mac patch files applied to this checkout
 
     @property
     def short_commit(self) -> str:
         return self.commit[:12]
+
+    def to_dict(self) -> dict[str, object]:
+        """JSON-ready form: which repo, which ref, which commit, which patches."""
+        return {
+            "source": {"id": self.source.id, "label": self.source.label, "url": self.source.url},
+            "ref": self.ref,
+            "branch": self.branch,
+            "commit": self.commit,
+            "short_commit": self.short_commit,
+            "path": str(self.path),
+            "patches": list(self.patches),
+        }
 
 
 def _slug(ref: str) -> str:
@@ -95,13 +108,49 @@ def _git_error(action: str, result: RunResult, context: str) -> EngineError:
     return EngineError(f"{action} failed ({context}): {detail}")
 
 
-def ensure_checkout(env: Env, cache_root: Path, source: EngineSource, ref: str | None = None) -> ResolvedEngine:
-    """Clone or update the engine repo and pin it to an exact commit.
+def default_patches_dir() -> Path | None:
+    """Locate nx2mac's own patch series (wheel layout first, then the dev repo), or None."""
+    here = Path(__file__).resolve().parent
+    for candidate in (here / "patches", here.parents[1] / "patches"):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def apply_patches(env: Env, checkout: Path, patches_dir: Path | None = None) -> tuple[str, ...]:
+    """Apply nx2mac's patch series to a pristine engine *checkout*.
+
+    Patches are git-format diffs applied in filename order (use ``0001-``, ``0002-``
+    prefixes to control ordering). They may target the engine itself or anything vendored
+    inside its tree. ``patches_dir=None`` auto-locates the series; a non-existent explicit
+    directory simply means no patches.
+    """
+    directory = default_patches_dir() if patches_dir is None else patches_dir
+    files = sorted(directory.glob("*.patch"), key=lambda p: p.name) if directory.is_dir() else []
+    applied: list[str] = []
+    for patch in files:
+        result = env.run(["git", "apply", "--whitespace=nowarn", str(patch)], cwd=checkout)
+        if result.returncode != 0:
+            detail = ((result.stderr or result.stdout).strip()[:400]) or f"exit code {result.returncode}"
+            raise EngineError(f"failed to apply patch {patch.name} to {checkout}: {detail}")
+        applied.append(patch.name)
+    return tuple(applied)
+
+
+def ensure_checkout(
+    env: Env,
+    cache_root: Path,
+    source: EngineSource,
+    ref: str | None = None,
+    patches_dir: Path | None = None,
+) -> ResolvedEngine:
+    """Clone or update the engine repo, pin it to an exact commit and apply patch series.
 
     ``ref`` may be a branch name (resolved against ``origin/``, so repeated runs
     track remote movement), a tag, or a full 40-char commit SHA for exact
-    reproducibility. The checkout ends up detached at the resolved commit.
-    Raises EngineError on any failure.
+    reproducibility. The checkout ends up detached at the resolved commit; since the
+    tree is reset on every run, nx2mac's patch series is re-applied after each reset
+    (see :func:`apply_patches`). Raises EngineError on any failure.
     """
     requested = (ref or "").strip() or source.default_ref
     path = checkout_dir(cache_root, source, requested)
@@ -113,8 +162,10 @@ def ensure_checkout(env: Env, cache_root: Path, source: EngineSource, ref: str |
     else:
         path.parent.mkdir(parents=True, exist_ok=True)
         result = env.run(["git", "clone", source.url, str(path)])
-        if result.returncode != 0 or not (path / ".git").is_dir():
+        if result.returncode != 0:
             raise _git_error("git clone", result, source.url)
+        if not (path / ".git").is_dir():
+            raise EngineError(f"git clone reported success but {path} is not a git repository")
 
     # Prefer origin/<ref> so branch refs track the remote; tags and SHAs fall through.
     commit = _resolve_commit(env, path, f"refs/remotes/origin/{requested}")
@@ -134,14 +185,15 @@ def ensure_checkout(env: Env, cache_root: Path, source: EngineSource, ref: str |
 
     if not (path / "scripts" / "build_ipa_from_nsp.py").is_file():
         raise EngineError(
-            f"{path} does not look like an nxnative checkout at {commit[:12]} "
-            "(missing scripts/build_ipa_from_nsp.py)"
+            f"{path} does not look like an nxnative checkout at {commit[:12]} (missing scripts/build_ipa_from_nsp.py)"
         )
 
-    return ResolvedEngine(source=source, ref=requested, commit=commit, branch=branch, path=path)
+    patches = apply_patches(env, path, patches_dir)
+    return ResolvedEngine(source=source, ref=requested, commit=commit, branch=branch, path=path, patches=patches)
 
 
 def describe(engine: ResolvedEngine) -> str:
     """One-line report of what the checkout pins (branch name + commit hash)."""
     where = engine.branch if engine.branch is not None else "detached"
-    return f"{engine.source.label}: ref {engine.ref!r}, branch={where or 'n/a'}, commit={engine.short_commit}"
+    text = f"{engine.source.label}: ref {engine.ref!r}, branch={where or 'n/a'}, commit={engine.short_commit}"
+    return f"{text}, patches=({', '.join(engine.patches)})" if engine.patches else text

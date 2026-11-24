@@ -1,5 +1,6 @@
 """Tests for the nx2mac CLI wiring (FakeEnv injected via ``nx2mac.cli._get_env``)."""
 
+import json
 import tomllib
 from pathlib import Path
 
@@ -148,3 +149,110 @@ def test_setup_reports_ready(isolated_paths: Path, monkeypatch: pytest.MonkeyPat
     result = runner.invoke(app, ["setup"])
 
     assert result.exit_code == 0 and "All prerequisites met" in result.output
+
+
+def _json(result) -> dict:  # one JSON document
+    return json.loads(result.output)
+
+
+def _ndjson(result) -> list[dict]:  # one event object per line
+    return [json.loads(line) for line in result.output.splitlines() if line.strip()]
+
+
+def test_version_json(isolated_paths: Path) -> None:
+    result = runner.invoke(app, ["version", "--json"])
+
+    assert result.exit_code == 0 and _json(result) == {"name": "nx2mac", "version": "0.1.0"}
+
+
+def test_global_json_flag_also_applies(isolated_paths: Path) -> None:
+    result = runner.invoke(app, ["--json", "version"])
+
+    assert result.exit_code == 0 and _json(result)["name"] == "nx2mac"
+
+
+def test_doctor_json_has_machine_names_and_fixes(isolated_paths: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    env = _make_env(isolated_paths)
+    env.which_map.pop("zstd")
+    monkeypatch.setattr(cli_module, "_get_env", lambda: env)
+
+    result = runner.invoke(app, ["doctor", "--json"])
+    payload = _json(result)
+
+    assert result.exit_code == 1 and payload["ok"] is False
+    assert payload["failures"] == ["zstd"]
+    assert "brew install zstd" in payload["fixes"]
+    by_name = {check["name"]: check for check in payload["checks"]}
+    assert by_name["zstd"]["ok"] is False and by_name["macos"]["ok"] is True
+
+
+def test_engine_json_reports_source_ref_and_commit(isolated_paths: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    tmp = isolated_paths
+    env = _make_env(tmp)
+    _prepare_checkout(tmp)
+    monkeypatch.setattr(cli_module, "_get_env", lambda: env)
+
+    result = runner.invoke(app, ["engine", "--json"])
+    payload = _json(result)
+
+    assert result.exit_code == 0
+    engine = payload["engine"]
+    assert engine["source"]["id"] == "upstream" and engine["ref"] == "main"
+    assert engine["commit"] == SHA and engine["branch"] == "main" and engine["patches"] == []
+    assert payload["saved"] == {"engine_id": "upstream", "engine_ref": "main"}
+
+
+def test_build_json_emits_ndjson_events(isolated_paths: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    tmp = isolated_paths
+    env = _make_env(tmp)
+    env.stream_lines = ["[stage] extracting", "[stage] done"]
+    _prepare_checkout(tmp)
+    out = tmp / "Out.app"
+    monkeypatch.setattr(cli_module, "_get_env", lambda: env)
+
+    result = runner.invoke(app, ["build", str(_game(tmp)), "-o", str(out), "--json"])
+    events = _ndjson(result)
+
+    assert result.exit_code == 0
+    assert events[0]["event"] == "engine" and events[0]["engine"]["commit"] == SHA
+    assert [e["line"] for e in events if e["event"] == "log"] == ["[stage] extracting", "[stage] done"]
+    final = events[-1]
+    assert final["event"] == "result" and final["ok"] is True
+    assert final["app_path"] == str(out.resolve()) and "argv" in final
+
+
+def test_build_json_reports_failure_as_error_event(isolated_paths: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    env = _make_env(isolated_paths)
+    _prepare_checkout(isolated_paths)
+    env.which_map.pop("zstd")
+    monkeypatch.setattr(cli_module, "_get_env", lambda: env)
+
+    result = runner.invoke(app, ["build", str(_game(isolated_paths)), "--json"])
+    events = _ndjson(result)
+
+    assert result.exit_code == 1
+    assert events[-1]["event"] == "error" and "zstd" in events[-1]["message"]
+
+
+def test_build_json_propagates_engine_exit_code(isolated_paths: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    tmp = isolated_paths
+    env = _make_env(tmp)
+    env.stream_returncode = 4
+    _prepare_checkout(tmp)
+    monkeypatch.setattr(cli_module, "_get_env", lambda: env)
+
+    result = runner.invoke(app, ["build", str(_game(tmp)), "-o", str(tmp / "O.app"), "--json"])
+    final = _ndjson(result)[-1]
+
+    assert result.exit_code == 4 and final["returncode"] == 4 and final["ok"] is False
+
+
+def test_setup_json_payload(isolated_paths: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    env = _make_env(isolated_paths)
+    monkeypatch.setattr(cli_module, "_get_env", lambda: env)
+
+    result = runner.invoke(app, ["setup", "--json"])
+    payload = _json(result)
+
+    assert result.exit_code == 0 and payload["ok"] is True and payload["doctor"]["ok"] is True
+    assert payload["python"]["error"] is None and payload["python"]["path"].endswith("python3")

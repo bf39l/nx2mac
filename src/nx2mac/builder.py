@@ -7,7 +7,7 @@ output streaming straight to the console.
 """
 
 import os
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -85,8 +85,14 @@ def find_prod_keys(explicit: Path | None, game_dir: Path) -> Path | None:
     return None
 
 
-def build_argv(venv_python: Path, engine: ResolvedEngine, game: GameInput, keys: Path | None,
-               output: Path | None, extra_args: Sequence[str]) -> list[str]:
+def build_argv(
+    venv_python: Path,
+    engine: ResolvedEngine,
+    game: GameInput,
+    keys: Path | None,
+    output: Path | None,
+    extra_args: Sequence[str],
+) -> list[str]:
     """Assemble the argv for the engine's build script (macOS app target)."""
     args = [str(venv_python), str(engine.path / "scripts" / "build_ipa_from_nsp.py"), str(game.path)]
     if keys is not None:
@@ -106,10 +112,30 @@ class BuildResult:
     app_path: Path | None  # the .app produced when given an explicit -o and exit was 0
     returncode: int
 
+    @property
+    def ok(self) -> bool:
+        return self.returncode == 0
 
-def run_build(env: Env, cache_root: Path, engine: ResolvedEngine, game_path: Path,
-              prod_keys: Path | None = None, output: Path | None = None,
-              extra_args: Sequence[str] = ()) -> BuildResult:
+    def to_dict(self) -> dict[str, object]:
+        """JSON-ready form for the final `build --json` result event."""
+        return {
+            "ok": self.ok,
+            "returncode": self.returncode,
+            "app_path": str(self.app_path) if self.app_path is not None else None,
+            "argv": list(self.argv),
+        }
+
+
+def run_build(
+    env: Env,
+    cache_root: Path,
+    engine: ResolvedEngine,
+    game_path: Path,
+    prod_keys: Path | None = None,
+    output: Path | None = None,
+    extra_args: Sequence[str] = (),
+    on_line: Callable[[str], None] | None = None,
+) -> BuildResult:
     """Preflight-check, prepare the Python env and stream the engine build.
 
     Raises BuildError when prerequisites still fail (with a pointer to
@@ -120,7 +146,8 @@ def run_build(env: Env, cache_root: Path, engine: ResolvedEngine, game_path: Pat
     blocking = report.failure_names(BUILD_PREFLIGHT_EXCLUDE)
     if blocking:
         raise BuildError(
-            "prerequisites are not met (failing checks: " + ", ".join(blocking)
+            "prerequisites are not met (failing checks: "
+            + ", ".join(blocking)
             + "). Run `nx2mac doctor` for details or `nx2mac setup` to fix what can be fixed automatically."
         )
 
@@ -134,8 +161,10 @@ def run_build(env: Env, cache_root: Path, engine: ResolvedEngine, game_path: Pat
         )
 
     venv = ensure_venv(cache_root, env=env)
-    argv = build_argv(venv.python, engine, game, keys if game.needs_prod_keys or prod_keys is not None else None, output, extra_args)
-    returncode = env.run_stream(argv, cwd=engine.path)
+    argv = build_argv(
+        venv.python, engine, game, keys if game.needs_prod_keys or prod_keys is not None else None, output, extra_args
+    )
+    returncode = env.run_stream(argv, cwd=engine.path, on_line=on_line)
 
     app_path: Path | None = None
     if output is not None and returncode == 0:

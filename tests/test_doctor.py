@@ -40,7 +40,9 @@ def _good_env(tmp_path: Path, *, with_venv: bool = True) -> FakeEnv:
         venv_py.parent.mkdir(parents=True, exist_ok=True)
         venv_py.touch()
 
-    paths = {tool: tmp_path / "opt" / tool for tool in ("brew", "zstd", "glslangValidator", "make", "git", "xcodebuild")}
+    paths = {
+        tool: tmp_path / "opt" / tool for tool in ("brew", "zstd", "glslangValidator", "make", "git", "xcodebuild")
+    }
     return FakeEnv(
         which_map={**paths, "python3": py3},
         run_rules=[
@@ -53,7 +55,9 @@ def _good_env(tmp_path: Path, *, with_venv: bool = True) -> FakeEnv:
     )
 
 
-def _ctx(tmp_path: Path | None = None, env: FakeEnv | None = None, *, system: str = "darwin", machine: str = "arm64") -> DoctorContext:
+def _ctx(
+    tmp_path: Path | None = None, env: FakeEnv | None = None, *, system: str = "darwin", machine: str = "arm64"
+) -> DoctorContext:
     if env is None and tmp_path is not None:
         env = _good_env(tmp_path)
     return DoctorContext(env=env or FakeEnv(), system=system, machine=machine)
@@ -91,7 +95,9 @@ def test_command_line_tools_only_fails_xcode(monkeypatch: pytest.MonkeyPatch, tm
 def test_missing_metal_toolchain_suggests_download(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("NX2MAC_CACHE_ROOT", str(tmp_path / "cache"))
     env = _good_env(tmp_path)
-    env.run_rules.insert(0, (r"^xcrun -sdk macosx metal --version", RunResult(stderr="No Metal toolchain found", returncode=1)))
+    env.run_rules.insert(
+        0, (r"^xcrun -sdk macosx metal --version", RunResult(stderr="No Metal toolchain found", returncode=1))
+    )
 
     check = next(c for c in run_checks(_ctx(tmp_path, env)).checks if c.name == "metal-toolchain")
     assert not check.ok and "-downloadComponent MetalToolchain" in check.fix

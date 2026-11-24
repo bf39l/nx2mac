@@ -12,7 +12,9 @@ from nx2mac.engines import (
     EngineError,
     ResolvedEngine,
     all_sources,
+    apply_patches,
     checkout_dir,
+    default_patches_dir,
     describe,
     ensure_checkout,
     source_by_id,
@@ -51,10 +53,12 @@ def test_fresh_clone_resolves_branch(tmp_path: Path) -> None:
         os.makedirs(path / ".git", exist_ok=True)
         return RunResult()
 
-    env = FakeEnv(run_rules=[
-        ("^git clone ", clone),
-        ("rev-parse --quiet --verify refs/remotes/origin/main", RunResult(stdout=f"{SHA_A}\n")),
-    ])
+    env = FakeEnv(
+        run_rules=[
+            ("^git clone ", clone),
+            ("rev-parse --quiet --verify refs/remotes/origin/main", RunResult(stdout=f"{SHA_A}\n")),
+        ]
+    )
 
     engine = ensure_checkout(env, tmp_path, UPSTREAM)
 
@@ -110,3 +114,79 @@ def test_describe_reports_branch_and_commit() -> None:
 
     text = describe(engine)
     assert "ref 'main'" in text and "branch=main" in text and SHA_A[:12] in text and UPSTREAM.label in text
+
+
+def test_describe_lists_patches() -> None:
+    engine = ResolvedEngine(
+        source=UPSTREAM, ref="main", commit=SHA_A, branch="main", path=Path("/x"), patches=("0001-a.patch",)
+    )
+
+    assert "patches=(0001-a.patch)" in describe(engine)
+
+
+def test_patch_series_applied_in_order(tmp_path: Path) -> None:
+    path = checkout_dir(tmp_path, UPSTREAM, "main")
+    os.makedirs(path / ".git", exist_ok=True)
+    _nxnative_tree(path)
+    patches = tmp_path / "series"
+    patches.mkdir()
+    (patches / "0002-fix-b.patch").write_text("b\n", encoding="utf-8")  # listed first on disk, applied second
+    (patches / "0001-fix-a.patch").write_text("a\n", encoding="utf-8")
+    env = FakeEnv(run_rules=[("rev-parse --quiet --verify refs/remotes/origin/main", RunResult(stdout=f"{SHA_A}\n"))])
+
+    engine = ensure_checkout(env, tmp_path, UPSTREAM, patches_dir=patches)
+
+    assert engine.patches == ("0001-fix-a.patch", "0002-fix-b.patch")
+    applies = [c for c in env.calls if len(c) >= 3 and c[0] == "git" and c[1] == "apply"]
+    assert applies == [
+        ["git", "apply", "--whitespace=nowarn", str(patches / "0001-fix-a.patch")],
+        ["git", "apply", "--whitespace=nowarn", str(patches / "0002-fix-b.patch")],
+    ]
+
+
+def test_failed_patch_raises(tmp_path: Path) -> None:
+    path = checkout_dir(tmp_path, UPSTREAM, "main")
+    os.makedirs(path / ".git", exist_ok=True)
+    _nxnative_tree(path)
+    patches = tmp_path / "series"
+    patches.mkdir()
+    (patches / "0001-broken.patch").write_text("x\n", encoding="utf-8")
+    env = FakeEnv(
+        run_rules=[
+            ("rev-parse --quiet --verify refs/remotes/origin/main", RunResult(stdout=f"{SHA_A}\n")),
+            ("^git apply ", RunResult(returncode=1, stderr="error: patch does not apply")),
+        ]
+    )
+
+    with pytest.raises(EngineError, match="failed to apply patch 0001-broken.patch"):
+        ensure_checkout(env, tmp_path, UPSTREAM, patches_dir=patches)
+
+
+def test_missing_explicit_patches_dir_is_noop(tmp_path: Path) -> None:
+    path = checkout_dir(tmp_path, UPSTREAM, "main")
+    os.makedirs(path / ".git", exist_ok=True)
+    _nxnative_tree(path)
+    env = FakeEnv(run_rules=[("rev-parse --quiet --verify refs/remotes/origin/main", RunResult(stdout=f"{SHA_A}\n"))])
+
+    engine = ensure_checkout(env, tmp_path, UPSTREAM, patches_dir=tmp_path / "nope")
+
+    assert engine.patches == () and not any(len(c) > 2 and c[1] == "apply" for c in env.calls)
+
+
+def test_default_patches_dir_points_at_shipped_series() -> None:
+    directory = default_patches_dir()
+
+    assert directory is not None and directory.is_dir() and (directory / "README.md").is_file()
+
+
+def test_apply_patches_only_picks_patch_files(tmp_path: Path) -> None:
+    series = tmp_path / "series"
+    series.mkdir()
+    (series / "0001-one.patch").write_text("a\n", encoding="utf-8")
+    (series / "notes.txt").write_text("ignore me\n", encoding="utf-8")
+    env = FakeEnv()
+
+    applied = apply_patches(env, tmp_path, patches_dir=series)
+
+    assert applied == ("0001-one.patch",)
+    assert [c[3] for c in env.calls if c[1:3] == ["apply", "--whitespace=nowarn"]] == [str(series / "0001-one.patch")]

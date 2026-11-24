@@ -7,7 +7,7 @@ tests pass a fake.
 
 import shutil
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -33,10 +33,18 @@ class Env(Protocol):
         """Run one command (not a shell), capturing stdout/stderr as text."""
         ...
 
-    def run_stream(self, args: Sequence[str], *, cwd: Path | None = None) -> int:
+    def run_stream(
+        self,
+        args: Sequence[str],
+        *,
+        cwd: Path | None = None,
+        on_line: Callable[[str], None] | None = None,
+    ) -> int:
         """Run one long-lived command with stdio inherited (live progress).
 
-        Returns the process exit code; callers treat non-zero as failure.
+        Returns the process exit code; callers treat non-zero as failure. When
+        ``on_line`` is given, stdout+stderr are captured and fed to it line by
+        line instead (machine-readable mode: the GUI wants the engine log).
         """
         ...
 
@@ -53,6 +61,27 @@ class RealEnv:
         proc = subprocess.run(list(args), check=False, capture_output=True, text=True, cwd=cwd or None)
         return RunResult(stdout=proc.stdout, stderr=proc.stderr, returncode=proc.returncode)
 
-    def run_stream(self, args: Sequence[str], *, cwd: Path | None = None) -> int:
-        # check=False and no capture: output streams straight to the console.
-        return subprocess.run(list(args), check=False, cwd=cwd or None).returncode
+    def run_stream(
+        self,
+        args: Sequence[str],
+        *,
+        cwd: Path | None = None,
+        on_line: Callable[[str], None] | None = None,
+    ) -> int:
+        if on_line is None:
+            # check=False and no capture: output streams straight to the console.
+            return subprocess.run(list(args), check=False, cwd=cwd or None).returncode
+
+        # Capture and re-emit per line so a caller can forward engine progress.
+        proc = subprocess.Popen(
+            list(args),
+            cwd=cwd or None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        if proc.stdout is not None:
+            for line in proc.stdout:
+                on_line(line.rstrip("\n"))
+        return proc.wait()

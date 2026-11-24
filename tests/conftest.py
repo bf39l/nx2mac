@@ -27,6 +27,7 @@ class FakeEnv:
     calls: list[list[str]] = field(default_factory=list)
     stream_calls: list[tuple[list[str], Path | None]] = field(default_factory=list)
     stream_returncode: int = 0
+    stream_lines: list[str] = field(default_factory=list)  # fed to on_line when provided
 
     def which(self, name: str) -> Path | None:
         return self.which_map.get(name)
@@ -40,9 +41,18 @@ class FakeEnv:
                 return result(argv) if callable(result) else result
         return RunResult()
 
-    def run_stream(self, args: Sequence[str], *, cwd: Path | None = None) -> int:
+    def run_stream(
+        self,
+        args: Sequence[str],
+        *,
+        cwd: Path | None = None,
+        on_line: Callable[[str], None] | None = None,
+    ) -> int:
         """Record a streaming command and return the configured exit code."""
         argv = [str(a) for a in args]
         self.calls.append(argv)
         self.stream_calls.append((argv, cwd))
+        if on_line is not None:
+            for line in self.stream_lines:
+                on_line(line)
         return self.stream_returncode

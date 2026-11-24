@@ -161,4 +161,3 @@ def test_ensure_venv_reports_still_missing_modules(tmp_path: Path) -> None:
 
     with pytest.raises(PyEnvError, match="still missing modules.*zbic"):
         ensure_venv(tmp_path, env=env, interpreter=INTERP_312_ARM64)
-

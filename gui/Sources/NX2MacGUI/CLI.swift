@@ -7,8 +7,16 @@ import Foundation
 struct CLICommand: Hashable {
     let prefix: [String]
     let workingDirectory: URL?
+    /// True when this is the copy frozen into the app bundle (no install needed).
+    var isBundled: Bool = false
 
     var display: String { prefix.joined(separator: " ") }
+
+    /// Short label for the Settings pane.
+    var origin: String {
+        if isBundled { return "bundled with this app" }
+        return prefix.first.map { URL(fileURLWithPath: $0).deletingLastPathComponent().path } ?? "unknown"
+    }
 }
 
 enum CLIError: LocalizedError {
@@ -46,11 +54,13 @@ enum CLILocator {
         "~/.cargo/bin/nx2mac",
     ]
 
-    static func locate(override: String? = nil) -> CLICommand? {
+    static func locate(override: String? = nil, bundle: Bundle = .main) -> CLICommand? {
         if let explicit = executable(override) { return CLICommand(prefix: [explicit], workingDirectory: nil) }
         if let fromEnv = executable(ProcessInfo.processInfo.environment["NX2MAC_BIN"]) {
             return CLICommand(prefix: [fromEnv], workingDirectory: nil)
         }
+        // Preferred in a shipped app: the frozen CLI inside Contents/Resources/cli.
+        if let bundled = bundledCommand(resources: bundle.resourceURL) { return bundled }
         for directory in searchPath() {
             if let found = executable(directory + "/nx2mac") { return CLICommand(prefix: [found], workingDirectory: nil) }
         }
@@ -58,6 +68,15 @@ enum CLILocator {
             if let found = executable(candidate) { return CLICommand(prefix: [found], workingDirectory: nil) }
         }
         return developmentCommand()
+    }
+
+    /// The CLI frozen into the app bundle, when present.
+    static func bundledCommand(resources: URL?) -> CLICommand? {
+        guard let resources else { return nil }
+        let directory = resources.appendingPathComponent("cli")
+        let cli = directory.appendingPathComponent("nx2mac")
+        guard FileManager.default.isExecutableFile(atPath: cli.path) else { return nil }
+        return CLICommand(prefix: [cli.path], workingDirectory: directory, isBundled: true)
     }
 
     /// Dev fallback: a repository checkout whose `.venv` can run `python -m nx2mac`.

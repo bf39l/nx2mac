@@ -221,6 +221,66 @@ private final class LockedLines {
     }
 }
 
+final class BundledCLITests: XCTestCase {
+    /// A fake app bundle's Resources folder holding a frozen CLI.
+    private func resources(withCLI: Bool) throws -> URL {
+        let resources = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nx2mac-bundle-\(UUID().uuidString)/Contents/Resources")
+        let cli = resources.appendingPathComponent("cli")
+        try FileManager.default.createDirectory(at: cli, withIntermediateDirectories: true)
+        if withCLI {
+            let binary = cli.appendingPathComponent("nx2mac")
+            try Data("#!/bin/sh\nexit 0\n".utf8).write(to: binary)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
+        }
+        return resources
+    }
+
+    func testBundledCLIIsFoundInsideTheApp() throws {
+        let resources = try resources(withCLI: true)
+
+        let command = try XCTUnwrap(CLILocator.bundledCommand(resources: resources))
+
+        XCTAssertTrue(command.isBundled)
+        XCTAssertEqual(command.prefix.first, resources.appendingPathComponent("cli/nx2mac").path)
+        XCTAssertEqual(command.workingDirectory?.lastPathComponent, "cli")
+    }
+
+    func testMissingBundleCLIIsNotReported() throws {
+        XCTAssertNil(CLILocator.bundledCommand(resources: try resources(withCLI: false)))
+        XCTAssertNil(CLILocator.bundledCommand(resources: nil))
+    }
+
+    /// The frozen copy must win over whatever happens to be on PATH, so a user
+    /// without an installed CLI (or with an older one) still gets this app's CLI.
+    func testBundledCLIWinsOverAnInstalledOne() throws {
+        let app = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Fake-\(UUID().uuidString).app")
+        let contents = app.appendingPathComponent("Contents")
+        try FileManager.default.createDirectory(
+            at: contents.appendingPathComponent("Resources/cli"), withIntermediateDirectories: true)
+        let binary = contents.appendingPathComponent("Resources/cli/nx2mac")
+        try Data("#!/bin/sh\nexit 0\n".utf8).write(to: binary)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
+        let plist: [String: Any] = [
+            "CFBundleIdentifier": "org.nx2mac.fake",
+            "CFBundleName": "fake",
+            "CFBundlePackageType": "APPL",
+            "CFBundleExecutable": "fake",
+        ]
+        let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        try data.write(to: contents.appendingPathComponent("Info.plist"))
+
+        let bundle = try XCTUnwrap(Bundle(url: app))
+        guard let located = CLILocator.locate(bundle: bundle) else {
+            return XCTFail("no CLI located")
+        }
+
+        XCTAssertTrue(located.isBundled, "expected the bundled CLI, got \(located.display)")
+        XCTAssertTrue(located.prefix.first?.hasSuffix("Contents/Resources/cli/nx2mac") ?? false)
+    }
+}
+
 @MainActor
 final class OutputFolderDefaultTests: XCTestCase {
     /// A temp folder with a fake dump folder and a package file inside it.

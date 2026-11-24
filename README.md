@@ -1,15 +1,53 @@
-# nx2mac
+<p align="center">
+  <img src="docs/images/banner.png" alt="nx2mac — Nintendo Switch games, as native macOS apps" width="100%">
+</p>
 
-Build Nintendo Switch and Switch 2 games into native macOS `.app` bundles, by driving the
-[nxnative](https://github.com/seedds/nxnative) build script against a fresh engine checkout from
-GitHub (upstream `seedds/nxnative` or your own fork), pinned to a reported branch + commit.
+<p align="center">
+  <a href=".github/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/bf39l/nx2mac/ci.yml?branch=main&label=build&logo=github&logoColor=white&color=5959ed" alt="build status"></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/github/v/release/bf39l/nx2mac?color=2ed1c2&label=download" alt="latest release"></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B%20%C2%B7%20arm64-0e1116?logo=apple&logoColor=white" alt="macOS 14+ arm64">
+  <img src="https://img.shields.io/badge/python-3.11%2B-2ed1c2" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/swift-5.9%2B-f05138?logo=swift&logoColor=white" alt="Swift">
+  <img src="https://img.shields.io/badge/license-MIT-5959ed" alt="MIT">
+</p>
 
-- **CLI** (`nx2mac`): prerequisites, setup, engine pinning, builds — every command has a
-  machine-readable `--json` form.
-- **GUI** (`nx2mac.app`): a small SwiftUI wrapper around the CLI with a Build and a Setup tab.
+**nx2mac turns a Nintendo Switch (or Switch 2) game into a native macOS app.** Point it at your game
+dump, press Build, and it fetches the [nxnative](https://github.com/seedds/nxnative) engine from
+GitHub at a reported commit, builds the Metal host and the shaders, and files the resulting
+`Game.app` into your library — with that game's saves, players, mods, cheats and logs beside it.
 
-Agent-oriented documentation (dependency checklist, engine policy, JSON contract) lives in
-[AGENT.md](AGENT.md).
+One engine, two front ends: a **SwiftUI app** for everyday use and a **CLI** the app itself drives
+through `--json`, so anything the GUI does is scriptable.
+
+Nothing from any game ships with this project: bring your own dumps and your own `prod.keys`, and
+read [Legal](#legal) before you build.
+
+<p align="center"><img src="docs/images/pipeline.png" alt="what happens on Build" width="100%"></p>
+
+### What you get
+
+- **A real Mac app per game** — double-clickable, ad-hoc signed, self-contained.
+- **A library, not a pile of leftovers** — one folder you choose, holding each game's `.app` plus
+  its saves, logs, screenshots, players, mods and cheats.
+- **Updates and DLC from anywhere** — pick the update and any number of DLC packages where they
+  live; nx2mac stages them into the single folder the engine expects.
+- **Players** with their own save store and nickname, plus optional **cloud saves** into any folder.
+- **Mods** (RomFS overlays) and **cheats**: the cheat file is re-anchored against your build, so only
+  entries that can actually work on this port are switchable.
+- **Live progress** — the current step and shader counters (`1,037/1,262 shaders`), in the GUI and
+  in the terminal.
+- **Engine tracking** — pin upstream or your own fork by branch + commit, re-pin for the newest
+  engine when you want it; local fixes ride along in `patches/`.
+
+### Screenshots
+
+| **Setup** — every prerequisite, with a fix per item | **Games** — library, players, cloud saves |
+| --- | --- |
+| ![](docs/images/setup.png) | ![](docs/images/games.png) |
+
+**Build** — engine and inputs first, then the engine's own log, live.
+
+![](docs/images/build.png)
 
 ## Install
 
@@ -23,16 +61,19 @@ the very first launch needs right-click → **Open**; after that it starts norma
 open ~/Applications/nx2mac.app
 
 # and the same disk image a release ships
-./packaging/make_dmg.sh ~/Applications/nx2mac.app 0.0.1 dist
+./packaging/make_dmg.sh ~/Applications/nx2mac.app "$(uv run python -c 'import nx2mac; print(nx2mac.VERSION)')" dist
 
 # optional: the CLI alone, for terminal use
 uv tool install .
 ```
 
-The GUI does **not** need a separately installed CLI — `gui/build.sh` freezes the Python CLI
-with PyInstaller into the bundle (≈31 MB) and the app prefers that copy. Installing the CLI is
-only useful if you also want `nx2mac …` in a terminal. From a checkout, `uv run nx2mac …` works
-without installing anything.
+The GUI does **not** need a separately installed CLI — `gui/build.sh` freezes the Python CLI with
+PyInstaller into the bundle (≈31 MB) and the app prefers that copy. Installing the CLI is only
+useful if you also want `nx2mac …` in a terminal. From a checkout, `uv run nx2mac …` works without
+installing anything.
+
+Agent-oriented documentation (dependency checklist, engine policy, JSON contract) lives in
+[AGENT.md](AGENT.md).
 
 ## Quick start
 
@@ -397,14 +438,15 @@ The release itself is driven by the tag: pushing `vX.Y.Z` publishes exactly that
 no manual version input and no release from a branch push.
 
 ```bash
-git tag -a v0.0.1 -m "nx2mac v0.0.1" && git push origin v0.0.1
+git tag -a vX.Y.Z -m "nx2mac vX.Y.Z" && git push origin vX.Y.Z
 ```
 
 | asset | what |
 | --- | --- |
-| `nx2mac-cli-<version>-macos-arm64.zip` | standalone CLI (PyInstaller onedir) |
-| `nx2mac-app-<version>-macos-arm64.zip` | `nx2mac.app` with that CLI bundled inside |
-| `SHA256SUMS.txt` | checksums for both |
+| `nx2mac-<version>-macos-arm64.dmg` | **the download to use**: installable disk image (app + `Applications` shortcut) |
+| `nx2mac-app-<version>-macos-arm64.zip` | the same `nx2mac.app`, zipped with its bundled CLI |
+| `nx2mac-cli-<version>-macos-arm64.zip` | standalone CLI (PyInstaller onedir), for terminals |
+| `SHA256SUMS.txt` | checksums for all three |
 
 A tag can never publish something other than it says: the job fails unless the tag,
 `VERSION` (`src/nx2mac/__init__.py`) and `CFBundleShortVersionString` (`gui/Info.plist`) all agree —
@@ -421,7 +463,14 @@ swift test --package-path gui   # 27 tests
 
 Layout: `src/nx2mac/` (CLI: `cli`, `doctor`, `remedies`, `installer`, `engines`, `builder`,
 `staging`, `pyenv`, `config`, `runner`, `emit`), `gui/` (SwiftUI app + icon tool), `packaging/`
-(PyInstaller entry point for the bundled CLI), `patches/` (engine fixes).
+(PyInstaller entry point and the DMG script), `patches/` (engine fixes), `docs/images/` (banner,
+diagrams and screenshots) with `docs/tools/make_artwork.swift` drawing the first three — the
+screenshots are real captures of the app.
+
+```bash
+swift docs/tools/make_artwork.swift docs/images   # banner.png, pipeline.png, icon.png
+swift gui/tools/make_icon.swift gui/Resources/AppIcon.icns
+```
 
 ## Credits
 
@@ -441,6 +490,48 @@ people's work:
   stand on.
 
 Thanks to all of them. Bugs in nx2mac are ours, not theirs.
+
+## Legal
+
+**What this project is.** A build tool for games you already own, and the launcher around it. You
+point it at a dump of your own game and your own `prod.keys`; it fetches the
+[nxnative](https://github.com/seedds/nxnative) engine from GitHub, builds one macOS app on your own
+machine, and files it in your library. That is all it does.
+
+**What this repository and the releases contain.** Only nx2mac's own source: Python, Swift, shell,
+build scripts, documentation, artwork and a small patch series. **No** Nintendo code, art, text,
+data, shaders, firmware, **keys** or **game files** — nothing derived from a game — and no engine
+source either: nxnative is cloned at build time, by you, from its own repository. The
+`prod.keys` file and every `.nsp`/`.xci`/`.ncz` dump stay where you keep them, outside the project;
+nx2mac reads them in place and never copies them into a build, an app or the library.
+
+**What it cannot do.** There is no source of games or keys here: no key site, no downloader, no
+bundled firmware, no server it talks to. It does not bypass, strip or redistribute any copy
+protection — the engine opens *your* dumps with *your* keys, the way your console reads a
+cartridge you own. If you do not own the game, nx2mac cannot help you get it.
+
+**Your responsibility.** Rules for making a personal backup differ by country, and some places do not
+allow it at all. You are responsible for knowing and following the law where you live, and for never
+sharing game files, `prod.keys`, or the apps you build from them — a built `.app` contains the game's
+code and data, so treat it exactly like the dump it came from: personal use, your own hardware. If you
+enjoy a game, buy it.
+
+**Trademarks.** Not affiliated with, sponsored by or endorsed by Nintendo. "Nintendo", "Nintendo
+Switch", "Switch 2" and every game title are trademarks of Nintendo Co., Ltd. or their respective
+owners, and are named here only to describe what the tool works with.
+
+**Patches and third-party code.** `patches/` are nx2mac's own diffs against MIT-licensed engine
+source, applied to a checkout you fetch; they add nothing copyrighted from a game. The engine and
+NX2Apple are other people's MIT-licensed work, credited above and in [LICENSE](LICENSE), which keeps
+their copyright lines alongside ours.
+
+**Takedowns.** If you believe anything in this repository infringes your rights, open an issue or
+contact the maintainer directly. Valid claims will be actioned promptly, up to removing content or
+the repository.
+
+**No warranty.** Provided "as is", without warranty of any kind, per the MIT [LICENSE](LICENSE) —
+including no warranty that a build will boot, run correctly or not damage your data. Back up your
+saves.
 
 ## License
 

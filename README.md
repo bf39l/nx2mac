@@ -206,3 +206,9 @@ swift test --package-path gui   # 27 tests
 Layout: `src/nx2mac/` (CLI: `cli`, `doctor`, `remedies`, `installer`, `engines`, `builder`,
 `staging`, `pyenv`, `config`, `runner`, `emit`), `gui/` (SwiftUI app + icon tool), `packaging/`
 (PyInstaller entry point for the bundled CLI), `patches/` (engine fixes).
+
+## License
+
+MIT — see [LICENSE](LICENSE). nx2mac is an independent launcher that drives the
+[nxnative](https://github.com/seedds/nxnative) engine; the MIT copyright lines of nxnative and
+NX2Apple are kept alongside ours because this project builds on their work.

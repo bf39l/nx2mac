@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "nx2mac"
 dynamic = ["version"]
 description = "Build Nintendo Switch games into native macOS apps"
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
 dependencies = [
     "typer>=0.12",

@@ -1112,6 +1112,42 @@ def rebase_cheats(text: str, base: int = SWITCH_MAIN_BASE) -> tuple[str, int]:
     return "\n".join(out) + ("\n" if text.endswith("\n") else ""), changed
 
 
+def neutralise_unanchored(text: str, meta: str | None) -> tuple[str, list[str]]:
+    """Drop the code of entries a compile could not anchor, keeping their names.
+
+    A master (`{Name}`) is applied on every launch, so an unanchored master writes to addresses that
+    mean something else on this port — that is a crash, not a cheat. The entry keeps its header, so
+    it still shows in the game's Cheats menu as a label, but it has no code words left to run.
+    """
+    if not meta:
+        return text, []
+    rows = _meta_entries(meta)
+    bound = {name for name, row in rows.items() if row.get("resolved") == "no anchors"}
+    if not bound:
+        return text, []
+
+    kept: list[str] = []
+    dropped: list[str] = []
+    skipping = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped[:1] in ("[", "{"):
+            closing = "]" if stripped[0] == "[" else "}"
+            end = stripped.find(closing, 1)
+            name = stripped[1:end] if end > 1 else ""
+            skipping = name in bound
+            if skipping:
+                dropped.append(name)
+                kept.append(line)  # the header stays: the menu lists it, nothing runs
+            else:
+                kept.append(line)
+            continue
+        if skipping:
+            continue  # its code words go
+        kept.append(line)
+    return "\n".join(kept) + ("\n" if text.endswith("\n") else ""), dropped
+
+
 def _is_build_id(text: str) -> bool:
     return len(text) == 16 and all(char in "0123456789abcdefABCDEF" for char in text)
 

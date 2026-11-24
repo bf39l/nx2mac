@@ -575,7 +575,7 @@ def cheats(
                 library_mod.import_cheats(directory, entry.title_id, sorted(folder.glob("*.txt")))
                 if not machine_readable:
                     for line in report:
-                        console.print(f"[dim]{line}[/]")
+                        console.print(f"[yellow]cheats: {line}[/]" if "disabled" in line else f"[dim]{line}[/]")
                     written = sorted(folder.glob("*.txt"))
                     if written:
                         console.print(f"[green]cheat file:[/] {written[0]}")

@@ -113,4 +113,24 @@ def reanchor(
             lines.extend(output.splitlines())
         if result.returncode not in (0, 2):  # 2 = some cheats kept bound to their build (a warning)
             raise CheatToolError(f"cheat_anchor.py {step} failed ({result.returncode}): {output[:400]}")
+    lines.extend(neutralise(out_dir))
     return lines
+
+
+def neutralise(cheats_dir: Path) -> list[str]:
+    """Remove the code of entries the compile could not anchor (they cannot run on this port).
+
+    A master (`{Name}`) runs on every launch, so leaving an unanchored one in place is a crash;
+    its header stays, which the game's Cheats menu shows as a label.
+    """
+    from .library import neutralise_unanchored
+
+    reports: list[str] = []
+    for txt in sorted(cheats_dir.glob("*.txt")):
+        meta_file = txt.with_suffix(".meta.tsv")
+        meta = meta_file.read_text(encoding="utf-8", errors="replace") if meta_file.is_file() else None
+        text, dropped = neutralise_unanchored(txt.read_text(encoding="utf-8", errors="replace"), meta)
+        if dropped:
+            txt.write_text(text, encoding="utf-8")
+            reports.append("disabled (could not be anchored): " + ", ".join(dropped))
+    return reports

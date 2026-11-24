@@ -43,6 +43,7 @@ from nx2mac.library import (
     load_players,
     logs_dir,
     mods_dir,
+    neutralise_unanchored,
     parse_cheat_file,
     player_save_dir,
     profiles_dir,
@@ -599,3 +600,22 @@ def test_clean_drops_the_packing_key_and_the_manifest(tmp_path: Path, monkeypatc
     assert not key.exists()
     assert not app_path.with_suffix(".nx2mac.json").exists()
     assert app_path.is_dir()  # the game stays
+
+
+def test_unanchored_entries_lose_their_code(tmp_path: Path) -> None:
+    """A master that could not be anchored runs on every launch: its code is removed, the name stays."""
+    text = (
+        "{Credits}\n08010000 00000000 11111111 22222222\n"
+        "[Max gold]\n04010000 0013AAA4 00005431\n"
+    )
+    meta = (
+        "name\tkind\tsection\ttype\taction\tvalue\task\tvalue_words\tonce\tpair\tresolved\tnote\taddress\n"
+        "Credits\tcode\t\t\t\t\t\t\t\t\tno anchors\t\t\n"
+        "Max gold\tdata\t\t\t\t\t\t\t\t\t0x13AAA4\t\t\n"
+    )
+
+    cleaned, dropped = neutralise_unanchored(text, meta)
+
+    assert dropped == ["Credits"]
+    assert "{Credits}" in cleaned and "11111111" not in cleaned  # header kept, code gone
+    assert "04010000 0013AAA4 00005431" in cleaned  # the anchored one keeps its code

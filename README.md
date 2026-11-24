@@ -270,6 +270,12 @@ and every write is refused. After rebasing, Dead Cells' v1.25.0 file anchored **
 (the master and the hold-a-key `激活修改` stayed build-bound), which is the normal outcome for a
 file whose instructions match the build.
 
+**Unanchored entries are disabled by the compile.** `cheat_anchor.py` marks each entry it could not
+anchor (`resolved = no anchors`) in `<build>.meta.tsv`; nx2mac then removes that entry's code from
+the compiled file, keeping its name. Without that, a *master* (`{Name}`) — which runs on every
+launch, toggles or not — would keep writing to addresses that mean something else on this port, and
+that is a crash rather than a cheat. The log (and the cheats list) name what was disabled.
+
 **A whole file can be unusable.** Dead Cells' `6E35EE0A24029143.txt` (Aug 2024) is made of
 *code patches*: every one of its 15 entries writes to `0x0813AA10 … 0x0813AC7C`, i.e. absolute
 instructions of the game's code. This Mac port relocates that code, so those writes land on whatever

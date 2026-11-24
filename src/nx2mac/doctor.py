@@ -14,6 +14,7 @@ fake `Env`, injected platform facts and a temporary cache root (see
 `config.cache_root()` / NX2MAC_CACHE_ROOT).
 """
 
+import os as _os
 import platform as _platform_module
 import re
 import sys as _sys
@@ -111,8 +112,12 @@ class DoctorContext:
     """
 
     env: Env = field(default_factory=RealEnv)
-    system: str = _sys.platform  # "darwin" on macOS
-    machine: str = _platform_module.machine()  # "arm64" on Apple silicon
+    # "darwin" on macOS; the overrides let the tests describe a Mac while running anywhere
+    # (the CLI's checks are about the *target* machine, which CI may not be).
+    system: str = field(default_factory=lambda: _os.environ.get("NX2MAC_TEST_PLATFORM") or _sys.platform)
+    machine: str = field(
+        default_factory=lambda: _os.environ.get("NX2MAC_TEST_MACHINE") or _platform_module.machine()
+    )
 
 
 def check_macos(ctx: DoctorContext) -> Check:

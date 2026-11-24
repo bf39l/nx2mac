@@ -7,9 +7,28 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import pytest
+
 from nx2mac.runner import RunResult
 
 RunRule = tuple[str, "RunResult | Callable[[list[str]], RunResult]"]
+
+
+@pytest.fixture(autouse=True)
+def isolated_host(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Keep every test off the developer's machine.
+
+    The cache root (engine checkouts, the managed venv) and the config file move into the test's
+    temporary directory, and the platform is described as the target — a Mac on Apple silicon — so
+    the same suite runs on macOS and on the Linux CI runner. Tests that need other facts inject
+    their own `DoctorContext`/`FakeEnv` as before.
+    """
+    cache = tmp_path / "host-cache"
+    monkeypatch.setenv("NX2MAC_CACHE_ROOT", str(cache))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "host-config"))
+    monkeypatch.setenv("NX2MAC_TEST_PLATFORM", "darwin")
+    monkeypatch.setenv("NX2MAC_TEST_MACHINE", "arm64")
+    return cache
 
 
 @dataclass

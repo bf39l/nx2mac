@@ -532,3 +532,21 @@ def test_clear_cheats_removes_the_file_and_its_switches(tmp_path: Path) -> None:
 
     assert len(removed) == 2 and not (folder / "AAAAAAAAAAAAAAAA.txt").exists()
     assert (folder / f".cheats-off-{TID}").exists()  # the master switch is not a cheat file
+
+
+def test_compiled_cheats_land_in_the_mods_folder(tmp_path: Path) -> None:
+    """The cheat file the game reads lives in <TID>/mods/cheats, the re-anchor source in <TID>/mods."""
+    library = _library(tmp_path)
+    mods = mods_dir(library, TID)
+    folder = cheats_dir(library, TID)
+    folder.mkdir(parents=True)
+    compiled = folder / "6E35EE0A24029143.txt"
+    compiled.write_text("[Max HP]\n02000000 00000000\n", encoding="utf-8")
+    toml = mods / f"{TID}.cheats.toml"
+    toml.write_text("# addresses by meaning\n", encoding="utf-8")
+
+    import_cheats(library, TID, [compiled])
+
+    assert compiled.is_file()  # exactly where DM_CHEATS points
+    assert toml.parent == mods and toml.is_file()  # the source stays in mods/, untouched
+    assert folder.parent.name == "mods"

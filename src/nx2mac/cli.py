@@ -531,15 +531,23 @@ def cheats(
             if main is None:
                 _fail(ctx, f"no extracted game files for {entry.name}; build it once "
                            "(the engine keeps ExeFS/main under <game>/build/extract)")
-            engine = library_mod.require_library(directory)
             script = None
-            for candidate in sorted((cache_root().expanduser() / "engines").glob("*/scripts/cheat_anchor.py")):
+            engines_root = cache_root().expanduser() / "engines"
+            pinned_ref = load_config().engine_ref or "main"
+            preferred = sorted(engines_root.glob(f"*_{pinned_ref}/scripts/cheat_anchor.py"))
+            for candidate in [*preferred, *sorted(engines_root.glob("*/scripts/cheat_anchor.py"))]:
                 script = candidate
+                if candidate.is_file():
+                    break
             if script is None:
                 _fail(ctx, f"no engine checkout with scripts/cheat_anchor.py under {cache_root() / 'engines'}")
             venv = ensure_venv(cache_root().expanduser(), env=_get_env())
             for source in compile_file:
-                toml = library_mod.game_root(engine, entry.title_id) / f"{entry.title_id}.cheats.toml"
+                # The re-anchor source and its output both live in the game's mods folder:
+                # <game>/mods/<build id>.txt is what DM_CHEATS reads, and the .toml beside it keeps
+                # the addresses' meaning so a later build can be compiled again.
+                toml = library_mod.mods_dir(directory, entry.title_id) / f"{entry.title_id}.cheats.toml"
+                toml.parent.mkdir(parents=True, exist_ok=True)
                 try:
                     report = reanchor(
                         _get_env(),
@@ -549,18 +557,19 @@ def cheats(
                         main,
                         main,
                         toml,
-                        library_mod.cheats_dir(engine, entry.title_id),
+                        library_mod.cheats_dir(directory, entry.title_id),
                     )
                 except CheatToolError as error:
                     _fail(ctx, str(error))
-                library_mod.import_cheats(
-                    directory,
-                    entry.title_id,
-                    [path for path in library_mod.cheats_dir(engine, entry.title_id).glob("*.txt")],
-                )
+                folder = library_mod.cheats_dir(directory, entry.title_id)
+                library_mod.import_cheats(directory, entry.title_id, sorted(folder.glob("*.txt")))
                 if not machine_readable:
                     for line in report:
                         console.print(f"[dim]{line}[/]")
+                    written = sorted(folder.glob("*.txt"))
+                    if written:
+                        console.print(f"[green]cheat file:[/] {written[0]}")
+                        console.print(f"[dim]source kept for later builds: {toml}[/]")
         if off:
             library_mod.set_cheats_master(directory, entry.title_id, True)
         if on:

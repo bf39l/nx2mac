@@ -690,7 +690,7 @@ final class BuildModel: ObservableObject {
 
     // MARK: - Build
 
-    func startBuild(extra: [String] = []) {
+    func startBuild(extra: [String] = [], cheatsOnly: Bool = false) {
         guard let cli, let request, !isRunning else { return }
         pendingLog.removeAll()
         buildAnyway = nil
@@ -701,9 +701,10 @@ final class BuildModel: ObservableObject {
         log.append("Extras: \(request.extrasSummary)")
 
         do {
+            let arguments = request.arguments + (cheatsOnly ? ["--cheats-only"] : []) + extra
             process = try CLIRunner.stream(
                 cli,
-                request.arguments + extra,
+                arguments,
                 onLine: { [weak self] line in
                     Task { @MainActor in self?.handle(line: line) }
                 },

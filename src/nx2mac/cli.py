@@ -895,6 +895,11 @@ def build(
     allow_shader_regressions: bool = typer.Option(
         False, "--allow-shader-regressions", help="pack without the shaders that stopped translating."
     ),
+    cheats_only: bool = typer.Option(
+        False,
+        "--cheats-only",
+        help="extract ExeFS/main and re-anchor the cheat file, skipping the shaders, the Mac host and the app.",
+    ),
 ) -> None:
     """Build a game into a native macOS .app with the pinned nxnative engine."""
     machine_readable = _enter(ctx, json_flag)
@@ -951,6 +956,7 @@ def build(
             out_dir=out_dir,
             library_dir=library_dir,
             extra_args=extra,
+            cheats_only=cheats_only,
         )
 
     try:
@@ -978,6 +984,8 @@ def build(
         emit.event("result", **result.to_dict())
     elif result.returncode != 0:
         console.print(f"[red]Engine build failed with exit code {result.returncode}.[/]")
+    elif cheats_only:
+        console.print("[green]Done.[/] Cheat file re-anchored to this build (no app was built).")
     elif result.app_path is not None:
         console.print(f"[green]Done.[/] App at [bold green]{result.app_path}[/]")
         if result.work_dir is not None:

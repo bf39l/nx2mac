@@ -89,7 +89,10 @@ class InterpreterInfo:
 
 def _probe_interpreter(env: Env, candidate: Path) -> InterpreterInfo | None:
     """Run one candidate and parse its self-reported version/architecture."""
-    result = env.run([str(candidate), "-c", _INTERPRETER_PROBE])
+    try:
+        result = env.run([str(candidate), "-c", _INTERPRETER_PROBE])
+    except OSError:  # no such file, not executable: a candidate that does not exist here
+        return None
     if result.returncode != 0:
         return None
     parts = result.stdout.split()
@@ -108,8 +111,10 @@ def find_engine_interpreters(env: Env) -> list[InterpreterInfo]:
     found_python3 = env.which("python3")
     if found_python3 is not None:
         candidates.append(found_python3)
+    # Every candidate is probed through the Env, never stat'ed: a path that does not exist simply
+    # fails the probe, which keeps the function's behaviour the Env's to decide (and testable).
     for path in _CANDIDATE_PATHS:
-        if path.is_file() and all(path != c for c in candidates):
+        if all(path != c for c in candidates):
             candidates.append(path)
 
     result: list[InterpreterInfo] = []

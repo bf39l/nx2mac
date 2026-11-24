@@ -378,6 +378,33 @@ final class OutputFolderDefaultTests: XCTestCase {
         XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, chosen.standardizedFileURL.path)
     }
 
+    /// The library from Setup is the output folder, whatever game folder is picked.
+    @MainActor
+    func testOutputFolderSticksWithTheLibrary() throws {
+        let (root, folder, file) = try fixture()
+        let library = root.appendingPathComponent("Games")
+        let model = BuildModel()
+
+        model.applyLibrary(library.path)
+        XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, library.standardizedFileURL.path)
+
+        model.setGameFile(file)
+        XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, library.standardizedFileURL.path)
+
+        model.setGameFile(nil)
+        XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, library.standardizedFileURL.path)
+        XCTAssertTrue(model.outDirIsAuto)
+
+        // and a chosen folder still wins until the user resets it
+        let project = root.appendingPathComponent("Project")
+        model.chooseOutDir(project)
+        model.setGameFile(file)
+        XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, project.standardizedFileURL.path)
+
+        model.resetOutDir()
+        XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, library.standardizedFileURL.path)
+    }
+
     func testResetReturnsToTheGameDirectory() throws {
         let (root, folder, file) = try fixture()
         let model = BuildModel()

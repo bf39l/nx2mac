@@ -181,6 +181,13 @@ final class BuildModel: ObservableObject {
     /// The game library the build files into (what the user chose in Setup).
     var libraryURL: URL? { libraryDir.map { URL(fileURLWithPath: $0) } }
 
+    /// Apply a library folder (the CLI's answer, or a test's): keeps the shown
+    /// output folder in step while it is still the default.
+    func applyLibrary(_ directory: String?) {
+        libraryDir = directory
+        if outDirIsAuto { outDirURL = defaultOutDir }
+    }
+
     /// The output folder to show/use while the user has not chosen one.
     var defaultOutDir: URL? {
         if let libraryURL { return libraryURL }
@@ -210,6 +217,9 @@ final class BuildModel: ObservableObject {
         await refreshVersion(cli)
         await refreshDoctor(cli)
         await refreshEngine(cli)
+        // The output folder defaults to the library from Setup, so it has to be known
+        // here too — not only when the Games tab is opened.
+        await refreshLibrary()
     }
 
     private func refreshVersion(_ cli: CLICommand) async {
@@ -252,9 +262,8 @@ final class BuildModel: ObservableObject {
               let data = result.stdout.data(using: .utf8),
               let payload = try? JSONDecoder().decode(LibraryPayload.self, from: data)
         else { return }
-        libraryDir = payload.dir
+        applyLibrary(payload.dir)
         games = payload.games
-        if outDirIsAuto { outDirURL = defaultOutDir }
         await refreshPlayers()
     }
 
@@ -267,18 +276,16 @@ final class BuildModel: ObservableObject {
               let data = result.stdout.data(using: .utf8),
               let payload = try? JSONDecoder().decode(LibraryPayload.self, from: data)
         else { return }
-        libraryDir = payload.dir
+        applyLibrary(payload.dir)
         games = payload.games
-        if outDirIsAuto { outDirURL = defaultOutDir }
     }
 
     /// Forget the library setting.
     func clearLibrary() async {
         guard let cli else { return }
         _ = try? await Self.run(cli, ["library", "--clear", "--json"])
-        libraryDir = nil
+        applyLibrary(nil)
         games = []
-        if outDirIsAuto { outDirURL = defaultOutDir }
     }
 
     /// Read the players of every game in the library (one `player --json` per game).

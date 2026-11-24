@@ -158,7 +158,12 @@ A native SwiftUI app that only shells out to `nx2mac … --json` (no Python impo
   `.app` the CLI reported.
 
 Build it with `./gui/build.sh release [dest]` (SwiftPM + a script that wraps the binary into
-`nx2mac.app`; no Xcode project). The icon is committed at `gui/Resources/AppIcon.icns` and
+`nx2mac.app`; no Xcode project). The script also **freezes the CLI into the bundle**:
+`uv run --with pyinstaller pyinstaller … packaging/cli_entry.py` produces a standalone
+`Contents/Resources/cli/nx2mac` (≈31 MB, `patches/` included as `nx2mac/patches`), so users never
+have to install the CLI; `NX2MAC_SKIP_CLI_BUNDLE=1` skips that step while iterating on Swift.
+CLI resolution order in `CLILocator`: Settings override → `NX2MAC_BIN` → bundled copy → `PATH` →
+well-known dirs → dev checkout (`.venv/bin/python -m nx2mac`). The icon is committed at `gui/Resources/AppIcon.icns` and
 regenerated with `swift gui/tools/make_icon.swift gui/Resources/AppIcon.icns`; `build.sh` copies
 it into the bundle and ad-hoc signs it. Settings shows the app version next to
 `nx2mac version --json`, so a GUI/CLI mismatch is visible. It finds the CLI via `NX2MAC_BIN`, the `cliPath` setting, PATH,

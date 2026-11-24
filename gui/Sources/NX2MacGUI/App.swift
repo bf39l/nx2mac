@@ -45,14 +45,19 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Command line tool") {
-                TextField("nx2mac path", text: $cliPath, prompt: Text("auto-detect"))
+                TextField("nx2mac path", text: $cliPath, prompt: Text("bundled with the app"))
                     .onSubmit { model.refreshCLI(); Task { await model.refresh() } }
                 HStack {
-                    Text(model.cli?.display ?? "not found")
-                        .font(.caption.monospaced())
-                        .foregroundStyle(model.cli == nil ? .red : .secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.cli?.display ?? "not found")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(model.cli == nil ? .red : .secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        if let cli = model.cli {
+                            Text(cli.origin).font(.caption2).foregroundStyle(.tertiary)
+                        }
+                    }
                     Spacer()
                     Button("Re-detect") {
                         cliPath = ""
@@ -71,9 +76,9 @@ struct SettingsView: View {
                 }
             }
             Section {
-                Text("The GUI only runs the CLI (`nx2mac doctor|engine|build --json`) and renders its output. "
-                     + "Install it with `uv tool install nx2mac`, or point this at a development checkout's "
-                     + "`.venv/bin/python`.")
+                Text("The app carries its own CLI (Contents/Resources/cli) and only runs it "
+                     + "(`nx2mac doctor|engine|build --json`). Only set a path above to test a different "
+                     + "build, e.g. a development checkout.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

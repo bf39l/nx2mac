@@ -14,11 +14,18 @@ Agent-oriented documentation (dependency checklist, engine policy, JSON contract
 ## Install
 
 ```bash
-uv tool install .              # the CLI on PATH as `nx2mac`
-./gui/build.sh release ~/Applications   # the GUI as ~/Applications/nx2mac.app
+# the app: self-contained, carries its own frozen CLI (Contents/Resources/cli)
+./gui/build.sh release ~/Applications
+open ~/Applications/nx2mac.app
+
+# optional: the CLI alone, for terminal use
+uv tool install .
 ```
 
-From a checkout, `uv run nx2mac …` works without installing anything.
+The GUI does **not** need a separately installed CLI — `gui/build.sh` freezes the Python CLI
+with PyInstaller into the bundle (≈31 MB) and the app prefers that copy. Installing the CLI is
+only useful if you also want `nx2mac …` in a terminal. From a checkout, `uv run nx2mac …` works
+without installing anything.
 
 ## Quick start
 
@@ -68,8 +75,12 @@ open ~/Applications/nx2mac.app
 
 The app reads its icon from `gui/Resources/AppIcon.icns`, regenerated with
 `swift gui/tools/make_icon.swift gui/Resources/AppIcon.icns`. Settings shows the app and CLI
-versions side by side. Tests: `swift test --package-path gui` (add `NX2MAC_LIVE_TESTS=1` to
-drive the real CLI).
+versions side by side, and where the CLI came from. Tests: `swift test --package-path gui`
+(add `NX2MAC_LIVE_TESTS=1` to drive the real CLI).
+
+`build.sh` resolves the CLI in this order: the path set in Settings → `NX2MAC_BIN` → the copy
+frozen into the bundle → `nx2mac` on `PATH` → a development checkout's `.venv`. While working on
+the SwiftUI side you can skip the (≈7 s) freeze step with `NX2MAC_SKIP_CLI_BUNDLE=1 ./gui/build.sh`.
 
 ## One folder per game
 
@@ -104,4 +115,5 @@ swift test --package-path gui   # 27 tests
 ```
 
 Layout: `src/nx2mac/` (CLI: `cli`, `doctor`, `remedies`, `installer`, `engines`, `builder`,
-`staging`, `pyenv`, `config`, `runner`, `emit`), `gui/` (SwiftUI app), `patches/` (engine fixes).
+`staging`, `pyenv`, `config`, `runner`, `emit`), `gui/` (SwiftUI app + icon tool), `packaging/`
+(PyInstaller entry point for the bundled CLI), `patches/` (engine fixes).

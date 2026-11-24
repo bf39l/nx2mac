@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// State of the build button / progress area.
@@ -30,6 +31,19 @@ final class BuildModel: ObservableObject {
     @Published private(set) var setupLog: [String] = []
     /// Per-check outcome text ("installed", "failed", …) shown next to the row.
     @Published private(set) var installResults: [String: String] = [:]
+
+    // MARK: Library
+
+    /// The game library folder (nil until the user picks one in Setup).
+    @Published private(set) var libraryDir: String?
+    @Published private(set) var games: [LibraryGame] = []
+    @Published private(set) var libraryBusy = false
+
+    /// True while a game is being launched (so its row can show a spinner).
+    @Published private(set) var playing: String?
+
+    /// Players of each library game, by the game's folder path.
+    @Published private(set) var players: [String: PlayersPayload] = [:]
 
     // MARK: Engine
 
@@ -162,6 +176,92 @@ final class BuildModel: ObservableObject {
         } catch {
             doctor = nil
         }
+    }
+
+    /// Read the library setting and the games built into it.
+    func refreshLibrary() async {
+        guard let cli else { return }
+        libraryBusy = true
+        defer { libraryBusy = false }
+        guard let result = try? await Self.run(cli, ["library", "--json"]),
+              let data = result.stdout.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(LibraryPayload.self, from: data)
+        else { return }
+        libraryDir = payload.dir
+        games = payload.games
+        await refreshPlayers()
+    }
+
+    /// Choose the library folder (it must already exist: nx2mac never creates it).
+    func setLibrary(_ url: URL) async {
+        guard let cli else { return }
+        libraryBusy = true
+        defer { libraryBusy = false }
+        guard let result = try? await Self.run(cli, ["library", "--set", url.path, "--json"]),
+              let data = result.stdout.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(LibraryPayload.self, from: data)
+        else { return }
+        libraryDir = payload.dir
+        games = payload.games
+    }
+
+    /// Forget the library setting.
+    func clearLibrary() async {
+        guard let cli else { return }
+        _ = try? await Self.run(cli, ["library", "--clear", "--json"])
+        libraryDir = nil
+        games = []
+    }
+
+    /// Read the players of every game in the library (one `player --json` per game).
+    func refreshPlayers() async {
+        guard let cli else { return }
+        for game in games {
+            guard let result = try? await Self.run(cli, ["player", "--game", game.path, "--json"]),
+                  let data = result.stdout.data(using: .utf8),
+                  let payload = try? JSONDecoder().decode(PlayersPayload.self, from: data)
+            else { continue }
+            players[game.path] = payload
+        }
+    }
+
+    /// Add a player to a game and make them the active one.
+    @discardableResult
+    func createPlayer(for game: LibraryGame, name: String) async -> Bool {
+        await runPlayerCommand(game, ["--create", name])
+    }
+
+    /// Make an existing player the one who plays.
+    func selectPlayer(_ player: PlayerEntry, for game: LibraryGame) async {
+        _ = await runPlayerCommand(game, ["--select", player.id])
+    }
+
+    /// Forget a player; their save folder stays on disk.
+    func deletePlayer(_ player: PlayerEntry, for game: LibraryGame) async {
+        _ = await runPlayerCommand(game, ["--delete", player.id])
+    }
+
+    /// Run `nx2mac player …` for one game and keep the returned payload.
+    @discardableResult
+    private func runPlayerCommand(_ game: LibraryGame, _ extra: [String]) async -> Bool {
+        guard let cli else { return false }
+        let arguments = ["player", "--game", game.path, "--json"] + extra
+        guard let result = try? await Self.run(cli, arguments),
+              let data = result.stdout.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(PlayersPayload.self, from: data)
+        else { return false }
+        players[game.path] = payload
+        return true
+    }
+
+    /// Open a built game and record it as played (NX2Apple's "recently played").
+    func play(_ game: LibraryGame) async {
+        guard let cli, let app = game.appURL else { return }
+        playing = game.name
+        defer { playing = nil }
+        _ = try? await Self.run(cli, ["library", "--played", game.path, "--json"])
+        NSWorkspace.shared.open(app)
+        await refreshLibrary()
     }
 
     private func refreshEngine(_ cli: CLICommand) async {

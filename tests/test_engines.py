@@ -25,6 +25,13 @@ SHA_A = "a" * 40
 SHA_B = "b" * 40
 
 
+def _no_patches(tmp_path: Path) -> Path:
+    """An empty patch series, so a test sees only the git calls it sets up."""
+    directory = tmp_path / "no-patches"
+    directory.mkdir(exist_ok=True)
+    return directory
+
+
 def _nxnative_tree(path: Path) -> None:
     """Make a directory look like an nxnative working tree (the file we validate)."""
     scripts = path / "scripts"
@@ -60,7 +67,7 @@ def test_fresh_clone_resolves_branch(tmp_path: Path) -> None:
         ]
     )
 
-    engine = ensure_checkout(env, tmp_path, UPSTREAM)
+    engine = ensure_checkout(env, tmp_path, UPSTREAM, patches_dir=_no_patches(tmp_path))
 
     assert engine == ResolvedEngine(source=UPSTREAM, ref="main", commit=SHA_A, branch="main", path=path)
     clones = [c for c in env.calls if len(c) >= 2 and c[0] == "git" and c[1] == "clone"]
@@ -73,7 +80,7 @@ def test_existing_repo_fetches_instead_of_cloning(tmp_path: Path) -> None:
     _nxnative_tree(path)
     env = FakeEnv(run_rules=[("rev-parse --quiet --verify refs/remotes/origin/main", RunResult(stdout=f"{SHA_A}\n"))])
 
-    engine = ensure_checkout(env, tmp_path, UPSTREAM)
+    engine = ensure_checkout(env, tmp_path, UPSTREAM, patches_dir=_no_patches(tmp_path))
 
     fetches = [c for c in env.calls if len(c) >= 3 and c[1] == "fetch"]
     assert fetches == [["git", "fetch", "--prune", "origin"]]
@@ -95,7 +102,7 @@ def test_bare_sha_ref_resolves_detached(tmp_path: Path) -> None:
     _nxnative_tree(path)
     env = FakeEnv(run_rules=[(f"rev-parse --quiet --verify {SHA_B}", RunResult(stdout=f"{SHA_B}\n"))])
 
-    engine = ensure_checkout(env, tmp_path, UPSTREAM, ref=SHA_B)
+    engine = ensure_checkout(env, tmp_path, UPSTREAM, ref=SHA_B, patches_dir=_no_patches(tmp_path))
 
     assert engine.branch is None and engine.ref == SHA_B and engine.commit == SHA_B
 
@@ -171,6 +178,18 @@ def test_missing_explicit_patches_dir_is_noop(tmp_path: Path) -> None:
     engine = ensure_checkout(env, tmp_path, UPSTREAM, patches_dir=tmp_path / "nope")
 
     assert engine.patches == () and not any(len(c) > 2 and c[1] == "apply" for c in env.calls)
+
+
+def test_shipped_patch_series_is_applied_on_checkout(tmp_path: Path) -> None:
+    path = checkout_dir(tmp_path, UPSTREAM, "main")
+    os.makedirs(path / ".git", exist_ok=True)
+    _nxnative_tree(path)
+    env = FakeEnv(run_rules=[("rev-parse --quiet --verify refs/remotes/origin/main", RunResult(stdout=f"{SHA_A}\n"))])
+
+    engine = ensure_checkout(env, tmp_path, UPSTREAM)  # the repo's own patches/ dir
+
+    shipped = sorted(p.name for p in (default_patches_dir() or tmp_path).glob("*.patch"))
+    assert engine.patches == tuple(shipped) and "0001-launcher-state-dirs.patch" in engine.patches
 
 
 def test_default_patches_dir_points_at_shipped_series() -> None:

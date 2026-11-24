@@ -110,6 +110,24 @@ we may run it), `installer.py` (runs those fixes), `engines.py` (GitHub resolve/
 `~/Library/Caches/nx2mac` or `$NX2MAC_CACHE_ROOT` (`engines/<source-id>-<ref-slug>`, `python/`,
 `staging/<game>-<hash>/`).
 
+## Game library and players
+
+`library_dir` in the config is **unset by default** and must be an existing folder (nx2mac never
+creates it). With it set, `build` writes into `<library>/<Game>/` and bakes
+`support/build-env.txt` into the app via the engine's `--env-file`, so the launcher keeps its
+support dir, logs, saves, cheats and screenshots inside that folder instead of `~/Library`:
+
+| variable | points at |
+| --- | --- |
+| `DM_SUPPORT_DIR` | `<game>/support` (its env.txt, temp, user registry) — added by our patch |
+| `DM_LOG_DIR` | `<game>/logs` — added by our patch |
+| `DM_SAVE` / `DM_CHEATS` / `DM_ALBUM_DIR` | `<game>/saves`, `<game>/cheats`, `<game>/screenshots` |
+
+`nx2mac player --create NAME` adds a player; each player is **user 1 in their own save store**
+(`<game>/players/<id>/saves`) with `DM_NICK=<name>` in `<game>/support/env.txt`, which the launcher
+reads after the baked file and lets win. That is the only way to give every player a custom name:
+the engine reads `DM_NICK` for user 1 only and hard-codes "Player 2"..8.
+
 ## Engine patches (`patches/`)
 
 `patches/NNNN-*.patch` (git format, applied in filename order) are applied with
@@ -189,7 +207,9 @@ All v1 slices are implemented with unit tests (run: `uv run pytest`, lint: `uv r
 - `cli.py` — `version|doctor|setup|engine|build` with human and `--json` rendering
 - `remedies.py` / `installer.py` — per-check fixes the CLI can run (`setup --install/--all`)
 - `staging.py` — update/DLC staging for the engine's single-folder input model
-- `gui/` — SwiftUI app (Build + Setup tabs, app icon), `swift test` covers payload parsing,
+- `library.py` — the game library: per-game folders, `nx2mac.json` manifest, `players.json`,
+  the `--env-file` that keeps the engine's state in the game folder, and the scan for `library --json`
+- `gui/` — SwiftUI app (Setup, Games, Build tabs, app icon), `swift test` covers payload parsing,
   arg assembly and the output-folder default
 
 Version lives in `src/nx2mac/__init__.py` (`VERSION`); pyproject reads it via

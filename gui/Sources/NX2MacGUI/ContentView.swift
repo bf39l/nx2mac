@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// The window: a Setup tab (see what the machine is missing and install it one
-/// piece at a time) followed by the Build tab (pick inputs and go).
+/// The window: Setup (what the machine is missing, and where the game library
+/// lives), Games (everything built into that library) and Build (pick inputs and go).
 struct ContentView: View {
     @EnvironmentObject private var model: BuildModel
 
@@ -12,6 +12,8 @@ struct ContentView: View {
             // the app opens on.
             SetupTab()
                 .tabItem { Label("Setup", systemImage: "wrench.and.screwdriver") }
+            GamesTab()
+                .tabItem { Label("Games", systemImage: "square.stack.3d.up") }
             BuildTab()
                 .tabItem { Label("Build", systemImage: "hammer") }
         }

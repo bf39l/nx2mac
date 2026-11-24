@@ -101,7 +101,44 @@ nx2mac build "/path/to/Game [0100...]" --out-dir ~/Develop/MyGame \
 | --- | --- |
 | `DIR/<Game>.app` | the finished app (the engine names it) |
 | `DIR/<game>_build/` | the engine's build folder — extracted files + shader caches, reused on rebuild |
-| `DIR/prod.keys` | only if you keep it there — nx2mac reads your key set in place and never copies it |
+
+### The game library (CLI + GUI)
+
+`nx2mac library --set DIR` (GUI: *Setup → Game library*) picks a folder that already exists —
+there is no default and nx2mac never creates it. Building with the library set files each game into
+its own folder, and everything the game writes stays there:
+
+```
+<library>/<Game>/
+├── <Game>.app            what you double-click
+├── logs/                 the engine's run log        (DM_LOG_DIR)
+├── saves/                the default save store      (DM_SAVE)
+├── players/<name>/saves/ one store per player — each is user 1, so each keeps their own name
+├── cheats/               <build id>.txt cheat files   (DM_CHEATS)
+├── screenshots/          the in-game album            (DM_ALBUM_DIR)
+├── mods/                 loose mod files
+├── support/              the engine's own state: env.txt, temp/, its user registry
+├── <game>_build/         extracted files + shader caches, reused on rebuild
+└── nx2mac.json           what was built, from which engine commit, when
+```
+
+Nothing is written to `~/Library/Application Support/nxnative` or `~/Library/Logs/nxnative`
+anymore: `build.sh` hands the engine an `--env-file` baked into the app (`support/build-env.txt`)
+that sets `DM_SUPPORT_DIR`/`DM_LOG_DIR`/`DM_SAVE`/`DM_CHEATS`/`DM_ALBUM_DIR` to the game's folder
+(engine patch `patches/0001-launcher-state-dirs.patch`). `nx2mac library --json` lists what is in
+the library; the GUI's **Games** tab shows each game with its icon, Play (records "recently
+played"), a Data menu for saves/logs/mods/cheats/screenshots, and a Players menu.
+
+### Players
+
+```bash
+nx2mac player --create "Ada"          # add a player with your preferred name (max 8)
+nx2mac player --select Ada            # choose who plays
+nx2mac player                         # list them; * marks the active one
+```
+
+Each player gets their own save store and their own `DM_NICK`, which is how every player keeps a
+custom name (the engine hard-codes user 2..8, and only reads `DM_NICK` for user 1).
 
 ## Engine patches
 
@@ -110,10 +147,16 @@ filename order), so local fixes for the engine or anything vendored in it surviv
 cache. Keep them minimal and drop them once upstream lands the fix — see
 [patches/README.md](patches/README.md).
 
-## Releases
+## Continuous integration and releases
 
-The release is driven by the tag: pushing `vX.Y.Z` builds and publishes that version (there is no
-manual version input, and no release is created from a branch push).
+| event | what runs |
+| --- | --- |
+| pull request | lint + tests for the CLI and the GUI, plus a full app assembly (nothing is published) |
+| push to `main` | the same, and the release build (CLI zip, app zip, checksums) is uploaded as a workflow artifact |
+| tag `vX.Y.Z` | the release build is published as a GitHub Release for that tag |
+
+The release itself is driven by the tag: pushing `vX.Y.Z` publishes exactly that version — there is
+no manual version input and no release from a branch push.
 
 ```bash
 git tag -a v0.0.1 -m "nx2mac v0.0.1" && git push origin v0.0.1

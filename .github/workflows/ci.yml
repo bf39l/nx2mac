@@ -1,13 +1,18 @@
 name: CI
 
+# Policy:
+#   pull_request        -> lint, test, and build (proves the PR assembles)
+#   push to main        -> the same, plus the release build is uploaded as a
+#                          workflow artifact (nothing is published)
+#   tag vX.Y.Z          -> see release.yml, which publishes the release
 on:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -25,8 +30,7 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Install
-        run: uv sync --locked
+      - run: uv sync --locked
 
       - name: Lint
         run: uv run ruff check src/ tests/
@@ -42,7 +46,7 @@ jobs:
           uv run nx2mac doctor --json | head -c 200; echo
 
   gui:
-    name: GUI (swift build + test + bundle)
+    name: GUI (swift build + test + release build)
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -62,12 +66,30 @@ jobs:
       - name: Test
         run: swift test --package-path gui
 
-      - name: Assemble the app bundle (freezes the CLI inside it)
-        run: ./gui/build.sh release
+      # Also freezes the CLI into Contents/Resources/cli, exactly like a release.
+      - name: Assemble the app bundle
+        run: ./gui/build.sh release dist
 
       - name: Smoke test the bundled CLI
         run: |
-          CLI=gui/.build/nx2mac.app/Contents/Resources/cli/nx2mac
+          CLI=dist/nx2mac.app/Contents/Resources/cli/nx2mac
           test -x "$CLI"
           "$CLI" version
-          codesign -v gui/.build/nx2mac.app
+          codesign -v dist/nx2mac.app
+
+      - name: Package the release build
+        run: |
+          VERSION="$(uv run python -c 'import nx2mac; print(nx2mac.VERSION)')"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          mkdir -p out
+          ditto -c -k --sequesterRsrc --keepParent \
+            gui/.build/cli-dist/nx2mac "out/nx2mac-cli-$VERSION-macos-arm64.zip"
+          ditto -c -k --sequesterRsrc --keepParent \
+            dist/nx2mac.app "out/nx2mac-app-$VERSION-macos-arm64.zip"
+          cd out && shasum -a 256 ./*.zip > SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nx2mac-${{ env.VERSION }}-macos-arm64-${{ github.event_name }}${{ github.event_name == 'push' && '-main' || '' }}
+          path: out/*
+          if-no-files-found: error

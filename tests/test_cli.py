@@ -199,7 +199,9 @@ def test_engine_json_reports_source_ref_and_commit(isolated_paths: Path, monkeyp
     assert result.exit_code == 0
     engine = payload["engine"]
     assert engine["source"]["id"] == "upstream" and engine["ref"] == "main"
-    assert engine["commit"] == SHA and engine["branch"] == "main" and engine["patches"] == []
+    assert engine["commit"] == SHA and engine["branch"] == "main"
+    # the repo ships a patch series; it is applied to every checkout
+    assert "0001-launcher-state-dirs.patch" in engine["patches"]
     assert payload["saved"] == {"engine_id": "upstream", "engine_ref": "main"}
 
 

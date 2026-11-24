@@ -17,6 +17,9 @@ class Config:
 
     engine_id: str | None = None  # 'upstream' or 'fork'
     engine_ref: str | None = None  # branch, tag, or commit hash; None = source default
+    # Where built games live (their .app, saves, logs, mods, cheats). No default:
+    # the user picks an existing folder; nx2mac never creates it.
+    library_dir: str | None = None
 
 
 def config_path() -> Path:
@@ -59,23 +62,32 @@ def load(path: Path | None = None) -> Config:
     engine = data.get("engine", {})
     if not isinstance(engine, dict):
         raise ConfigError(f"[engine] table in {path} must be a table")
+    library = data.get("library", {})
+    if not isinstance(library, dict):
+        raise ConfigError(f"[library] table in {path} must be a table")
 
-    def opt(key: str) -> str | None:
-        value = engine.get(key)
+    def opt(table: dict[str, object], key: str) -> str | None:
+        value = table.get(key)
         return value if isinstance(value, str) and value else None
 
-    return Config(engine_id=opt("id"), engine_ref=opt("ref"))
+    return Config(
+        engine_id=opt(engine, "id"),
+        engine_ref=opt(engine, "ref"),
+        library_dir=opt(library, "dir"),
+    )
 
 
 def save(config: Config, path: Path | None = None) -> None:
     """Write the config as TOML, creating parent directories as needed."""
     path = path or config_path()
-    lines: list[str] = ["# nx2mac configuration (written by `nx2mac engine select`)"]
+    lines: list[str] = ["# nx2mac configuration (written by `nx2mac engine` and `nx2mac library`)"]
     if config.engine_id is not None or config.engine_ref is not None:
         lines += ["", "[engine]"]
         if config.engine_id is not None:
             lines.append(f"id = {_format_str(config.engine_id)}")
         if config.engine_ref is not None:
             lines.append(f"ref = {_format_str(config.engine_ref)}")
+    if config.library_dir is not None:
+        lines += ["", "[library]", f"dir = {_format_str(config.library_dir)}"]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

@@ -223,3 +223,110 @@ enum SelectionList {
         count > maxVisibleRows
     }
 }
+
+
+/// One built game in the library (`nx2mac library --json`), mirroring NX2Apple's
+/// library entries: identity, the built app, the engine it came from, and the
+/// folders holding its saves/logs/mods/cheats.
+struct LibraryGame: Decodable, Identifiable, Hashable {
+    let name: String
+    let path: String
+    let appPath: String?
+    let hasApp: Bool
+    let iconPath: String?
+    let titleID: String?
+    let version: String?
+    let engineCommit: String?
+    let engineRef: String?
+    let builtAt: String?
+    let lastPlayed: String?
+    let sizeBytes: Int?
+    let saves: String
+    let logs: String
+    let mods: String
+    let cheats: String
+    let screenshots: String
+
+    var id: String { path }
+    var appURL: URL? { appPath.map { URL(fileURLWithPath: $0) } }
+
+    enum CodingKeys: String, CodingKey {
+        case name, path, version, saves, logs, mods, cheats, screenshots
+        case appPath = "app_path"
+        case hasApp = "has_app"
+        case iconPath = "icon_path"
+        case titleID = "title_id"
+        case engineCommit = "engine_commit"
+        case engineRef = "engine_ref"
+        case builtAt = "built_at"
+        case lastPlayed = "last_played"
+        case sizeBytes = "size_bytes"
+    }
+
+    /// "1.25.0 · 0100646009FBE000 · fork@69513b66656d"
+    var subtitle: String {
+        [version, titleID, engineRef.map { "\($0)@\(engineCommit?.prefix(12) ?? "")" }]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+
+    var sizeLabel: String {
+        ByteCountFormatter.string(fromByteCount: Int64(sizeBytes ?? 0), countStyle: .file)
+    }
+
+    var builtLabel: String {
+        guard let builtAt else { return "unknown build date" }
+        return "built " + (ISODate.describe(builtAt) ?? builtAt)
+    }
+}
+
+/// `nx2mac library --json`
+struct LibraryPayload: Decodable {
+    let dir: String?
+    let exists: Bool
+    let games: [LibraryGame]
+}
+
+/// ISO-8601 helpers plus a loosely formatted date for the library rows.
+enum ISODate {
+    static func describe(_ text: String) -> String? {
+        guard let date = parse(text) else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    static func parse(_ text: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: text) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: text)
+    }
+}
+
+
+/// One player of a game (`nx2mac player --json`): a name and their own saves.
+struct PlayerEntry: Decodable, Identifiable, Hashable {
+    let id: String
+    let name: String
+    let created: String?
+}
+
+/// `nx2mac player --json`
+struct PlayersPayload: Decodable, Equatable {
+    let game: String
+    let path: String
+    let players: [PlayerEntry]
+    let active: String?
+    let envFile: String?
+
+    enum CodingKeys: String, CodingKey {
+        case game, path, players, active
+        case envFile = "env_file"
+    }
+
+    var activeName: String? { players.first { $0.id == active }?.name }
+}

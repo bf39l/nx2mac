@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import library as library_mod
 from .doctor import BUILD_PREFLIGHT_EXCLUDE, DoctorContext, run_checks
 from .engines import ResolvedEngine
 from .inputs import GAME_EXTENSIONS, KEYS_FILENAMES, NSO_EXTENSION, SWITCH1_EXTENSIONS
@@ -106,6 +107,7 @@ def build_argv(
     output: Path | None,
     extra_args: Sequence[str],
     work_dir: Path | None = None,
+    env_file: Path | None = None,
 ) -> list[str]:
     """Assemble the argv for the engine's build script (macOS app target).
 
@@ -119,6 +121,9 @@ def build_argv(
     args.extend(["--platform", "mac-app"])
     if work_dir is not None:
         args.extend(["--work-dir", str(work_dir)])
+    if env_file is not None:
+        # baked into the app: it is what points the engine's state at the game folder
+        args.extend(["--env-file", str(env_file)])
     if output is not None:
         args.extend(["-o", str(output)])
     args.extend(extra_args)
@@ -161,6 +166,38 @@ def validate_extras(paths: Sequence[Path], flag: str) -> list[Path]:
     return resolved
 
 
+def _record_in_library(
+    engine: ResolvedEngine,
+    game: GameInput,
+    game_directory: Path,
+    app_path: Path | None,
+) -> tuple[Path | None, Path | None]:
+    """Write the game's manifest and its player env (both inside the game folder)."""
+    directory = game_directory
+    for sub in library_mod.GAME_SUBDIRS:
+        (directory / sub).mkdir(parents=True, exist_ok=True)
+
+    metadata: dict[str, str | None] = {"name": game.path.stem, "title_id": None, "version": None}
+    if app_path is not None:
+        metadata = library_mod.app_metadata(app_path)
+
+    env_file = library_mod.write_player_env(directory)
+
+    manifest = library_mod.write_manifest(
+        directory,
+        name=str(metadata["name"] or directory.name),
+        app_path=app_path or directory,
+        title_id=metadata["title_id"],
+        version=metadata["version"],
+        engine_source=engine.source.id,
+        engine_ref=engine.ref,
+        engine_commit=engine.commit,
+        patches=engine.patches,
+        inputs={"game": str(game.path), "kind": game.kind},
+    )
+    return manifest, env_file
+
+
 @dataclass(frozen=True)
 class BuildResult:
     """Outcome of one build attempt."""
@@ -172,6 +209,9 @@ class BuildResult:
     out_dir: Path | None = None  # where the app, build folder and keys were collected
     work_dir: Path | None = None  # the engine's build folder (extracted files, shader caches)
     keys_path: Path | None = None  # prod.keys the build actually used
+    library_dir: Path | None = None  # the game library the build was filed into
+    manifest: Path | None = None  # <library>/<Game>/nx2mac.json
+    env_file: Path | None = None  # the engine's per-game env.txt we pointed at the folder
 
     @property
     def ok(self) -> bool:
@@ -187,6 +227,9 @@ class BuildResult:
             "out_dir": str(self.out_dir) if self.out_dir is not None else None,
             "work_dir": str(self.work_dir) if self.work_dir is not None else None,
             "keys_path": str(self.keys_path) if self.keys_path is not None else None,
+            "library_dir": str(self.library_dir) if self.library_dir is not None else None,
+            "manifest": str(self.manifest) if self.manifest is not None else None,
+            "env_file": str(self.env_file) if self.env_file is not None else None,
             "argv": list(self.argv),
         }
 
@@ -203,12 +246,16 @@ def run_build(
     updates: Sequence[Path] = (),
     dlcs: Sequence[Path] = (),
     out_dir: Path | None = None,
+    library_dir: Path | None = None,
 ) -> BuildResult:
     """Preflight-check, prepare the Python env and stream the engine build.
 
     Raises BuildError when prerequisites still fail (with a pointer to
     `nx2mac doctor`), inputs are invalid, or prod.keys is missing for a
     Switch 1 game. PyEnvError from venv setup propagates as-is.
+
+    With `library_dir` set the game gets `<library>/<Game>/` (app + saves, logs,
+    mods, cheats) and the engine's per-game env.txt is pointed at those folders;
     """
     report = run_checks(DoctorContext(env=env))
     blocking = report.failure_names(BUILD_PREFLIGHT_EXCLUDE)
@@ -220,6 +267,10 @@ def run_build(
         )
 
     game = classify_game(game_path)
+    library = library_mod.require_library(library_dir) if library_dir is not None else None
+    if library is not None and out_dir is None:
+        # One folder per game inside the library: app + saves/logs/mods/cheats.
+        out_dir = library_mod.prepare_game_dir(library, game.path.stem if game.path.is_file() else game.path.name)
     out_dir = out_dir.expanduser().resolve() if out_dir is not None else None
     # The game's own directory: where the engine puts things by default, and the
     # default output folder when we have to stage inputs elsewhere.
@@ -251,9 +302,13 @@ def run_build(
         out_dir = keys_dir
 
     work_dir: Path | None = None
+    env_file: Path | None = None
     if out_dir is not None:
         out_dir.mkdir(parents=True, exist_ok=True)
         work_dir = work_dir_for(out_dir, game)
+        if library is not None:
+            # keeps the engine's support dir, logs, saves, cheats and screenshots here
+            env_file = library_mod.write_build_env(out_dir)
 
     venv = ensure_venv(cache_root, env=env)
     argv = build_argv(
@@ -264,6 +319,7 @@ def run_build(
         output,
         extra_args,
         work_dir=work_dir,
+        env_file=env_file,
     )
     returncode = env.run_stream(argv, cwd=engine.path, on_line=on_line)
 
@@ -274,6 +330,11 @@ def run_build(
         elif out_dir is not None:
             app_path = discover_app(out_dir)  # the engine names it and writes it here
 
+    manifest: Path | None = None
+    player_env: Path | None = None
+    if library is not None and out_dir is not None and returncode == 0:
+        manifest, player_env = _record_in_library(engine, game, out_dir, app_path)
+
     return BuildResult(
         argv=tuple(argv),
         app_path=app_path,
@@ -282,4 +343,7 @@ def run_build(
         out_dir=out_dir,
         work_dir=work_dir,
         keys_path=keys,
+        library_dir=library,
+        manifest=manifest,
+        env_file=player_env,
     )

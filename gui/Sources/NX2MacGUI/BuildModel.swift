@@ -132,6 +132,7 @@ final class BuildModel: ObservableObject {
         }
         if outDirIsAuto { outDirURL = defaultOutDir }
         await scanGameDir(url)
+        await refreshCheatFile()
     }
 
     /// Choose the update yourself (nil clears it): this wins over the folder scan.
@@ -145,6 +146,7 @@ final class BuildModel: ObservableObject {
         gameURL = url
         gameFileIsAuto = false
         if outDirIsAuto { outDirURL = defaultOutDir }
+        Task { await refreshCheatFile() }
     }
 
     /// Ask the CLI what the folder holds, and pre-select its game package.
@@ -353,6 +355,33 @@ final class BuildModel: ObservableObject {
         struct Removed: Decodable { let game: String; let path: String }
     }
 
+    /// The game's one cheat file (its name), shown in the Build tab.
+    @Published private(set) var cheatFileName: String?
+
+    /// Read the selected game's cheat file, if it has one.
+    func refreshCheatFile() async {
+        guard let cli, let game = cheatGameName else {
+            cheatFileName = nil
+            return
+        }
+        guard let result = try? await Self.run(cli, ["cheats", "--game", game, "--json"]),
+              let data = result.stdout.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(CheatsPayload.self, from: data),
+              let build = payload.games.first?.builds.first
+        else {
+            cheatFileName = nil
+            return
+        }
+        cheatFileName = URL(fileURLWithPath: build.file).lastPathComponent
+    }
+
+    /// Delete the game's cheat file (nx2mac keeps one).
+    func clearCheats() async {
+        guard let cli, let game = cheatGameName else { return }
+        _ = try? await Self.run(cli, ["cheats", "--game", game, "--remove", "--json"])
+        await refreshCheatFile()
+    }
+
     /// The game the cheat commands address: the built entry's name, or the input's folder name.
     var cheatGameName: String? {
         guard gameURL != nil else { return nil }
@@ -366,6 +395,7 @@ final class BuildModel: ObservableObject {
         for url in urls {
             _ = try? await Self.run(cli, ["cheats", "--game", game, "--import", url.path, "--json"])
         }
+        await refreshCheatFile()
     }
 
     /// Re-anchor a cheat file to this build with the engine's cheat_anchor.py.
@@ -376,6 +406,7 @@ final class BuildModel: ObservableObject {
         for line in (result.stdout + result.stderr).split(separator: "\n") {
             log.append(String(line))
         }
+        await refreshCheatFile()
     }
 
     /// Read a game's cheat files, their switches and the engine's master/safe flags.

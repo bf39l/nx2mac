@@ -30,12 +30,14 @@ from nx2mac.library import (
     cheat_builds,
     cheats_dir,
     check_library_choice,
+    clear_cheats,
     cloud_value,
     create_player,
     delete_player,
     describe_library,
     ensure_layout,
     find_game,
+    import_cheats,
     is_library,
     list_games,
     load_players,
@@ -500,3 +502,33 @@ def test_enabling_a_duplicate_uses_its_hash_key(tmp_path: Path) -> None:
     set_cheat(library, TID, "0123456789ABCDEF", "Max HP #2", True)
 
     assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "Max HP #2\n"
+
+
+def test_only_one_cheat_file_is_kept(tmp_path: Path) -> None:
+    """Importing a cheat file replaces the game's previous one (nx2mac keeps exactly one)."""
+    library = _library(tmp_path)
+    folder = cheats_dir(library, TID)
+    folder.mkdir(parents=True)
+    old = folder / "AAAAAAAAAAAAAAAA.txt"
+    old.write_text("[Old]\n01000000 00000000\n", encoding="utf-8")
+    (folder / "AAAAAAAAAAAAAAAA.enabled").write_text("Old\n", encoding="utf-8")
+    new = tmp_path / "BBBBBBBBBBBBBBBB.txt"
+    new.write_text("[New]\n01000000 00000000\n", encoding="utf-8")
+
+    import_cheats(library, TID, [new])
+
+    assert sorted(entry.name for entry in folder.iterdir()) == ["BBBBBBBBBBBBBBBB.txt"]
+
+
+def test_clear_cheats_removes_the_file_and_its_switches(tmp_path: Path) -> None:
+    library = _library(tmp_path)
+    folder = cheats_dir(library, TID)
+    folder.mkdir(parents=True)
+    (folder / "AAAAAAAAAAAAAAAA.txt").write_text("[A]\n01000000 00000000\n", encoding="utf-8")
+    (folder / "AAAAAAAAAAAAAAAA.enabled").write_text("A\n", encoding="utf-8")
+    (folder / f".cheats-off-{TID}").write_text("", encoding="utf-8")
+
+    removed = clear_cheats(library, TID)
+
+    assert len(removed) == 2 and not (folder / "AAAAAAAAAAAAAAAA.txt").exists()
+    assert (folder / f".cheats-off-{TID}").exists()  # the master switch is not a cheat file

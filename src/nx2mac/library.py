@@ -1007,6 +1007,7 @@ def cheat_anchor_script(engine_root: Path) -> Path | None:
 
 
 def import_cheats(library: Path, title_id: str, sources: Sequence[Path], enable: bool = False) -> list[Path]:
+    """Copy a cheat file in, replacing whatever was there (one cheat file per game)."""
     """Copy cheat files (`<build id>.txt`, and a sibling `.meta.tsv`) into the game's folder.
 
     Exactly what NX2Apple's "Import" does: the host reads them at the next launch. A file whose
@@ -1031,11 +1032,34 @@ def import_cheats(library: Path, title_id: str, sources: Sequence[Path], enable:
         if target != path:
             target.write_bytes(path.read_bytes())
         written.append(target)
+        _keep_single_cheat_file(folder, keep=target.stem)
         if enable:
             enabled_file = folder / f"{stem}.enabled"
             if not enabled_file.exists():
                 enabled_file.write_text("", encoding="utf-8")
     return written
+
+
+def _keep_single_cheat_file(folder: Path, keep: str) -> None:
+    """nx2mac keeps one cheat file per game: drop the others (and their side files)."""
+    for entry in folder.iterdir():
+        if not entry.is_file() or entry.name.startswith("."):
+            continue
+        if entry.name.split(".")[0] != keep:
+            entry.unlink(missing_ok=True)
+
+
+def clear_cheats(library: Path, title_id: str) -> list[Path]:
+    """Remove the game's cheat file, its switches and its meta file (one file is the rule)."""
+    folder = cheats_dir(library, title_id)
+    removed: list[Path] = []
+    if not folder.is_dir():
+        return removed
+    for entry in sorted(folder.iterdir()):
+        if entry.is_file() and not entry.name.startswith(".cheats-"):
+            entry.unlink(missing_ok=True)
+            removed.append(entry)
+    return removed
 
 
 def _is_build_id(text: str) -> bool:

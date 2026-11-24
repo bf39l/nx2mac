@@ -479,6 +479,7 @@ def cheats(
         metavar="FILE",
         help="re-anchor a cheat file to this build with the engine's cheat_anchor.py (needs a build's extract).",
     ),
+    remove: bool = typer.Option(False, "--remove", help="delete the game's cheat file (nx2mac keeps one)."),
     off: bool = typer.Option(False, "--off", help="master switch: no cheat runs at all."),
     on: bool = typer.Option(False, "--on", help="clear the master switch again."),
     restore_safe: bool = typer.Option(
@@ -516,6 +517,8 @@ def cheats(
             except library_mod.LibraryError as error:
                 _fail(ctx, str(error))
 
+        if remove:
+            library_mod.clear_cheats(directory, entry.title_id)
         if compile_file:
             main = library_mod.extracted_main(directory, entry.title_id)
             if main is None:
@@ -543,6 +546,11 @@ def cheats(
                     )
                 except CheatToolError as error:
                     _fail(ctx, str(error))
+                library_mod.import_cheats(
+                    directory,
+                    entry.title_id,
+                    [path for path in library_mod.cheats_dir(engine, entry.title_id).glob("*.txt")],
+                )
                 if not machine_readable:
                     for line in report:
                         console.print(f"[dim]{line}[/]")

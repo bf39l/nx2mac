@@ -87,15 +87,16 @@ struct BuildTab: View {
             }
             selectionList(model.dlcURLs) { index in model.dlcURLs.remove(at: index) }
 
-            row(title: "Cheats") {
-                Text("cheat files live with the game; import one or re-anchor it for this build")
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            row(title: "Switch Cheat") {
+                pathLabel(model.cheatFileName ?? "one cheat file (…/<build id>.txt) for this game",
+                          empty: model.cheatFileName == nil)
                 Button("Import…") { importCheats() }
                     .disabled(model.cheatGameName == nil)
                 Button("Re-anchor…") { reanchorCheats() }
-                    .disabled(model.cheatGameName == nil)
+                    .disabled(model.cheatGameName == nil || model.cheatFileName == nil)
+                if model.cheatFileName != nil {
+                    Button("Clear") { Task { await model.clearCheats() } }
+                }
             }
 
             row(title: "Output folder") {
@@ -438,7 +439,11 @@ extension BuildTab {
         panel.allowsMultipleSelection = true
         panel.message = "Cheat files are named after the game's build ID (16 hex digits)."
         panel.prompt = "Import"
-        if panel.runModal() == .OK { Task { await model.importCheats(panel.urls) } }
+        if panel.runModal() == .OK, let url = panel.url {
+            Task {
+                await model.importCheats([url])   // one cheat file per game: this replaces the old one
+            }
+        }
     }
 
     /// Re-anchor a cheat file for this build (the engine's cheat_anchor.py; needs a build's extract).

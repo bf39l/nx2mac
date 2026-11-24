@@ -137,6 +137,17 @@ def default_patches_dir() -> Path | None:
     return None
 
 
+def default_icon_path() -> Path | None:
+    """nx2mac's own app icon, shipped with the package, for games that carry none (a NUP without
+    one, a dump folder). The engine's `--fallback-icon` only fills in when the game has no icon, so
+    a game that has its own keeps it."""
+    here = Path(__file__).resolve().parent
+    for candidate in (here / "resources" / "app-icon.png", here.parents[1] / "src" / "nx2mac" / "resources" / "app-icon.png"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def apply_patches(env: Env, checkout: Path, patches_dir: Path | None = None) -> tuple[str, ...]:
     """Apply nx2mac's patch series to a pristine engine *checkout*.
 

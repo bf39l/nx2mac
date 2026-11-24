@@ -85,6 +85,20 @@ def test_find_prod_keys_explicit_and_auto(tmp_path: Path) -> None:
         find_prod_keys(other, game)
 
 
+def test_build_argv_passes_a_fallback_icon_for_iconless_games(tmp_path: Path) -> None:
+    icon = tmp_path / "app-icon.png"
+    icon.write_bytes(b"\x89PNG")
+
+    argv = build_argv(
+        tmp_path / "py", _engine(tmp_path), tmp_path / "g", None, None, [],
+        fallback_icon=icon,
+    )
+    assert "--fallback-icon" in argv and argv[argv.index("--fallback-icon") + 1] == str(icon)
+
+    without = build_argv(tmp_path / "py", _engine(tmp_path), tmp_path / "g", None, None, [])
+    assert "--fallback-icon" not in without  # only when nx2mac ships one
+
+
 def test_build_argv_shape(tmp_path: Path) -> None:
     engine = _engine(tmp_path)
     game_dir = _game_dir(tmp_path)

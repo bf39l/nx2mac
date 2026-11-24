@@ -15,7 +15,7 @@ from pathlib import Path
 from . import library as library_mod
 from .cheats import CheatToolError, anchor_build_cheats
 from .doctor import BUILD_PREFLIGHT_EXCLUDE, DoctorContext, run_checks
-from .engines import ResolvedEngine
+from .engines import ResolvedEngine, default_icon_path
 from .inputs import GAME_EXTENSIONS, KEYS_FILENAMES, NSO_EXTENSION, SWITCH1_EXTENSIONS
 from .probe import probe as probe_path
 from .pyenv import ensure_venv
@@ -111,6 +111,7 @@ def build_argv(
     extra_args: Sequence[str],
     work_dir: Path | None = None,
     env_file: Path | None = None,
+    fallback_icon: Path | None = None,
 ) -> list[str]:
     """Assemble the argv for the engine's build script (macOS app target).
 
@@ -129,6 +130,8 @@ def build_argv(
         args.extend(["--env-file", str(env_file)])
     if output is not None:
         args.extend(["-o", str(output)])
+    if fallback_icon is not None:
+        args.extend(["--fallback-icon", str(fallback_icon)])
     # One JSON object per line: counters (shaders compiled, files copied) reach the UI live.
     args.extend(["--progress", "json"])
     args.extend(extra_args)
@@ -528,6 +531,7 @@ def run_build(
         extra_args,
         work_dir=work_dir,
         env_file=env_file,
+        fallback_icon=default_icon_path(),
     )
     returncode = env.run_stream(argv, cwd=engine.path, on_line=watch)
 

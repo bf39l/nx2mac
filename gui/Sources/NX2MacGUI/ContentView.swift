@@ -399,7 +399,7 @@ private struct BuildSetupSection: View {
                 }
                 Button("Open") { NSWorkspace.shared.open(app) }
                 Button {
-                    Task { await model.cleanBuilds() }
+                    Task { await model.cleanBuilds(setup) }
                 } label: {
                     Label("Clean build files", systemImage: "trash")
                 }

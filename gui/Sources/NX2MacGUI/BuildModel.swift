@@ -311,7 +311,7 @@ final class BuildModel: ObservableObject {
 
     /// Delete the extracted files and shader caches of finished builds (the app stays).
     @discardableResult
-    func cleanBuilds(game: String? = nil) async -> String? {
+    func cleanBuilds(_ setup: BuildSetup, game: String? = nil) async -> String? {
         guard let cli else { return nil }
         var arguments = ["clean", "--json", "--manifests"]
         if let game { arguments += ["--game", game] }
@@ -320,6 +320,7 @@ final class BuildModel: ObservableObject {
               let payload = try? JSONDecoder().decode(CleanPayload.self, from: data)
         else { return nil }
         let freed = ByteCountFormatter.string(fromByteCount: Int64(payload.freed), countStyle: .file)
+        setup.log.append(payload.removed.isEmpty ? "Nothing to clean." : "Cleaned build files: freed \(freed).")
         return freed
     }
 

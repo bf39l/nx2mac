@@ -377,7 +377,7 @@ struct BuildTab: View {
                     Label("Cancel", systemImage: "stop.circle")
                 }
                 ProgressView().controlSize(.small)
-                Text(model.stage.isEmpty ? "building…" : model.stage)
+                Text(model.stage.isEmpty ? "building…" : "Step \(model.stage)")
                     .font(.callout.weight(.medium))
             } else {
                 Button { model.startBuild() } label: {

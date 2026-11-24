@@ -72,8 +72,10 @@ final class BuildEventTests: XCTestCase {
 
 final class ProgressTests: XCTestCase {
     func testExtractsStepTags() {
-        XCTAssertEqual(Progress.stage(from: "[16:05:44] [8/8] Mac app · signing (ad-hoc) …"), "8/8")
-        XCTAssertEqual(Progress.stage(from: "[4/7] shader split · splitting …"), "4/7")
+        XCTAssertEqual(Progress.stage(from: "[16:05:44] [8/8] Mac app · signing (ad-hoc) …"), "8/8 Mac app")
+        XCTAssertEqual(Progress.stage(from: "[4/7] shader split · splitting …"), "4/7 shader split")
+        XCTAssertEqual(Progress.stage(from: "[1/6] extract v3014656 …"), "1/6 extract v3014656")
+        XCTAssertEqual(Progress.stage(from: "[3/7] rewrite · main, subsdk0, sdk …"), "3/7 rewrite")
     }
 
     func testIgnoresNonStepLines() {

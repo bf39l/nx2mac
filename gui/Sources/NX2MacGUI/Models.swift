@@ -197,8 +197,9 @@ enum BuildEvent: Hashable {
 /// A human display name for an engine log line: the engine prefixes progress
 /// with `[stage]` tags, which is the closest thing to a progress percentage.
 enum Progress {
-    /// Extracts "8/8" from `[16:05:44] [8/8] Mac app · signing (ad-hoc) …`.
-    static func stage(from line: String) -> String? {
+    /// The step a log line belongs to: `(index: "8/8", name: "Mac app")` for
+    /// `[16:05:44] [8/8] Mac app · signing (ad-hoc) …`.
+    static func step(from line: String) -> (index: String, name: String)? {
         var rest = Substring(line)
         // Drop a leading clock timestamp such as "[16:05:44] ", which is not a step tag.
         if rest.hasPrefix("["), let close = rest.firstIndex(of: "]") {
@@ -209,7 +210,22 @@ enum Progress {
         }
         guard rest.hasPrefix("["), let end = rest.firstIndex(of: "]") else { return nil }
         let tag = String(rest[rest.index(after: rest.startIndex)..<end])
-        return tag.contains("/") ? tag : nil  // only "k/n" step tags count as progress
+        guard tag.contains("/") else { return nil }  // only "k/n" step tags count as progress
+
+        // What follows the tag is the step's name, up to the "· detail …" part.
+        var tail = rest[rest.index(after: end)...].drop(while: { $0 == " " })
+        if let separator = tail.firstIndex(of: "·") { tail = tail[..<separator] }
+        var name = String(tail).trimmingCharacters(in: .whitespaces)
+        while name.hasSuffix("…") || name.hasSuffix("...") {
+            name = String(name.dropLast(name.hasSuffix("…") ? 1 : 3)).trimmingCharacters(in: .whitespaces)
+        }
+        return (index: tag, name: name)
+    }
+
+    /// "8/8 Mac app" — the step's number and name, for the build button's status line.
+    static func stage(from line: String) -> String? {
+        guard let step = step(from: line) else { return nil }
+        return step.name.isEmpty ? step.index : "\(step.index) \(step.name)"
     }
 }
 

@@ -78,7 +78,8 @@ open ~/Applications/nx2mac.app
   the row like the game package: name, role, version, size; choose or clear to change it) and any number of DLC packages (auto-sized vertical list, five rows then scrolls),
   and an **output folder** (defaults to the game library, so builds are filed into
 `<library>/nx2mac_game_lib/<TID>/`; pick a folder to override).
-  The engine's progress streams into the log; when it finishes you can reveal or open the app.
+  The engine's progress streams into the log and the status next to **Cancel** names the step
+  (`Step 3/7 rewrite`); when it finishes you can reveal or open the app.
 
 The app reads its icon from `gui/Resources/AppIcon.icns`, regenerated with
 `swift gui/tools/make_icon.swift gui/Resources/AppIcon.icns`. Settings shows the app and CLI

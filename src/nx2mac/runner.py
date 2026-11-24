@@ -33,6 +33,13 @@ class Env(Protocol):
         """Run one command (not a shell), capturing stdout/stderr as text."""
         ...
 
+    def run_stream(self, args: Sequence[str], *, cwd: Path | None = None) -> int:
+        """Run one long-lived command with stdio inherited (live progress).
+
+        Returns the process exit code; callers treat non-zero as failure.
+        """
+        ...
+
 
 class RealEnv:
     """Production Env backed by shutil.which and subprocess.run."""
@@ -45,3 +52,7 @@ class RealEnv:
         # check=False: callers (and tests via the Env protocol) inspect returncode.
         proc = subprocess.run(list(args), check=False, capture_output=True, text=True, cwd=cwd or None)
         return RunResult(stdout=proc.stdout, stderr=proc.stderr, returncode=proc.returncode)
+
+    def run_stream(self, args: Sequence[str], *, cwd: Path | None = None) -> int:
+        # check=False and no capture: output streams straight to the console.
+        return subprocess.run(list(args), check=False, cwd=cwd or None).returncode

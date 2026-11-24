@@ -25,6 +25,8 @@ class FakeEnv:
     which_map: dict[str, Path] = field(default_factory=dict)
     run_rules: list[RunRule] = field(default_factory=list)
     calls: list[list[str]] = field(default_factory=list)
+    stream_calls: list[tuple[list[str], Path | None]] = field(default_factory=list)
+    stream_returncode: int = 0
 
     def which(self, name: str) -> Path | None:
         return self.which_map.get(name)
@@ -37,3 +39,10 @@ class FakeEnv:
             if re.search(pattern, joined):
                 return result(argv) if callable(result) else result
         return RunResult()
+
+    def run_stream(self, args: Sequence[str], *, cwd: Path | None = None) -> int:
+        """Record a streaming command and return the configured exit code."""
+        argv = [str(a) for a in args]
+        self.calls.append(argv)
+        self.stream_calls.append((argv, cwd))
+        return self.stream_returncode

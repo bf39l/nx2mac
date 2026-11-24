@@ -25,6 +25,10 @@ dev = [
 target-version = "py311"
 line-length = 120
 
+[tool.ruff.lint]
+# typer builds its interface from Option/Argument calls inside argument defaults.
+ignore = ["B008"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 [tool.hatch.build.targets.wheel]

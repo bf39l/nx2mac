@@ -17,8 +17,12 @@ EVENT_RESULT: str = "result"
 
 
 def emit(payload: dict[str, Any]) -> None:
-    """Write one JSON document to stdout (single-document commands)."""
-    print(json.dumps(payload, ensure_ascii=False, default=str))
+    """Write one JSON document to stdout (single-document commands).
+
+    Flushed per line: a GUI reads the build's NDJSON event stream while the build runs, and a
+    redirected stdout is block-buffered otherwise (the frozen CLI never reaches a terminal).
+    """
+    print(json.dumps(payload, ensure_ascii=False, default=str), flush=True)
 
 
 def event(kind: str, **fields: Any) -> None:

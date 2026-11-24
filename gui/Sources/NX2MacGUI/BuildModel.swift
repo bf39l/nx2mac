@@ -89,6 +89,10 @@ final class BuildModel: ObservableObject {
     @Published private(set) var appURL: URL?
 
     private var process: Process?
+    /// Lines waiting for the next UI tick: a build prints in bursts, and one published
+    /// change per line would make SwiftUI re-lay-out hundreds of times a second.
+    private var pendingLog: [String] = []
+    private var logTimer: Timer?
 
     init() {
         refreshCLI()
@@ -645,6 +649,7 @@ final class BuildModel: ObservableObject {
 
     func startBuild() {
         guard let cli, let request, !isRunning else { return }
+        pendingLog.removeAll()
         log = []
         stage = ""
         appURL = nil
@@ -672,22 +677,42 @@ final class BuildModel: ObservableObject {
         process = nil
     }
 
+    /// Queue one line; the timer publishes the batch a moment later.
+    private func appendLog(_ text: String) {
+        pendingLog.append(text)
+        guard logTimer == nil else { return }
+        logTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.flushLog() }
+        }
+    }
+
+    private func flushLog() {
+        logTimer?.invalidate()
+        logTimer = nil
+        guard !pendingLog.isEmpty else { return }
+        let batch = pendingLog
+        pendingLog.removeAll()
+        log.append(contentsOf: batch)
+        if let last = batch.last, let step = Progress.stage(from: last) { stage = step }
+    }
+
     private func handle(line: String) {
         guard let event = BuildEvent.parse(line) else {
-            if !line.isEmpty { log.append(line) }
+            if !line.isEmpty { appendLog(line) }
             return
         }
         switch event {
         case .engine(let engine):
             pinned = engine
-            log.append("Engine: \(engine.source.label) — \(engine.summary)")
+            appendLog("Engine: \(engine.source.label) — \(engine.summary)")
         case .log(let text):
-            log.append(text)
-            if let step = Progress.stage(from: text) { stage = step }
+            appendLog(text)
         case .error(let message):
-            log.append("error: \(message)")
+            appendLog("error: \(message)")
+            flushLog()
             state = .failed(message)
         case .result(let result):
+            flushLog()
             appURL = result.appPath
             if result.ok {
                 state = .succeeded
@@ -696,11 +721,12 @@ final class BuildModel: ObservableObject {
                 state = .failed("the engine exited with code \(result.returncode)")
             }
         case .unknown(let raw):
-            log.append(raw)
+            appendLog(raw)
         }
     }
 
     private func finish(exitCode: Int32) {
+        flushLog()
         process = nil
         switch state {
         case .running where exitCode != 0:

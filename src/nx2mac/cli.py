@@ -38,6 +38,13 @@ app = typer.Typer(
 )
 console = Console()
 
+# Progress must reach a pipe (the GUI) as it happens, not when the buffer fills.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(line_buffering=True)  # type: ignore[union-attr]
+    except (AttributeError, ValueError):  # not a TextIOWrapper (or already closed)
+        pass
+
 
 @dataclass
 class CliState:

@@ -8,8 +8,9 @@ name: Release
 # src/nx2mac/__init__.py and gui/Info.plist disagree, so a tag can never publish
 # something else than it says.
 #
-# Assets: the standalone CLI (PyInstaller onedir), the GUI app with that CLI
-# bundled inside, and SHA256SUMS — all named after the tag.
+# Assets: an installable disk image (nx2mac-<version>-macos-arm64.dmg, the app next to an
+# /Applications symlink), the GUI app with the frozen CLI bundled inside as a zip, the standalone
+# CLI, and SHA256SUMS — all named after the tag.
 
 on:
   push:
@@ -26,12 +27,12 @@ jobs:
     # Apple silicon: the engine's tooling and the frozen CLI must be arm64.
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Confirm the runner is arm64
         run: test "$(uname -m)" = arm64
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v10
         with:
           enable-cache: true
 
@@ -84,9 +85,12 @@ jobs:
           # Prove the app carries a working CLI before publishing it.
           "$APP/Contents/Resources/cli/nx2mac" version
 
-          cd out && shasum -a 256 ./*.zip > SHA256SUMS.txt && cat SHA256SUMS.txt
+          # The download most people want: mount it and drag the app to Applications.
+          ./packaging/make_dmg.sh "$APP" "$VERSION" out
 
-      - uses: actions/upload-artifact@v4
+          cd out && shasum -a 256 ./*.zip ./*.dmg > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v7
         with:
           name: nx2mac-${{ env.VERSION }}-macos-arm64
           path: out/*
@@ -100,6 +104,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "nx2mac $TAG" \
             --generate-notes \
-            "out/nx2mac-cli-$VERSION-macos-arm64.zip" \
+            "out/nx2mac-$VERSION-macos-arm64.dmg" \
             "out/nx2mac-app-$VERSION-macos-arm64.zip" \
+            "out/nx2mac-cli-$VERSION-macos-arm64.zip" \
             out/SHA256SUMS.txt

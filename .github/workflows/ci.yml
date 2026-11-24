@@ -23,8 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with:
           enable-cache: true
 
@@ -48,12 +48,12 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Confirm the runner is arm64
         run: test "$(uname -m)" = arm64
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v10
         with:
           enable-cache: true
 
@@ -83,9 +83,11 @@ jobs:
             gui/.build/cli-dist/nx2mac "out/nx2mac-cli-$VERSION-macos-arm64.zip"
           ditto -c -k --sequesterRsrc --keepParent \
             dist/nx2mac.app "out/nx2mac-app-$VERSION-macos-arm64.zip"
-          cd out && shasum -a 256 ./*.zip > SHA256SUMS.txt
+          # Same packaging as a release, so a broken DMG never reaches a tag.
+          ./packaging/make_dmg.sh dist/nx2mac.app "$VERSION" out
+          cd out && shasum -a 256 ./*.zip ./*.dmg > SHA256SUMS.txt
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: nx2mac-${{ env.VERSION }}-macos-arm64-${{ github.event_name }}
           path: out/*

@@ -13,10 +13,17 @@ Agent-oriented documentation (dependency checklist, engine policy, JSON contract
 
 ## Install
 
+**Download the disk image** from [Releases](../../releases/latest), open it and drag `nx2mac.app`
+into `Applications` (Apple silicon, macOS 14+). The app is ad-hoc signed rather than notarized, so
+the very first launch needs right-click → **Open**; after that it starts normally.
+
 ```bash
-# the app: self-contained, carries its own frozen CLI (Contents/Resources/cli)
+# or build it yourself: self-contained, carries its own frozen CLI (Contents/Resources/cli)
 ./gui/build.sh release ~/Applications
 open ~/Applications/nx2mac.app
+
+# and the same disk image a release ships
+./packaging/make_dmg.sh ~/Applications/nx2mac.app 0.0.1 dist
 
 # optional: the CLI alone, for terminal use
 uv tool install .
@@ -415,6 +422,25 @@ swift test --package-path gui   # 27 tests
 Layout: `src/nx2mac/` (CLI: `cli`, `doctor`, `remedies`, `installer`, `engines`, `builder`,
 `staging`, `pyenv`, `config`, `runner`, `emit`), `gui/` (SwiftUI app + icon tool), `packaging/`
 (PyInstaller entry point for the bundled CLI), `patches/` (engine fixes).
+
+## Credits
+
+nx2mac is the glue, not the emulator. Everything that actually runs a Switch game is other
+people's work:
+
+- **[nxnative](https://github.com/seedds/nxnative)** (seedds) — the engine: NSO/ExeFS extraction,
+  the shader pipeline and its prebuilt pipeline cache, the Metal + HLE host, and the
+  `scripts/build_ipa_from_nsp.py` build script this tool drives. Without nxnative there is no Mac
+  app to build; nx2mac only checks prerequisites, pins a commit and drives that script.
+- **[NX2Apple](https://github.com/LNPANDY/NX2Apple)** (LNPANDY) — the reference launcher this
+  project learned from: its pinned-engine-plus-patch-series model shaped `patches/`, and its game
+  library, library-wide players, cheat-file handling and "build anyway" failure states shaped the
+  GUI. nx2mac exists because that approach works but lags the engine — here the engine is fetched
+  fresh from GitHub and the library lives in plain folders next to your games.
+- The wider Switch homebrew community whose documentation, tooling and conventions both projects
+  stand on.
+
+Thanks to all of them. Bugs in nx2mac are ours, not theirs.
 
 ## License
 

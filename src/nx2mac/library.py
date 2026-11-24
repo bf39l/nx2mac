@@ -30,11 +30,11 @@ from .inputs import GAME_EXTENSIONS
 #: Manifest written into every library game folder.
 MANIFEST_NAME: str = "nx2mac.json"
 
-#: The built apps sit in the folder the user chose; nx2mac's own data sits in `game_lib/`:
+#: The built apps sit in the folder the user chose; nx2mac's own data sits in `nx2mac_game_lib/`:
 #:   <chosen folder>/<Game>.app                       the built app
 #:   <chosen folder>/<Game>.nx2mac.json               what was built, from which engine
-#:   <chosen folder>/game_lib/players.json            the library's players (every game)
-#:   <chosen folder>/game_lib/<TITLEID>/
+#:   <chosen folder>/nx2mac_game_lib/players.json            the library's players (every game)
+#:   <chosen folder>/nx2mac_game_lib/<TITLEID>/
 #:   ├── save/                         DM_SAVE - the base store (save.users/.work land here)
 #:   ├── players/<player>/save         one store per player
 #:   ├── mods/<mod>/romfs              mods (atmosphere/contents/<TID>/romfs also accepted)
@@ -48,7 +48,7 @@ LIBRARY_DIRS: tuple[str, ...] = ("save", "logs", "mods", "screenshots", "support
 
 #: nx2mac keeps everything in this visible sub-folder of the folder the user chose —
 #: no dot-files, and the user's own folder stays as they left it.
-LIBRARY_SUBDIR: str = "game_lib"
+LIBRARY_SUBDIR: str = "nx2mac_game_lib"
 
 #: Sub-directories a per-game folder keeps (older layout, still read).
 GAME_SUBDIRS: tuple[str, ...] = ("saves", "logs", "mods", "cheats", "screenshots", "support")
@@ -365,17 +365,17 @@ def app_root(folder: Path) -> Path:
 
 
 def data_root(folder: Path) -> Path:
-    """nx2mac's data folder inside the user's choice (`<chosen>/game_lib`)."""
+    """nx2mac's data folder inside the user's choice (`<chosen>/nx2mac_game_lib`)."""
     return app_root(folder) / LIBRARY_SUBDIR
 
 
 def root_of(folder: Path) -> Path:
-    """The data folder (`<chosen>/game_lib`) — kept as the old name for callers."""
+    """The data folder (`<chosen>/nx2mac_game_lib`) — kept as the old name for callers."""
     return data_root(folder)
 
 
 def is_library(folder: Path) -> bool:
-    """Whether this folder holds built games or nx2mac's `game_lib` data folder."""
+    """Whether this folder holds built games or nx2mac's `nx2mac_game_lib` data folder."""
     base = app_root(folder)
     return (base / LIBRARY_SUBDIR).is_dir() or any(base.glob("*.app"))
 
@@ -388,7 +388,7 @@ def mark_library(folder: Path) -> Path:
 
 
 def game_root(library: Path, title_id: str) -> Path:
-    """Everything one game writes: `<library>/game_lib/<TITLEID>/`."""
+    """Everything one game writes: `<library>/nx2mac_game_lib/<TITLEID>/`."""
     return data_root(library) / title_id
 
 

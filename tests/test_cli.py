@@ -415,3 +415,28 @@ def test_build_out_dir_keeps_everything_together(isolated_paths: Path, monkeypat
     assert not (out / "prod.keys").exists()
     assert final["app_path"] == str(out / "My Game.app")
     assert argv[argv.index("--work-dir") + 1] == final["work_dir"]
+
+
+def test_every_command_is_registered(isolated_paths: Path) -> None:
+    """A command silently disappearing is a regression: the GUI calls all of these."""
+    from nx2mac.cli import app as cli_app
+
+    names = {(command.name or command.callback.__name__) for command in cli_app.registered_commands}
+    for expected in ("version", "doctor", "setup", "engine", "probe", "library", "player", "cloud", "clean", "build"):
+        assert expected in names, f"missing command: {expected}"
+
+
+def test_probe_picks_the_game_package(isolated_paths: Path) -> None:
+    tmp = isolated_paths
+    game = tmp / "Game [0100646009FBE000]"
+    game.mkdir()
+    (game / "Dead_Cells_0100646009FBE000_v1.0.0.nsp").write_bytes(b"\x00" * 20)
+    (game / "Dead_Cells_0100646009FBE800_Update_v1.25.0.nsp").write_bytes(b"\x00" * 40)
+
+    result = runner.invoke(app, ["probe", str(game), "--json"])
+    payload = _json(result)
+
+    assert result.exit_code == 0
+    assert payload["kind"] == "switch1" and payload["needs_prod_keys"] is True
+    assert payload["game_file"].endswith("Dead_Cells_0100646009FBE000_v1.0.0.nsp")
+    assert {package["role"] for package in payload["packages"]} == {"base", "update"}

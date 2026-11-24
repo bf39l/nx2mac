@@ -75,7 +75,7 @@ open ~/Applications/nx2mac.app
   you and shown; use **Game → Choose…** to build a different file) and/or the **Game** file itself,
   an update and any number of DLC packages (auto-sized vertical list, five rows then scrolls),
   and an **output folder** (defaults to the game library, so builds are filed into
-`<library>/game_lib/<TID>/`; pick a folder to override).
+`<library>/nx2mac_game_lib/<TID>/`; pick a folder to override).
   The engine's progress streams into the log; when it finishes you can reveal or open the app.
 
 The app reads its icon from `gui/Resources/AppIcon.icns`, regenerated with
@@ -118,7 +118,7 @@ changes this setting. Building with the library set files each game into
 its own folder, and everything the game writes stays there:
 
 ```
-<library>/game_lib/<TID>/
+<library>/nx2mac_game_lib/<TID>/
 ├── <Game>.app            what you double-click
 ├── logs/                 the engine's run log        (DM_LOG_DIR)
 ├── saves/                the default save store      (DM_SAVE)
@@ -155,10 +155,10 @@ Everything one game saves sits under its title ID:
 
 ### Cloud saves (optional)
 
-Everything nx2mac writes lives in `<chosen folder>/game_lib/` — no dot-files in your folder:
+Everything nx2mac writes lives in `<chosen folder>/nx2mac_game_lib/` — no dot-files in your folder:
 
 ```
-<chosen>/game_lib/
+<chosen>/nx2mac_game_lib/
 ├── <Game>.app, <Game>.nx2mac.json
 ├── players.json
 └── <TITLEID>/{save,players,mods,logs,screenshots,support,build}
@@ -174,7 +174,7 @@ nx2mac clean --game "Dead Cells"           # one game
 nx2mac clean --manifests                   # also the <Game>.nx2mac.json sidecars
 ```
 
-It only ever removes nx2mac's own data — `game_lib/<TITLEID>/build` and `temp` folders,
+It only ever removes nx2mac's own data — `nx2mac_game_lib/<TITLEID>/build` and `temp` folders,
 `--manifests` adds the sidecar, `--cache` adds nx2mac's staging folder and managed venv. **The app,
 its saves, the engine checkout and your game dumps are never touched**; the next build extracts
 again (a few minutes). The GUI offers the same

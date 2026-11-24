@@ -25,6 +25,7 @@ from .config import save as save_config
 from .doctor import DoctorContext, DoctorReport, run_checks
 from .engines import EngineError, EngineSource, all_sources, describe, ensure_checkout, source_by_id
 from .installer import InstallResult, install
+from .probe import probe as probe_path
 from .pyenv import PyEnvError
 from .remedies import Remedy, installable_names, remedy_for
 from .runner import Env, RealEnv
@@ -395,6 +396,29 @@ def library(
 
 
 @app.command()
+def probe(
+    ctx: typer.Context,
+    json_flag: bool = _json_option(),
+    path: Path = typer.Argument(..., metavar="PATH", help="Game folder or package file to inspect."),
+) -> None:
+    """Say what a folder holds and which package is the game (the GUI pre-picks it)."""
+    machine_readable = _enter(ctx, json_flag)
+    scan = probe_path(path)
+    if machine_readable:
+        emit.emit(scan.to_dict())
+        return
+    console.print(f"[bold]{scan.path}[/]  [dim]{scan.kind}[/]")
+    console.print(f"game file: [green]{scan.game_file or 'none found'}[/]")
+    for package in scan.packages:
+        selected = "[green]*[/]" if package.path == scan.game_file else " "
+        if package.size > 1_000_000_000:
+            size = f"{package.size / 1_000_000_000:.2f} GB"
+        else:
+            size = f"{package.size / 1_000_000:.0f} MB"
+        console.print(f" {selected} {package.role:8} {package.path.name} [dim]{size}[/]")
+
+
+@app.command()
 def clean(
     ctx: typer.Context,
     json_flag: bool = _json_option(),
@@ -411,7 +435,7 @@ def clean(
 ) -> None:
     """Delete what a finished build no longer needs: extracted files, shader caches, temp files.
 
-    It only ever touches nx2mac's own data — `game_lib/<TITLEID>/build`, the `temp` folders, and
+    It only ever touches nx2mac's own data — `nx2mac_game_lib/<TITLEID>/build`, the `temp` folders, and
     (with `--manifests`) the sidecar. The app, the saves, the engine checkouts and your game dumps
     are never removed.
     """

@@ -60,7 +60,7 @@ TID = "0100646009FBE000"
 
 
 def _library(tmp_path: Path) -> Path:
-    """The folder the user picked; nx2mac keeps its files in `<it>/game_lib`."""
+    """The folder the user picked; nx2mac keeps its files in `<it>/nx2mac_game_lib`."""
     library = tmp_path / "Games"
     library.mkdir()
     return library

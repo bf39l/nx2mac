@@ -400,24 +400,24 @@ def test_run_build_files_the_game_into_the_library(tmp_path: Path, monkeypatch) 
     assert manifest["name"] == "Dead Cells" and manifest["title_id"] == tid
     assert manifest["engine"]["commit"] == SHA
     # everything the game writes is in the library, keyed by the title ID
-    assert result.work_dir == library / "game_lib" / tid / "build"
+    assert result.work_dir == library / "nx2mac_game_lib" / tid / "build"
     argv = env.stream_calls[0][0]
-    assert argv[argv.index("--work-dir") + 1] == str(library / "game_lib" / tid / "build")
-    build_env = (library / "game_lib" / tid / "support" / "build-env.txt").read_text(encoding="utf-8")
-    assert f"DM_SUPPORT_DIR={library / 'game_lib' / tid / 'support'}" in build_env
-    assert f"DM_LOG_DIR={library / 'game_lib' / tid / 'logs'}" in build_env
-    assert f"DM_SAVE={library / 'game_lib' / tid / 'save'}" in build_env
+    assert argv[argv.index("--work-dir") + 1] == str(library / "nx2mac_game_lib" / tid / "build")
+    build_env = (library / "nx2mac_game_lib" / tid / "support" / "build-env.txt").read_text(encoding="utf-8")
+    assert f"DM_SUPPORT_DIR={library / 'nx2mac_game_lib' / tid / 'support'}" in build_env
+    assert f"DM_LOG_DIR={library / 'nx2mac_game_lib' / tid / 'logs'}" in build_env
+    assert f"DM_SAVE={library / 'nx2mac_game_lib' / tid / 'save'}" in build_env
     for directory in ("logs", "screenshots", "mods", "save", "support", "build"):
-        assert (library / "game_lib" / tid / directory).is_dir()
+        assert (library / "nx2mac_game_lib" / tid / directory).is_dir()
     # cheats live inside the game's mods folder, as NX2Apple keeps them
-    assert (library / "game_lib" / tid / "mods" / "cheats").is_dir()
+    assert (library / "nx2mac_game_lib" / tid / "mods" / "cheats").is_dir()
     assert not (library / "cheats").exists()
     # and the scan sees it
     from nx2mac.library import list_games
 
     entries = list_games(library)
     assert [entry.name for entry in entries] == ["Dead Cells"] and entries[0].version == "1.25.0"
-    assert str(entries[0].to_dict()["saves"]) == str(library / "game_lib" / tid / "save")
+    assert str(entries[0].to_dict()["saves"]) == str(library / "nx2mac_game_lib" / tid / "save")
 
 
 def test_rebuilding_replaces_the_app_in_place(tmp_path: Path, monkeypatch) -> None:

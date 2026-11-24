@@ -426,33 +426,38 @@ private struct CheatsSheet: View {
                 .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
             }
 
-            if state.safeMode || state.masterOff {
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                    VStack(alignment: .leading, spacing: 1) {
-                        if state.masterOff {
-                            Text("Master switch off — no cheat runs.").font(.caption)
-                        }
-                        if state.safeMode {
-                            Text("Safe mode: the last run ended uncleanly with cheats on, so every cheat starts off.")
-                                .font(.caption)
-                        }
-                    }
-                    Spacer()
-                    if state.masterOff {
-                        Button("Turn cheats on") { Task { await model.setCheatsMaster(for: game, off: false); await load() } }
-                    } else {
-                        Button("Turn all off") { Task { await model.setCheatsMaster(for: game, off: true); await load() } }
-                    }
-                    if state.safeMode {
-                        Button("Restore switches") {
-                            Task { await model.restoreCheatSwitches(for: game); await load() }
-                        }
-                    }
+            // Two switches the engine itself keeps, so they are toggles here rather than actions
+            // you have to remember: "cheats on" is the master switch file, "safe mode" is the marker
+            // a crashed run leaves behind. Turning safe mode off re-applies the saved switches.
+            VStack(alignment: .leading, spacing: 6) {
+                Toggle(isOn: Binding(
+                    get: { !state.masterOff },
+                    set: { on in Task { await model.setCheatsMaster(for: game, off: !on); await load() } }
+                )) {
+                    Text("Cheats on").font(.callout)
+                    Text(state.masterOff ? "the engine runs none at all" : "the switches below are what runs")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
-                .padding(8)
-                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+
+                Toggle(isOn: Binding(
+                    get: { state.safeMode },
+                    set: { on in
+                        // Only the engine turns safe mode on (an unclean exit with cheats on); turning
+                        // it off is ours: drop the marker so the saved switches apply again.
+                        guard !on else { return }
+                        Task { await model.restoreCheatSwitches(for: game); await load() }
+                    }
+                )) {
+                    Text("Safe mode").font(.callout)
+                    Text(safeModeNote)
+                        .font(.caption2)
+                        .foregroundStyle(state.safeMode ? Color.orange : Color.secondary)
+                }
+                .disabled(!state.safeMode)
             }
+            .padding(8)
+            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
 
             if loading {
                 ProgressView().frame(maxWidth: .infinity, alignment: .center)
@@ -488,6 +493,13 @@ private struct CheatsSheet: View {
                                                     Text("not working here — don't enable")
                                                         .font(.caption2)
                                                         .foregroundStyle(.orange)
+                                                } else if let warning = cheat.warning, !warning.isEmpty {
+                                                    // The compile anchored it, but it writes code: the port's
+                                                    // own rewriter owns that code, so it can take the game down.
+                                                    Image(systemName: "exclamationmark.triangle")
+                                                        .font(.caption2)
+                                                        .foregroundStyle(.orange)
+                                                        .help(warning)
                                                 }
                                             }
                                         }
@@ -542,16 +554,32 @@ private struct CheatsSheet: View {
     }
 
     /// Flip one switch: the CLI writes `.enabled`, and the local row is updated in place — the
+    /// What "Safe mode" means for the switches below: on, they are ignored this launch.
+    private var safeModeNote: String {
+        let on = builds.flatMap(\.cheats).filter(\.enabled).map(\.name)
+        guard state.safeMode else { return "off: the saved switches apply at launch" }
+        if on.isEmpty {
+            return "on: a run ended uncleanly with cheats on, so every cheat starts off"
+        }
+        return "on: a run ended uncleanly — \(on.joined(separator: ", ")) will NOT run until this is off"
+    }
+
     /// whole list is not re-read for one toggle.
     private func toggle(_ cheat: CheatEntry, _ build: CheatBuild, _ enabled: Bool) async {
         await model.setCheat(cheat, build: build, for: game, enabled: enabled)
+        // Safe mode would ignore that switch at launch, which is not what "on" means to someone
+        // looking at the toggle: turning a cheat on clears the crashed run's marker.
+        if enabled && state.safeMode {
+            await model.restoreCheatSwitches(for: game)
+            await load()
+        }
         guard let index = builds.firstIndex(where: { $0.build == build.build }) else { return }
         let updated = builds[index].cheats.map { entry in
             entry.key == cheat.key
                 ? CheatEntry(name: entry.name, key: entry.key, kind: entry.kind, section: entry.section,
                              broken: entry.broken, switchable: entry.switchable, enabled: enabled,
                              resolved: entry.resolved, unanchored: entry.unanchored,
-                             codePatch: entry.codePatch, blocked: entry.blocked)
+                             codePatch: entry.codePatch, blocked: entry.blocked, warning: entry.warning)
                 : entry
         }
         builds[index] = CheatBuild(build: build.build, file: build.file, enabledFile: build.enabledFile, cheats: updated)

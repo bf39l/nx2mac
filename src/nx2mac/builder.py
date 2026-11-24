@@ -190,6 +190,43 @@ def validate_extras(paths: Sequence[Path], flag: str) -> list[Path]:
     return resolved
 
 
+def _extract_main_only(
+    env: Env,
+    engine: ResolvedEngine,
+    input_dir: Path,
+    keys: Path,
+    work_dir: Path,
+    title_id: str | None,
+    on_line: Callable[[str], None] | None = None,
+) -> Path:
+    """Extract just `ExeFS/main` for a cheats-only run (fast: `--manifest` lists the RomFS instead
+    of writing it), skipping the shaders, the Mac host and the app pack — the expensive stages."""
+    nx = engine.path / "dm" / "tools" / "nx_extract_bin" / "nx_extract"
+    if not nx.is_file():
+        raise BuildError(f"no nx_extract under {engine.path} (the engine checkout is incomplete)")
+    scan = probe_path(input_dir)
+    base = scan.game_file
+    update = scan.update
+    if base is None:
+        raise BuildError("could not find the base game package to extract ExeFS/main from")
+    tid = title_id or next((package.title_id for package in scan.packages if package.title_id), None)
+    if tid is None:
+        raise BuildError("could not determine the game's title ID for the extraction")
+    out = work_dir / "extract" / "recovered"
+    out.mkdir(parents=True, exist_ok=True)
+    say = on_line if on_line is not None else (lambda text: None)
+    say(f"cheats: extracting ExeFS/main only (no shaders, no app) → {out}")
+    argv = [str(nx), str(keys), str(base), str(update) if update is not None else "-",
+            str(out), "--app", f"{int(tid, 16):016x}", "--manifest"]
+    result = env.run(argv)
+    main = out / "ExeFS" / "main"
+    if result.returncode != 0 or not main.is_file():
+        lines = (result.stderr or result.stdout or "").strip().splitlines()
+        raise BuildError(f"nx_extract could not extract ExeFS/main: "
+                         f"{lines[-1] if lines else 'exit ' + str(result.returncode)}")
+    return main
+
+
 def _anchor_cheats(
     env: Env,
     library: Path,
@@ -265,6 +302,9 @@ def _record_in_library(
     engine: ResolvedEngine,
     game: GameInput,
     app_path: Path | None,
+    updates: Sequence[Path] = (),
+    dlcs: Sequence[Path] = (),
+    keys: Path | None = None,
 ) -> tuple[Path | None, Path | None]:
     """Write the app's manifest sidecar and the env the launcher reads per player."""
     metadata = library_mod.app_metadata(app_path) if app_path is not None else {}
@@ -284,7 +324,13 @@ def _record_in_library(
         engine_ref=engine.ref,
         engine_commit=engine.commit,
         patches=engine.patches,
-        inputs={"game": str(game.path), "kind": game.kind},
+        inputs={
+            "game": str(game.path),
+            "kind": game.kind,
+            "updates": [str(p) for p in updates],
+            "dlcs": [str(p) for p in dlcs],
+            **({"keys": str(keys)} if keys is not None else {}),
+        },
     )
     return manifest, env_file
 
@@ -374,6 +420,7 @@ def run_build(
     dlcs: Sequence[Path] = (),
     out_dir: Path | None = None,
     library_dir: Path | None = None,
+    cheats_only: bool = False,
 ) -> BuildResult:
     """Preflight-check, prepare the Python env and stream the engine build.
 
@@ -448,6 +495,29 @@ def run_build(
         if on_line is not None:
             on_line(line)
 
+    if cheats_only:
+        # Same inputs and staging as a full build, but stop after extracting ExeFS/main and
+        # re-anchoring the cheat file — no shaders, Mac host or app (the expensive stages).
+        if library is None or work_dir is None:
+            raise BuildError("--cheats-only needs a game library (the cheat file lives there)")
+        if keys is None:
+            raise BuildError("--cheats-only needs prod.keys for this game (a Switch 1 dump or package)")
+        main = _extract_main_only(env, engine, input_dir, keys, work_dir, title_id, on_line)
+        _anchor_cheats(env, library, key, engine, cache_root, on_line)
+        return BuildResult(
+            argv=("cheats-only",),
+            app_path=None,
+            returncode=0 if main is not None else 1,
+            input_path=input_dir,
+            out_dir=out_dir,
+            work_dir=work_dir,
+            keys_path=keys,
+            failure=None,
+            library_dir=library_mod.app_root(library),
+            manifest=None,
+            env_file=None,
+        )
+
     venv = ensure_venv(cache_root, env=env)
     argv = build_argv(
         venv.python,
@@ -473,7 +543,7 @@ def run_build(
     manifest: Path | None = None
     player_env: Path | None = None
     if library is not None and returncode == 0:
-        manifest, player_env = _record_in_library(library, key, engine, game, app_path)
+        manifest, player_env = _record_in_library(library, key, engine, game, app_path, updates, dlcs, keys)
         _anchor_cheats(env, library, key, engine, cache_root, on_line)
 
     return BuildResult(

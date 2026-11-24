@@ -169,6 +169,33 @@ final class DoctorReportTests: XCTestCase {
     }
 }
 
+final class CheatFileTests: XCTestCase {
+    /// The Build tab must show the copy the library keeps, not the file the user imported.
+    func testTheRowShowsTheLibraryCopy() throws {
+        let json = """
+        {"games": [{"game": "Dead Cells", "title_id": "0100646009FBE000",
+                    "library": "/Users/me/switch",
+                    "folder": "/Users/me/switch/nx2mac_game_lib/0100646009FBE000/mods/cheats",
+                    "state": {"safe_mode": false, "master_off": false},
+                    "builds": [{"build": "6E35EE0A24029143",
+                                "file": "/Users/me/switch/nx2mac_game_lib/0100646009FBE000/mods/cheats/6E35EE0A24029143.txt",
+                                "enabled_file": "/Users/me/switch/nx2mac_game_lib/0100646009FBE000/mods/cheats/6E35EE0A24029143.enabled",
+                                "cheats": []}]}]}
+        """
+        let payload = try JSONDecoder().decode(CheatsPayload.self, from: Data(json.utf8))
+        let file = BuildModel.cheatFile(in: payload)
+        XCTAssertEqual(file?.path,
+                       "/Users/me/switch/nx2mac_game_lib/0100646009FBE000/mods/cheats/6E35EE0A24029143.txt")
+        XCTAssertEqual(file?.lastPathComponent, "6E35EE0A24029143.txt")
+    }
+
+    func testNoFileGivesNoRow() throws {
+        let json = #"{"games": [{"game": "X", "folder": "/x", "state": {"safe_mode": false, "master_off": false}, "builds": []}]}"#
+        let payload = try JSONDecoder().decode(CheatsPayload.self, from: Data(json.utf8))
+        XCTAssertNil(BuildModel.cheatFile(in: payload))
+    }
+}
+
 /// End-to-end check against a real CLI: only runs when the developer opts in,
 /// so `swift test` stays green on machines without a checkout.
 final class LiveCLITests: XCTestCase {

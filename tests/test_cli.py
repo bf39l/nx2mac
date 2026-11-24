@@ -442,6 +442,33 @@ def test_probe_picks_the_game_package(isolated_paths: Path) -> None:
     assert {package["role"] for package in payload["packages"]} == {"base", "update"}
 
 
+def test_cheats_enable_reports_an_unrunnable_cheat_instead_of_a_traceback(tmp_path, monkeypatch) -> None:
+    """An entry the compile could not anchor is a user mistake: exit 1 with the reason, no traceback."""
+    from nx2mac import config as config_mod
+    from nx2mac import library as library_mod
+
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    (lib / ".nx2mac-library").touch()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    config_mod.save(config_mod.Config(library_dirs=(str(lib),)))
+    tid = "0100646009FBE000"
+    folder = library_mod.cheats_dir(lib, tid)
+    folder.mkdir(parents=True)
+    (folder / "0123456789ABCDEF.txt").write_text("[HP]\n04000000 0013AA2C 00005431\n", encoding="utf-8")
+    (folder / "0123456789ABCDEF.meta.tsv").write_text(
+        "name\tkind\tsection\ttype\taction\tvalue\task\tvalue_words\tonce\tpair\tresolved\tnote\taddress\n"
+        "HP\tpatch\t\t\t\t\t\t\t\t\tno anchors\t\t\n",
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(app, ["cheats", "--library", str(lib), "--game", tid, "--enable", "HP"])
+
+    assert result.exit_code == 1
+    assert "could not be anchored" in result.output
+    assert "Traceback" not in result.output
+
+
 def test_cheats_resolve_the_game_by_title_id(isolated_paths: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The GUI addresses a game by title ID (the dump folder's name is not an entry)."""
     import plistlib

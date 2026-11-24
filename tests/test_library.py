@@ -665,30 +665,67 @@ def test_an_entry_the_compile_could_not_anchor_cannot_be_enabled(tmp_path: Path)
         set_cheat(library, TID, "0123456789ABCDEF", "Old pack", True)
 
 
-def test_a_switch_the_compile_proved_unusable_is_turned_off(tmp_path: Path) -> None:
-    """An imported file has no meta yet; after compiling, a live switch that patches code is off."""
+def test_only_a_switch_that_could_not_be_anchored_is_turned_off(tmp_path: Path) -> None:
+    """A switch stays on when it anchored — only `no anchors` is dropped.
+
+    The version that also dropped every `kind=patch` switch is what made a working Dead Cells toggle
+    silently disappear after a build.
+    """
     from nx2mac.cheats import neutralise
 
     library = _library(tmp_path)
     folder = cheats_dir(library, TID)
     folder.mkdir(parents=True)
     (folder / "0123456789ABCDEF.txt").write_text(
-        "[ZR health]\n04000000 04800158 4B140108\n[Max gold]\n02000000 00000000\n", encoding="utf-8"
+        "[HP]\n04000000 04800158 4B140108\n[Old pack]\n02000000 00000000\n[Max gold]\n02000000 00000000\n",
+        encoding="utf-8",
     )
     (folder / "0123456789ABCDEF.meta.tsv").write_text(
         "name\tkind\tsection\ttype\taction\tvalue\task\tvalue_words\tonce\tpair\tresolved\tnote\taddress\n"
-        "ZR health\tpatch\t\t\t\t\t\t\t\t\texact\t\t\n"
+        "HP\tpatch\t\t\t\t\t\t\t\t\texact\t\t\n"
+        "Old pack\tpatch\t\t\t\t\t\t\t\t\tno anchors\t\t\n"
         "Max gold\tdata\t\t\t\t\t\t\t\t\t0x1234\t\t\n",
         encoding="utf-8",
     )
-    (folder / "0123456789ABCDEF.enabled").write_text("ZR health\nMax gold\n", encoding="utf-8")
+    (folder / "0123456789ABCDEF.enabled").write_text("HP\nOld pack\nMax gold\n", encoding="utf-8")
 
     reports = neutralise(folder)
 
-    assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "Max gold\n"
-    assert any("switched off" in report for report in reports)
+    # the anchored patch and the data cheat stay on; only the entry that could not be anchored goes
+    assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "HP\nMax gold\n"
+    assert any("Old pack" in report for report in reports)
 
 
+
+
+def test_a_patch_that_writes_udf_is_blocked(tmp_path: Path) -> None:
+    """`kind=patch` + `exact`, but the patched word is `udf #0x5431`.
+
+    That sentinel only works while the master redirects execution around it, and the redirector
+    cannot anchor on the Mac, so the `udf` executes and kills the host (Dead Cells' `無限血量`
+    exited 132). Anchoring `exact` only proves the tool found the code — not that the write is
+    survivable.
+    """
+    library = _library(tmp_path)
+    folder = cheats_dir(library, TID)
+    folder.mkdir(parents=True)
+    (folder / "0123456789ABCDEF.txt").write_text(
+        "[無限血量]\n14050000 0013AA2C B9401109\n04000000 0013AA2C 00005431\n20000000\n",
+        encoding="utf-8",
+    )
+    (folder / "0123456789ABCDEF.meta.tsv").write_text(
+        "name\tkind\tsection\ttype\taction\tvalue\task\tvalue_words\tonce\tpair\tresolved\tnote\taddress\n"
+        "無限血量\tpatch\t\t\t\t\t\t\t\t\texact\t\t\n",
+        encoding="utf-8",
+    )
+
+    listed = cheat_builds(library, TID)[0]["cheats"][0]  # type: ignore[index]
+    assert "undefined instruction" in str(listed["blocked"])
+
+    with pytest.raises(LibraryError, match="undefined instruction"):
+        set_cheat(library, TID, "0123456789ABCDEF", "無限血量", True)
+    set_cheat(library, TID, "0123456789ABCDEF", "無限血量", True, force=True)
+    assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "無限血量\n"
 
 
 def test_a_code_patch_that_anchored_may_be_enabled_with_a_warning(tmp_path: Path) -> None:
@@ -708,3 +745,70 @@ def test_a_code_patch_that_anchored_may_be_enabled_with_a_warning(tmp_path: Path
 
     set_cheat(library, TID, "0123456789ABCDEF", "ZR health", True)
     assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "ZR health\n"
+
+
+def test_a_pointer_chain_data_cheat_is_not_mistaken_for_code(tmp_path: Path) -> None:
+    """The opcode walker must skip the operand words of 5/6/7, else a value word gets read as an
+    opcode-0 write and a working HP data cheat is blocked as an `udf` sentinel.
+
+    Dead Cells' EdiZon HP cheat (`580F0000 … 640F0000`) is exactly this: a pointer chain that
+    writes a value through main+0x268B4A8, never an instruction.
+    """
+    from nx2mac.library import entry_code_writes
+
+    compiled = (
+        "[HP]\n"
+        "580F0000 026F8300\n"
+        "580F1000 00000030\n"
+        "580F1000 00000098\n"
+        "780F0000 0000018C\n"
+        "640F0000 00000000 05F5E0FF\n"
+    )
+    assert entry_code_writes(compiled)["HP"] == []  # no main code write
+
+    library = _library(tmp_path)
+    folder = cheats_dir(library, TID)
+    folder.mkdir(parents=True)
+    (folder / "0123456789ABCDEF.txt").write_text(compiled, encoding="utf-8")
+    (folder / "0123456789ABCDEF.meta.tsv").write_text(
+        "name\tkind\tsection\ttype\taction\tvalue\task\tvalue_words\tonce\tpair\tresolved\tnote\taddress\n"
+        "HP\tcode\t\t\t\t\t\t\t\t\t4/4 refs (4 exact) through the slot 0x268B4A8\t\t\n",
+        encoding="utf-8",
+    )
+
+    listed = cheat_builds(library, TID)[0]["cheats"][0]  # type: ignore[index]
+    assert listed["blocked"] is None
+    assert listed["warning"] == ""  # a data cheat has nothing to warn about
+
+    set_cheat(library, TID, "0123456789ABCDEF", "HP", True)
+    assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "HP\n"
+
+
+def test_a_code_write_into_a_changed_word_is_blocked(tmp_path: Path) -> None:
+    """`kind=code` anchored `exact`, but the write lands in `main.changed.tsv`: the host refuses it.
+
+    The rewriter lists the text words it changed or moved there; a patch into one would undo a site
+    or never run (hle_cheats.c `dm_changed_hit`), so it is blocked before launch.
+    """
+    library = _library(tmp_path)
+    folder = cheats_dir(library, TID)
+    folder.mkdir(parents=True)
+    (folder / "0123456789ABCDEF.txt").write_text("[HP]\n04000000 0013AA2C 4B140108\n", encoding="utf-8")
+    (folder / "0123456789ABCDEF.meta.tsv").write_text(
+        "name\tkind\tsection\ttype\taction\tvalue\task\tvalue_words\tonce\tpair\tresolved\tnote\taddress\n"
+        "HP\tcode\t\t\t\t\t\t\t\t\texact\t\t\n",
+        encoding="utf-8",
+    )
+    patched = build_dir(library, TID) / "patched_v1"
+    patched.mkdir(parents=True)
+    (patched / "main.changed.tsv").write_text(
+        "# BUILD_ID\t0123456789abcdef\n0x13aa2c\t0x4\n", encoding="utf-8"
+    )
+
+    listed = cheat_builds(library, TID)[0]["cheats"][0]  # type: ignore[index]
+    assert "changed or moved" in str(listed["blocked"])
+
+    with pytest.raises(LibraryError, match="changed or moved"):
+        set_cheat(library, TID, "0123456789ABCDEF", "HP", True)
+    set_cheat(library, TID, "0123456789ABCDEF", "HP", True, force=True)
+    assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "HP\n"

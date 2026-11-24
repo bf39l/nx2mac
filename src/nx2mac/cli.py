@@ -9,6 +9,7 @@ check/build logic never depends on typer.
 
 import shutil
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -470,6 +471,77 @@ def mods(
         console.print(f"  {marker} {entry['name']}")
 
 
+def _reanchor(
+    ctx: typer.Context,
+    directory: Path,
+    entry: library_mod.LibraryGame,
+    sources: Sequence[Path],
+) -> list[str]:
+    """Re-anchor cheat files to the game's build with the engine's `cheat_anchor.py`.
+
+    Importing is part of it: that is what rebases Switch-absolute addresses to main offsets. Both
+    `cheats --compile` and `cheats --import` end here, so an imported file is anchored (and its
+    entries become switchable) as soon as the build's extract exists.
+    """
+    main = library_mod.extracted_main(directory, entry.title_id)
+    if main is None:
+        _fail(ctx, f"no extracted game files for {entry.name}; build it once "
+                   "(the engine keeps ExeFS/main under <game>/build/extract)")
+    script = None
+    engines_root = cache_root().expanduser() / "engines"
+    pinned_ref = load_config().engine_ref or "main"
+    preferred = sorted(engines_root.glob(f"*_{pinned_ref}/scripts/cheat_anchor.py"))
+    for candidate in [*preferred, *sorted(engines_root.glob("*/scripts/cheat_anchor.py"))]:
+        script = candidate
+        if candidate.is_file():
+            break
+    if script is None:
+        _fail(ctx, f"no engine checkout with scripts/cheat_anchor.py under {cache_root() / 'engines'}")
+    venv = ensure_venv(cache_root().expanduser(), env=_get_env())
+    folder = library_mod.cheats_dir(directory, entry.title_id)
+    # The re-anchor source and its output both live in the game's mods folder:
+    # <game>/mods/<build id>.txt is what DM_CHEATS reads, and the .toml beside it keeps the
+    # addresses' meaning so a later build can be compiled again.
+    toml = library_mod.mods_dir(directory, entry.title_id) / f"{entry.title_id}.cheats.toml"
+    toml.parent.mkdir(parents=True, exist_ok=True)
+    report: list[str] = []
+    for source in sources:
+        library_mod.import_cheats(directory, entry.title_id, [source])
+        imported = sorted(folder.glob("*.txt"))
+        if imported:
+            source = imported[0]
+        try:
+            report.extend(
+                reanchor(
+                    _get_env(),
+                    venv.python,
+                    script,
+                    source.expanduser(),
+                    main,
+                    main,
+                    toml,
+                    folder,
+                )
+            )
+        except CheatToolError as error:
+            _fail(ctx, str(error))
+    return report
+
+
+def _print_reanchor(report: Sequence[str], directory: Path, entry: "library_mod.LibraryGame", machine_readable: bool) -> None:
+    """Show the tool's lines (the CLI's own, not the engine's) unless we are in JSON mode."""
+    if machine_readable:
+        return
+    folder = library_mod.cheats_dir(directory, entry.title_id)
+    toml = library_mod.mods_dir(directory, entry.title_id) / f"{entry.title_id}.cheats.toml"
+    for line in report:
+        console.print(f"[yellow]cheats: {line}[/]" if "disabled" in line else f"[dim]{line}[/]")
+    written = sorted(folder.glob("*.txt"))
+    if written:
+        console.print(f"[green]cheat file:[/] {written[0]}")
+        console.print(f"[dim]source kept for later builds: {toml}[/]")
+
+
 @app.command()
 def cheats(
     ctx: typer.Context,
@@ -530,72 +602,38 @@ def cheats(
                 library_mod.import_cheats(directory, entry.title_id, import_from)
             except library_mod.LibraryError as error:
                 _fail(ctx, str(error))
+            # Anchor what was just imported, so its entries are checkable (and its switches keep
+            # working) without waiting for the next build. No extract yet = first build does it.
+            if library_mod.extracted_main(directory, entry.title_id) is not None:
+                _print_reanchor(_reanchor(ctx, directory, entry, import_from), directory, entry, machine_readable)
 
         if remove:
             library_mod.clear_cheats(directory, entry.title_id)
         if compile_file:
-            main = library_mod.extracted_main(directory, entry.title_id)
-            if main is None:
-                _fail(ctx, f"no extracted game files for {entry.name}; build it once "
-                           "(the engine keeps ExeFS/main under <game>/build/extract)")
-            script = None
-            engines_root = cache_root().expanduser() / "engines"
-            pinned_ref = load_config().engine_ref or "main"
-            preferred = sorted(engines_root.glob(f"*_{pinned_ref}/scripts/cheat_anchor.py"))
-            for candidate in [*preferred, *sorted(engines_root.glob("*/scripts/cheat_anchor.py"))]:
-                script = candidate
-                if candidate.is_file():
-                    break
-            if script is None:
-                _fail(ctx, f"no engine checkout with scripts/cheat_anchor.py under {cache_root() / 'engines'}")
-            venv = ensure_venv(cache_root().expanduser(), env=_get_env())
-            for source in compile_file:
-                # Import first: that is what rebases Switch-absolute addresses to main offsets.
-                library_mod.import_cheats(directory, entry.title_id, [source])
-                imported = sorted(library_mod.cheats_dir(directory, entry.title_id).glob("*.txt"))
-                if imported:
-                    source = imported[0]
-                # The re-anchor source and its output both live in the game's mods folder:
-                # <game>/mods/<build id>.txt is what DM_CHEATS reads, and the .toml beside it keeps
-                # the addresses' meaning so a later build can be compiled again.
-                toml = library_mod.mods_dir(directory, entry.title_id) / f"{entry.title_id}.cheats.toml"
-                toml.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    report = reanchor(
-                        _get_env(),
-                        venv.python,
-                        script,
-                        source.expanduser(),
-                        main,
-                        main,
-                        toml,
-                        library_mod.cheats_dir(directory, entry.title_id),
-                    )
-                except CheatToolError as error:
-                    _fail(ctx, str(error))
-                folder = library_mod.cheats_dir(directory, entry.title_id)
-                library_mod.import_cheats(directory, entry.title_id, sorted(folder.glob("*.txt")))
-                if not machine_readable:
-                    for line in report:
-                        console.print(f"[yellow]cheats: {line}[/]" if "disabled" in line else f"[dim]{line}[/]")
-                    written = sorted(folder.glob("*.txt"))
-                    if written:
-                        console.print(f"[green]cheat file:[/] {written[0]}")
-                        console.print(f"[dim]source kept for later builds: {toml}[/]")
+            _print_reanchor(_reanchor(ctx, directory, entry, compile_file), directory, entry, machine_readable)
         if off:
             library_mod.set_cheats_master(directory, entry.title_id, True)
         if on:
             library_mod.set_cheats_master(directory, entry.title_id, False)
         if restore_safe:
             library_mod.clear_safe_mode(directory, entry.title_id)
+        for name in library_mod.clear_blocked_switches(directory, entry.title_id):
+            if not machine_readable:
+                console.print(f"[yellow]switched off {name} — it cannot run on this port[/]")
         builds = library_mod.cheat_builds(directory, entry.title_id)
         if enable or disable:
             for build in builds:
                 build_id = str(build["build"])
                 for name in enable:
-                    library_mod.set_cheat(directory, entry.title_id, build_id, name, True, force=force)
+                    try:
+                        library_mod.set_cheat(directory, entry.title_id, build_id, name, True, force=force)
+                    except library_mod.LibraryError as error:  # e.g. an instruction patch: not a crash
+                        _fail(ctx, str(error))
                 for name in disable:
-                    library_mod.set_cheat(directory, entry.title_id, build_id, name, False)
+                    try:
+                        library_mod.set_cheat(directory, entry.title_id, build_id, name, False)
+                    except library_mod.LibraryError as error:
+                        _fail(ctx, str(error))
             builds = library_mod.cheat_builds(directory, entry.title_id)
         payload.append(
             {
@@ -857,6 +895,11 @@ def build(
     allow_shader_regressions: bool = typer.Option(
         False, "--allow-shader-regressions", help="pack without the shaders that stopped translating."
     ),
+    cheats_only: bool = typer.Option(
+        False,
+        "--cheats-only",
+        help="extract ExeFS/main and re-anchor the cheat file, skipping the shaders, the Mac host and the app.",
+    ),
 ) -> None:
     """Build a game into a native macOS .app with the pinned nxnative engine."""
     machine_readable = _enter(ctx, json_flag)
@@ -913,6 +956,7 @@ def build(
             out_dir=out_dir,
             library_dir=library_dir,
             extra_args=extra,
+            cheats_only=cheats_only,
         )
 
     try:
@@ -940,6 +984,8 @@ def build(
         emit.event("result", **result.to_dict())
     elif result.returncode != 0:
         console.print(f"[red]Engine build failed with exit code {result.returncode}.[/]")
+    elif cheats_only:
+        console.print("[green]Done.[/] Cheat file re-anchored to this build (no app was built).")
     elif result.app_path is not None:
         console.print(f"[green]Done.[/] App at [bold green]{result.app_path}[/]")
         if result.work_dir is not None:

@@ -252,6 +252,9 @@ final class BuildModel: ObservableObject {
         // here too — not only when the Games tab is opened.
         await refreshLibrary()
         await refreshCloud()
+        // The game may already have a cheat file in the library from an earlier build; show it
+        // without making the user pick the game again.
+        await refreshCheatFile()
     }
 
     private func refreshVersion(_ cli: CLICommand) async {
@@ -377,12 +380,19 @@ final class BuildModel: ObservableObject {
         guard let result = try? await Self.run(cli, arguments),
               let data = result.stdout.data(using: .utf8),
               let payload = try? JSONDecoder().decode(CheatsPayload.self, from: data),
-              let build = payload.games.first?.builds.first
+              let file = Self.cheatFile(in: payload)
         else {
             cheatFileURL = nil
             return
         }
-        cheatFileURL = URL(fileURLWithPath: build.file)
+        cheatFileURL = file
+    }
+
+    /// The file the Build tab shows: the first build's cheat file, which is the library copy
+    /// (`<library>/nx2mac_game_lib/<title id>/mods/cheats/<build id>.txt`), not the file the user
+    /// imported from.
+    nonisolated static func cheatFile(in payload: CheatsPayload) -> URL? {
+        payload.games.first?.builds.first.map { URL(fileURLWithPath: $0.file) }
     }
 
     /// Delete the game's cheat file (nx2mac keeps one).
@@ -438,6 +448,9 @@ final class BuildModel: ObservableObject {
         for url in urls {
             await runCheats(["--import", url.path])
         }
+        // `runCheats` already re-reads the game's file; do it once more so a multi-file import ends
+        // on the file the CLI keeps (nx2mac keeps exactly one per game).
+        await refreshCheatFile()
     }
 
     /// Read a game's cheat files, their switches and the engine's master/safe flags.
@@ -555,6 +568,9 @@ final class BuildModel: ObservableObject {
         NSWorkspace.shared.open(app)
         await refreshLibrary()
         await refreshCloud()
+        // The game may already have a cheat file in the library from an earlier build; show it
+        // without making the user pick the game again.
+        await refreshCheatFile()
     }
 
     private func refreshEngine(_ cli: CLICommand) async {
@@ -674,7 +690,7 @@ final class BuildModel: ObservableObject {
 
     // MARK: - Build
 
-    func startBuild(extra: [String] = []) {
+    func startBuild(extra: [String] = [], cheatsOnly: Bool = false) {
         guard let cli, let request, !isRunning else { return }
         pendingLog.removeAll()
         buildAnyway = nil
@@ -685,9 +701,10 @@ final class BuildModel: ObservableObject {
         log.append("Extras: \(request.extrasSummary)")
 
         do {
+            let arguments = request.arguments + (cheatsOnly ? ["--cheats-only"] : []) + extra
             process = try CLIRunner.stream(
                 cli,
-                request.arguments + extra,
+                arguments,
                 onLine: { [weak self] line in
                     Task { @MainActor in self?.handle(line: line) }
                 },
@@ -766,6 +783,10 @@ final class BuildModel: ObservableObject {
     private func finish(exitCode: Int32) {
         flushLog()
         process = nil
+        // A build anchors the game's cheat file and files it under the library, so the row now
+        // points at `<library>/nx2mac_game_lib/<title id>/mods/cheats/<build>.txt`.
+        Task { await refreshCheatFile() }
+        Task { await refreshLibrary() }
         switch state {
         case .running where exitCode != 0:
             state = .failed("nx2mac exited with code \(exitCode)")

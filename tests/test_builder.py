@@ -9,6 +9,7 @@ from test_doctor import _good_env
 
 from nx2mac.builder import (
     BuildError,
+    _extract_main_only,
     build_argv,
     classify_failure,
     classify_game,
@@ -516,3 +517,68 @@ def test_classify_failure_offers_the_engine_override() -> None:
     assert classify_failure(shaders).override == "--allow-shader-regressions"  # type: ignore[union-attr]
     assert classify_failure(fatal).override is None  # nothing to build around
     assert classify_failure(["all good"]) is None
+
+
+def test_extract_main_only_runs_nx_extract_manifest(tmp_path: Path) -> None:
+    """Cheats-only extraction: nx_extract --manifest writes ExeFS/main, no engine build stream."""
+    from nx2mac.runner import RunResult
+
+    env = _good_env(tmp_path)
+    engine = _engine(tmp_path)
+    nx = engine.path / "dm" / "tools" / "nx_extract_bin" / "nx_extract"
+    nx.parent.mkdir(parents=True, exist_ok=True)
+    nx.write_bytes(b"\x00")
+
+    game = _game_dir(tmp_path, ("Game_0100646009FBE000.nsp",))
+    keys = game / "prod.keys"
+    keys.write_text("keys\n", encoding="utf-8")
+
+    def fake_extract(argv: list[str]) -> RunResult:
+        out = Path(argv[4])
+        (out / "ExeFS").mkdir(parents=True, exist_ok=True)
+        (out / "ExeFS" / "main").write_bytes(b"\x00")
+        return RunResult(returncode=0, stdout="", stderr="")
+
+    env.run_rules.insert(0, (r"nx_extract", fake_extract))
+
+    work = tmp_path / "work"
+    main = _extract_main_only(env, engine, game, keys, work, "0100646009FBE000")
+
+    assert main == work / "extract" / "recovered" / "ExeFS" / "main" and main.is_file()
+    call = [c for c in env.calls if c and "nx_extract" in c[0]][-1]
+    assert "--manifest" in call and "--app" in call and "0100646009fbe000" in call
+
+
+def test_cheats_only_build_skips_the_engine(tmp_path: Path, monkeypatch) -> None:
+    """`--cheats-only` reuses the build's inputs but never streams the engine (no shaders/app)."""
+    from nx2mac.library import mark_library
+    from nx2mac.runner import RunResult
+
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("NX2MAC_CACHE_ROOT", str(cache))
+    env = _good_env(tmp_path)
+    engine = _engine(tmp_path)
+    nx = engine.path / "dm" / "tools" / "nx_extract_bin" / "nx_extract"
+    nx.parent.mkdir(parents=True, exist_ok=True)
+    nx.write_bytes(b"\x00")
+
+    game = _game_dir(tmp_path, ("Game_0100646009FBE000.nsp",))
+    (game / "prod.keys").write_text("keys\n", encoding="utf-8")
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    mark_library(lib)
+
+    def fake_extract(argv: list[str]) -> RunResult:
+        out = Path(argv[4])
+        (out / "ExeFS").mkdir(parents=True, exist_ok=True)
+        (out / "ExeFS" / "main").write_bytes(b"\x00")
+        return RunResult(returncode=0, stdout="", stderr="")
+
+    env.run_rules.insert(0, (r"nx_extract", fake_extract))
+
+    result = run_build(env, cache, engine, game, library_dir=lib, cheats_only=True)
+
+    assert result.returncode == 0 and result.app_path is None
+    assert env.stream_calls == []  # the engine build never ran
+    recovered = lib / "nx2mac_game_lib" / "0100646009FBE000" / "build" / "extract" / "recovered" / "ExeFS" / "main"
+    assert recovered.is_file()

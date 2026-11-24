@@ -448,9 +448,11 @@ struct CheatEntry: Decodable, Identifiable, Hashable {
     let codePatch: Bool
     /// Why this entry may not be switched on here (nil = it may).
     let blocked: String?
+    /// A caution for an entry that may be switched on (e.g. "writes code").
+    let warning: String?
 
     enum CodingKeys: String, CodingKey {
-        case name, key, kind, section, broken, switchable, enabled, resolved, unanchored, blocked
+        case name, key, kind, section, broken, switchable, enabled, resolved, unanchored, blocked, warning
         case codePatch = "code_patch"
     }
 

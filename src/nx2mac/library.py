@@ -19,6 +19,7 @@ screenshots and logs at the library without touching the signed app.
 
 import json
 import plistlib
+import re
 import shutil
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
@@ -922,34 +923,207 @@ def parse_cheat_file(text: str, meta: str | None = None) -> list[dict[str, objec
     return entries
 
 
-def cheat_blocked_reason(cheat: dict[str, object]) -> str | None:
+def cheat_blocked_reason(
+    cheat: dict[str, object],
+    *,
+    force: bool = False,
+    code_writes: Sequence[tuple[int, int, Sequence[int]]] = (),
+    changed_runs: Sequence[tuple[int, int]] = (),
+) -> str | None:
     """Why this entry must not be switched on here, or None when it is allowed.
 
-    Only evidence blocks an entry:
-    * the file has not been compiled yet — nothing knows what its addresses mean (build once);
-    * the compile could not anchor it (`no anchors`) — its addresses belong to another build, so a
-      write lands on unrelated code (that is what crashed Dead Cells);
-    * it is not a switchable cheat at all (a label, a one-pass entry, the off half of a pair).
+    The verdict is about *this* port, from evidence the build left behind:
 
-    An entry that *did* anchor — even one that patches code — is allowed: the tool checked that the
-    words it writes are the ones this build has there (Metal Slug Tactics' ZR cheats anchor
-    `exact` and work), and the game's own Cheats menu offers the same. `warning` below says when it
-    writes code, so the UI can mention the risk without hiding the switch.
+    * not compiled yet — nothing knows what its addresses mean (build once);
+    * the compile could not anchor it (`no anchors`) — its addresses belong to another build;
+    * it writes an `udf` (undefined) instruction — an ASM sentinel that only works while the
+      master redirects execution around it, and that redirector cannot anchor on the Mac, so the
+      `udf` executes and kills the host (Dead Cells' `無限血量` writes `udf #0x5431` and exited 132);
+    * it writes into a word the rewriter changed or moved (`main.changed.tsv`) — the host refuses
+      that write (hle_cheats.c `dm_changed_hit`).
+
+    A `kind=patch` / `kind=code` entry is *not* blocked for being code: an in-place instruction
+    replacement that anchors `exact` and avoids the two traps above works (Metal Slug's ZR cheats).
+    `--force` overrides the two code-write traps for a one-off try, never a failed anchor.
     """
     if cheat.get("meta_kind") in (None, "") and cheat.get("resolved") in (None, ""):
         return "not checked yet — build the game once so the cheats can be anchored"
     if cheat.get("resolved") == "no anchors":
         return "could not be anchored to this build"
+    if not force and cheat.get("meta_kind") in ("patch", "code"):
+        for _offset, _width, values in code_writes:
+            if any(_is_udf(value) for value in values):
+                return ("writes an undefined instruction (udf) — an ASM sentinel whose redirector "
+                        "cannot anchor on the Mac, so it would crash the game")
+        for offset, width, _values in code_writes:
+            if _in_changed_runs(offset, width, changed_runs):
+                return "writes code the rewriter changed or moved (main.changed.tsv) — the host refuses it"
     if not cheat.get("switchable", True):
         return "not a switchable cheat"
     return None
 
 
-def cheat_warning(cheat: dict[str, object]) -> str:
-    """A caution for an allowed entry that rewrites the game's code, or ""."""
-    if cheat.get("meta_kind") in ("patch", "code"):
+def _is_udf(word: int) -> bool:
+    """AArch64 `udf #imm16` and the whole 0x0000xxxx unallocated space: the top 16 bits are zero.
+
+    A real instruction never has a zero top half-word, so this picks out the undefined sentinels an
+    ASM pack writes into code it expects the master to redirect around.
+    """
+    return word & 0xFFFF0000 == 0
+
+
+def cheat_warning(
+    cheat: dict[str, object],
+    code_writes: Sequence[tuple[int, int, Sequence[int]]] = (),
+) -> str:
+    """A caution for an allowed entry that rewrites code, or ""."""
+    if cheat.get("meta_kind") in ("patch", "code") and code_writes:
         return "writes code — anchored for this build, but the port may have rewritten it"
     return ""
+
+
+#: The rewriter (patch_nso.py) lists the text words it changed or moved in `<module>.changed.tsv`;
+#: the host refuses a code write into any of them (hle_cheats.c `dm_changed_hit`), so an entry that
+#: targets one cannot run on this port.
+def _changed_runs(path: Path) -> tuple[tuple[int, int], ...]:
+    runs: list[tuple[int, int]] = []
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return ()
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) != 2:
+            continue
+        try:
+            runs.append((int(parts[0], 16), int(parts[1], 16)))
+        except ValueError:
+            continue
+    runs.sort()
+    return tuple(runs)
+
+
+def load_changed_runs(library: Path, title_id: str) -> tuple[tuple[int, int], ...]:
+    """`main.changed.tsv` of this game's last build, or empty when there is no patched main yet."""
+    base = build_dir(library, title_id)
+    if not base.is_dir():
+        return ()
+    for path in sorted(base.glob("*/main.changed.tsv")):
+        return _changed_runs(path)
+    return ()
+
+
+def _in_changed_runs(offset: int, length: int, runs: Sequence[tuple[int, int]]) -> bool:
+    """True when [offset, offset + length) overlaps a changed-word run."""
+    lo, hi = 0, len(runs)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if runs[mid][0] + runs[mid][1] <= offset:
+            lo = mid + 1
+        else:
+            hi = mid
+    return lo < len(runs) and runs[lo][0] < offset + length
+
+
+def _entry_words(text: str) -> list[tuple[str, list[str]]]:
+    """[(entry name, [8-hex word strings])] in file order, headers unglued as the host does."""
+    glued: list[str] = []
+    for index, char in enumerate(text):
+        if (
+            char in "[{"
+            and index >= 8
+            and all(c in _HEX for c in text[index - 8:index])
+            and (index == 8 or text[index - 9] in _WS + "\n")
+        ):
+            glued.append("\x0b")
+        glued.append(char)
+    entries: list[tuple[str, list[str]]] = []
+    current: str | None = None
+    for line in "".join(glued).split("\n"):
+        for part in line.split("\x0b"):
+            piece = part.strip(_WS)
+            if piece[:1] in ("[", "{"):
+                closing = "]" if piece[0] == "[" else "}"
+                end = piece.find(closing, 1)
+                if end <= 1:
+                    continue
+                current = piece[1:end][:CHEAT_NAME_MAX]
+                entries.append((current, []))
+                piece = piece[end + 1:].strip(_WS)
+            if current is None:
+                continue
+            for token in piece.split():
+                if len(token) >= 8 and all(c in _HEX for c in token):
+                    for k in range(0, len(token) - 7, 8):
+                        entries[-1][1].append(token[k:k + 8])
+    return entries
+
+
+def entry_code_writes(compiled_text: str) -> dict[str, list[tuple[int, int, list[int]]]]:
+    """Per entry, its instruction writes into main (memory type 0) as `(offset, width, value words)`.
+
+    Word lengths mirror the host (`hle_cheats.c` / `cheat_anchor.py decode`): only opcode 0
+    (`0TMR00AA AAAAAAAA V…`) writes a main offset directly, and only instruction-sized writes
+    (width 4 or 8) are recorded — those are what can carry an `udf` sentinel or hit a changed word.
+    Opcode 1 (the guard) reads + compares; opcodes 5/6/7 and the rest move values around without a
+    fixed main write, so their operand words are skipped by their exact lengths.
+    """
+    writes: dict[str, list[tuple[int, int, list[int]]]] = {}
+    for name, words in _entry_words(compiled_text):
+        entry: list[tuple[int, int, list[int]]] = []
+        i = 0
+        while i < len(words):
+            w = int(words[i], 16)
+            op = w >> 28
+            if op >= 0xC:
+                op = op << 4 | (w >> 24) & 0xF
+            if op >= 0xF0:
+                op = op << 4 | (w >> 20) & 0xF
+            width = (w >> 24) & 0xF
+
+            if op in (0, 1):
+                n = 4 if width == 8 else 3
+            elif op in (2, 8, 0xC1, 0xC2, 0xC3, 0xFF0, 0xFF1):
+                n = 1
+            elif op == 3:
+                n = 1 if width else 2
+            elif op in (4, 6):
+                n = 3
+            elif op in (5, 7):
+                n = 2
+            elif op == 9:
+                n = 1 + ((2 if width == 8 else 1) if (w >> 8) & 0xF else 0)
+            elif op == 0xA:
+                o = (w >> 8) & 0xF
+                n = 2 if o in (2, 4, 5) else 1
+            elif op == 0xC0:
+                x = (w >> 8) & 0xF
+                n = 1 + (2 if width == 8 else 1) if x == 4 else 2 if x in (0, 2) else 1
+            elif op == 0xC4:
+                n = 3
+            elif op == 0xFFF:
+                x = (w >> 8) & 0xF
+                n = 2 if x in (0, 2) else 1
+            else:
+                i += 1  # unknown/truncated: step one word, as the host marks the cheat broken
+                continue
+
+            if op == 0 and width in (4, 8) and i + n <= len(words):
+                mem = (w >> 20) & 0xF
+                if mem == 0:
+                    address = int(words[i + 1], 16)
+                    values = (
+                        [int(words[i + 2], 16)]
+                        if width != 8
+                        else [int(words[i + 2], 16), int(words[i + 3], 16)]
+                    )
+                    entry.append((address, width, values))
+            i += n
+        writes[name] = entry
+    return writes
 
 
 def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
@@ -962,6 +1136,7 @@ def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
     builds: list[dict[str, object]] = []
     if not folder.is_dir():
         return builds
+    changed_runs = load_changed_runs(library, title_id)
     for txt in sorted(folder.glob("*.txt")):
         build = txt.stem
         enabled_file = folder / f"{build}.enabled"
@@ -970,7 +1145,9 @@ def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
             enabled = {line.strip() for line in enabled_file.read_text(encoding="utf-8").splitlines() if line.strip()}
         meta_file = folder / f"{build}.meta.tsv"
         meta = meta_file.read_text(encoding="utf-8", errors="replace") if meta_file.is_file() else None
-        cheats = parse_cheat_file(txt.read_text(encoding="utf-8", errors="replace"), meta)
+        compiled = txt.read_text(encoding="utf-8", errors="replace")
+        code_writes = entry_code_writes(compiled)
+        cheats = parse_cheat_file(compiled, meta)
         rows = [
             {
                 "name": cheat["name"],
@@ -988,8 +1165,17 @@ def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
             for cheat in cheats
         ]
         for row in rows:
-            row["blocked"] = cheat_blocked_reason(row) if row["switchable"] else None
-            row["warning"] = cheat_warning(row) if row["blocked"] is None and row["switchable"] else ""
+            writes = code_writes.get(str(row["name"]), ())
+            row["blocked"] = (
+                cheat_blocked_reason(row, code_writes=writes, changed_runs=changed_runs)
+                if row["switchable"]
+                else None
+            )
+            row["warning"] = (
+                cheat_warning(row, code_writes=writes)
+                if row["blocked"] is None and row["switchable"]
+                else ""
+            )
         builds.append(
             {
                 "build": build,
@@ -999,6 +1185,44 @@ def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
             }
         )
     return builds
+
+
+def clear_blocked_switches(library: Path, title_id: str) -> list[str]:
+    """Drop blocked entries from the engine's `.enabled` files, so a toggle the filter now rejects
+    cannot crash the game on the next launch (the engine reads `.enabled`, not our verdict).
+
+    Idempotent: reads the same evidence as the listing (anchors, `udf` sentinels, changed words) and
+    keeps only what may run. Returns the names it switched off.
+    """
+    folder = cheats_dir(library, title_id)
+    if not folder.is_dir():
+        return []
+    changed_runs = load_changed_runs(library, title_id)
+    removed: list[str] = []
+    for txt in sorted(folder.glob("*.txt")):
+        enabled_file = folder / f"{txt.stem}.enabled"
+        if not enabled_file.is_file():
+            continue
+        compiled = txt.read_text(encoding="utf-8", errors="replace")
+        code_writes = entry_code_writes(compiled)
+        meta_file = folder / f"{txt.stem}.meta.tsv"
+        meta = meta_file.read_text(encoding="utf-8", errors="replace") if meta_file.is_file() else None
+        blocked = {
+            str(cheat["name"])
+            for cheat in parse_cheat_file(compiled, meta)
+            if cheat_blocked_reason(
+                {**cheat, "switchable": cheat.get("switchable", True)},
+                code_writes=code_writes.get(str(cheat["name"]), ()),
+                changed_runs=changed_runs,
+            )
+            is not None
+        }
+        on = [line.strip() for line in enabled_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+        keep = [line for line in on if line not in blocked]
+        if len(keep) != len(on):
+            enabled_file.write_text("".join(f"{line}\n" for line in keep), encoding="utf-8")
+            removed.extend(line for line in on if line not in keep)
+    return removed
 
 
 def safe_mode_marker(library: Path, title_id: str) -> Path:
@@ -1085,6 +1309,11 @@ def import_cheats(library: Path, title_id: str, sources: Sequence[Path], enable:
         stem = path.stem
         if path.suffix.lower() == ".tsv" and stem.endswith(".meta"):
             stem = stem[: -len(".meta")]
+        # A download called `6E35EE0A24029143 (1).txt` or `6E35EE0A24029143 - copy.txt` is still for
+        # that build: take the leading build id rather than making the user rename it.
+        leading = re.match(r"^([0-9A-Fa-f]{16})(?![0-9A-Fa-f])", stem)
+        if leading:
+            stem = leading.group(1).upper()
         if not _is_build_id(stem):
             # A pasted/renamed file: name it after the built game's build ID, which is what the host
             # matches the file against (the app records it in dm/main.fixups.tsv).
@@ -1097,7 +1326,11 @@ def import_cheats(library: Path, title_id: str, sources: Sequence[Path], enable:
                     "cheat sites name their files that way"
                 )
         suffix = ".tsv" if path.name.endswith(".meta.tsv") else path.suffix
-        renamed = path.name if path.name.startswith(stem) else f"{stem}{'.meta.tsv' if suffix == '.tsv' else suffix}"
+        # Always land on `<build id>.txt` / `<build id>.meta.tsv`: a download called
+        # `6E35EE0A24029143 (1).txt` would otherwise keep that name, and the host — which matches the
+        # file by build id — would ignore it, while the compile's meta and switches (keyed by build
+        # id) got deleted as "another file".
+        renamed = f"{stem}.meta.tsv" if suffix == ".tsv" else f"{stem}{path.suffix}"
         target = folder / renamed
         data = path.read_text(encoding="utf-8", errors="replace")
         rebased, changed = rebase_cheats(data)
@@ -1229,16 +1462,21 @@ def set_cheat(library: Path, title_id: str, build: str, name: str, enabled: bool
         for cheat in cheats
         if str(cheat["key"]).casefold() == wanted.casefold() or str(cheat["name"]).casefold() == wanted.casefold()
     ]
-    # Never switch on something the pipeline knows cannot run (it crashes the game): code patches,
-    # entries a compile could not anchor, or a file that has not been checked yet.
+    # Never switch on something the pipeline knows cannot run (it crashes the game): a failed
+    # anchor, an `udf` sentinel, or a write into code the rewriter changed.
     if enabled and not force:
+        compiled = txt.read_text(encoding="utf-8", errors="replace") if txt.is_file() else ""
+        code_writes = entry_code_writes(compiled)
+        changed_runs = load_changed_runs(library, title_id)
         for cheat in matched:
-            reason = cheat_blocked_reason({**cheat, "switchable": cheat.get("switchable", True)})
+            reason = cheat_blocked_reason(
+                {**cheat, "switchable": cheat.get("switchable", True)},
+                force=force,
+                code_writes=code_writes.get(str(cheat["name"]), ()),
+                changed_runs=changed_runs,
+            )
             if reason is not None:
-                raise LibraryError(
-                    f"{cheat['name']}: {reason} — it would crash the game. "
-                    "Build the game once (that anchors the file), or pass --force to try it anyway."
-                )
+                raise LibraryError(f"{cheat['name']}: {reason}. Pass --force to switch it on anyway.")
     keys = {str(cheat["key"]) for cheat in matched}
     if not keys:
         keys = {wanted}  # no file to read (a hand-written toggle): keep the name as given

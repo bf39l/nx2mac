@@ -391,6 +391,12 @@ struct BuildTab: View {
                 }
                 .keyboardShortcut(.return, modifiers: [])
                 .disabled(!model.readyToBuild)
+
+                Button { model.startBuild(cheatsOnly: true) } label: {
+                    Label("Build cheats only", systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+                .disabled(!model.readyToBuild || model.cheatFileURL == nil)
+                .help("Extract ExeFS/main and re-anchor the cheat file, skipping the shaders, the Mac host and the app")
             }
 
             Spacer()

@@ -65,10 +65,10 @@ struct BuildTab: View {
                     Button("Clear") { model.keysURL = nil }
                 }
             }
-            row(title: "Game") {
-                pathLabel(model.gameURL?.path ?? "choose a dump folder, a package file, or a .nup", empty: model.gameURL == nil)
-                Button("Choose…") { chooseGame() }
-            }
+            gameDirRow
+            gameFileRow
+            packageList
+
             row(title: "Update") {
                 Text(model.updateURLs.isEmpty
                      ? "optional — pick an update .nsp/.nsz from anywhere"
@@ -137,6 +137,65 @@ struct BuildTab: View {
             .truncationMode(.middle)
             .foregroundStyle(empty ? .tertiary : .primary)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The dump folder (optional): picking it auto-selects the package inside.
+    private var gameDirRow: some View {
+        row(title: "Game dir") {
+            pathLabel(model.gameDirURL?.path ?? "optional — the dump folder holding the game",
+                      empty: model.gameDirURL == nil)
+            Button("Choose…") { chooseGameDir() }
+            if model.gameDirURL != nil {
+                Button("Clear") { Task { await model.setGameDir(nil) } }
+            }
+        }
+    }
+
+    /// The package file itself: auto-filled from the folder, or picked by hand.
+    private var gameFileRow: some View {
+        row(title: "Game") {
+            HStack(spacing: 6) {
+                pathLabel(model.gameURL?.path ?? "a package file (.nsp/.nsz/.xci/.xcz) or a .nup",
+                          empty: model.gameURL == nil)
+                if model.gameURL != nil, model.gameFileIsAuto {
+                    autoBadge
+                }
+            }
+            Button("Choose…") { chooseGameFile() }
+            if model.gameURL != nil {
+                Button("Clear") { model.setGameFile(nil) }
+            }
+        }
+    }
+
+    private var autoBadge: some View {
+        Text("auto")
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Color.secondary.opacity(0.12), in: Capsule())
+            .help("Found in the folder above; pick a file to override it")
+    }
+
+    /// What the folder holds, with the package the build will use marked.
+    @ViewBuilder
+    private var packageList: some View {
+        if model.gameDirURL != nil, !model.packages.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(model.packages) { package in
+                    PackageRow(package: package, selected: package.path == model.gameURL?.path) {
+                        model.setGameFile(package.url)
+                    }
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, SelectionList.padding / 2)
+            .frame(height: SelectionList.height(for: model.packages.count))
+            .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
+            .padding(.leading, 104)
+        }
     }
 
     /// The chosen files as a vertical, scrollable list — many DLCs must stay readable.
@@ -274,19 +333,28 @@ struct BuildTab: View {
 // MARK: - Panels
 
 extension BuildTab {
-    /// One picker for either shape of input: a dump folder, a single package
-    /// file (.nsp/.nsz/.xci/.xcz — staged for the engine) or a .nup container.
-    func chooseGame() {
+    /// The dump folder; its game package is picked for you.
+    func chooseGameDir() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Use this folder"
+        panel.message = "Pick the folder holding the game's .nsp/.nsz/.xci files."
+        if panel.runModal() == .OK, let url = panel.url {
+            Task { await model.setGameDir(url) }
+        }
+    }
+
+    /// One package file, or a .nup container, chosen by hand.
+    func chooseGameFile() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
-        // No content-type filter: there is no system type for .nsp/.nup, and a
-        // folder has to stay selectable. The CLI validates whatever we hand it.
         panel.prompt = "Use this game"
-        panel.message = "Pick the dump folder holding the game's .nsp/.nsz/.xci files, "
-            + "a single package file, or a .nup container."
-        if panel.runModal() == .OK, let url = panel.url { model.setGame(url) }
+        panel.message = "Pick the package to build (.nsp/.nsz/.xci/.xcz) or a .nup container."
+        if panel.runModal() == .OK, let url = panel.url { model.setGameFile(url) }
     }
 
     func chooseKeys() {
@@ -337,5 +405,40 @@ extension BuildTab {
         panel.prompt = "Use this folder"
         panel.message = "The app, the engine build folder (kept for fast rebuilds) and prod.keys go here."
         if panel.runModal() == .OK, let url = panel.url { model.chooseOutDir(url) }
+    }
+}
+
+
+/// One package found in the game folder; click it to build that one instead.
+private struct PackageRow: View {
+    let package: GamePackage
+    let selected: Bool
+    let choose: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                .font(.caption2)
+                .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+            Text(package.name)
+                .font(.caption.monospaced())
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text(package.role)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            Spacer(minLength: 4)
+            Text(sizeLabel)
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 1)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: choose)
+        .help("Build this package")
+    }
+
+    private var sizeLabel: String {
+        ByteCountFormatter.string(fromByteCount: Int64(package.size), countStyle: .file)
     }
 }

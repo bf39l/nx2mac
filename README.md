@@ -50,6 +50,9 @@ nx2mac version                          # version (also --json)
 nx2mac doctor                           # per-check status + fix; exit 1 if anything fails
 nx2mac setup [--install NAME…|--all]    # install missing pieces (prompts, or non-interactive)
 nx2mac engine [REF] [--source upstream|fork] [--show]
+nx2mac probe PATH                      # what a folder holds + which package is the game
+nx2mac library [--set DIR|--clear]     # the game library (no default; must exist)
+nx2mac player [--create NAME|--select NAME|--delete NAME] [--game GAME]
 nx2mac build GAME [-k KEYS] [-o APP] [--out-dir DIR]
                 [--update F…] [--dlc F…] [--source ID] [--ref REF] [--json]
 ```
@@ -68,7 +71,8 @@ open ~/Applications/nx2mac.app
 - **Setup tab** (opens first) — every prerequisite with its state. Fixable items get an **Install**
   button (runs `nx2mac setup --install <name>` and streams the output); items we must not automate
   (installing Xcode, updating macOS, Homebrew itself) show a command to copy and a link.
-- **Build tab** — pick `prod.keys` (optional), the game (dump folder, package file or `.nup`),
+- **Build tab** — pick `prod.keys` (optional), a **Game dir** (its package is auto-selected and
+  listed, click any listed package to build that one instead) and/or the **Game** file itself,
   an update and any number of DLC packages (auto-sized vertical list, five rows then scrolls),
   an **output folder** (defaults to the game's directory), and the engine + ref.
   The engine's progress streams into the log; when it finishes you can reveal or open the app.

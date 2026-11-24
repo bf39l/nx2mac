@@ -318,6 +318,26 @@ final class BundledCLITests: XCTestCase {
     }
 }
 
+final class ProbePayloadTests: XCTestCase {
+    func testDecodesProbeDocument() throws {
+        let json = """
+        {"path": "/dumps/Dead Cells", "kind": "switch1",
+         "game_file": "/dumps/Dead Cells/base_0100646009FBE000.nsp", "needs_prod_keys": true,
+         "packages": [{"path": "/dumps/Dead Cells/base_0100646009FBE000.nsp", "extension": ".nsp",
+                       "title_id": "0100646009FBE000", "role": "base", "size": 465011002},
+                      {"path": "/dumps/Dead Cells/u_0100646009FBE800.nsp", "extension": ".nsp",
+                       "title_id": "0100646009FBE800", "role": "update", "size": 2100541718}]}
+        """
+
+        let payload = try JSONDecoder().decode(ProbePayload.self, from: Data(json.utf8))
+
+        XCTAssertEqual(payload.kind, "switch1")
+        XCTAssertTrue(payload.needsProdKeys)
+        XCTAssertEqual(payload.packages.map(\.role), ["base", "update"])
+        XCTAssertEqual(payload.gameFile?.hasSuffix("base_0100646009FBE000.nsp"), true)
+    }
+}
+
 @MainActor
 final class OutputFolderDefaultTests: XCTestCase {
     /// A temp folder with a fake dump folder and a package file inside it.
@@ -334,15 +354,15 @@ final class OutputFolderDefaultTests: XCTestCase {
         let (root, folder, file) = try fixture()
         let model = BuildModel()
 
-        model.setGame(folder)
+        model.setGameFile(folder)
         XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, folder.standardizedFileURL.path)
 
-        // a package file defaults to the directory holding it (same folder here)
-        model.setGame(file)
+        // a package file defaults to the directory holding it
+        model.setGameFile(file)
         XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, folder.standardizedFileURL.path)
 
-        model.setGame(nil)
-        XCTAssertNil(model.outDirURL)
+        model.setGameFile(nil)
+        XCTAssertNil(model.gameURL)
     }
 
     func testAChosenOutputFolderStopsFollowingTheGame() throws {
@@ -350,9 +370,9 @@ final class OutputFolderDefaultTests: XCTestCase {
         let chosen = root.appendingPathComponent("Project")
         let model = BuildModel()
 
-        model.setGame(folder)
+        model.setGameFile(folder)
         model.chooseOutDir(chosen)
-        model.setGame(file)  // switching games must not clobber the choice
+        model.setGameFile(file)  // switching games must not clobber the choice
 
         XCTAssertFalse(model.outDirIsAuto)
         XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, chosen.standardizedFileURL.path)
@@ -361,7 +381,7 @@ final class OutputFolderDefaultTests: XCTestCase {
     func testResetReturnsToTheGameDirectory() throws {
         let (root, folder, file) = try fixture()
         let model = BuildModel()
-        model.setGame(file)
+        model.setGameFile(file)
         model.chooseOutDir(root.appendingPathComponent("Project"))
 
         model.resetOutDir()

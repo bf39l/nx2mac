@@ -76,6 +76,9 @@ nx2mac doctor      # check the whole table above; show what's missing and how to
 nx2mac setup       # per missing item: "Install zstd? (brew install zstd) [y/N]" and run it;
                    # manual-only items (full Xcode, macOS, Homebrew itself) get a note + link
                    #   --install NAME (repeatable) / --all / --yes / --no-prompt
+nx2mac probe PATH  # what a folder holds, which package is the base game (the GUI pre-picks it)
+nx2mac library     # game library setting + the games built into it (--set/--clear/--json)
+nx2mac player      # a game's players: --create/--select/--delete (each keeps own saves + name)
 nx2mac engine      # select + pin a source; reports branch name + commit hash (--show: no network)
 nx2mac build DIR   # full pipeline; -k <prod.keys>, -o <out.app>, --update F, --dlc F (repeatable),
                    # --out-dir DIR (app + build folder + prod.keys together)
@@ -169,7 +172,9 @@ A native SwiftUI app that only shells out to `nx2mac … --json` (no Python impo
 - **Setup tab** (first tab, opened by default): every prerequisite with an Install button for the
   fixable ones (`setup --install <name> --json`), Copy command / Open page for manual ones, and
   "Install all missing" (`setup --all`).
-- **Build tab**: one picker for the game (dump folder, single package file, or `.nup`), optional `prod.keys`, optional update(s) and any
+- **Build tab**: a **Game dir** row and a **Game** row — choosing the folder runs `nx2mac probe`
+  and auto-selects the base package (the list under it shows every package with its role and size;
+  clicking one builds that instead), and the file can also be chosen by hand; optional `prod.keys`, optional update(s) and any
   number of DLC packages/folders (both shown as vertical lists with per-item remove), one optional
   **Output folder** (`--out-dir`: app + build folder + keys), engine + ref ("Save & Pin"), then
   Build with a live log and the engine's stage tags (`[8/8] Mac app`); Done reveals/opens the

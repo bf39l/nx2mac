@@ -55,7 +55,14 @@ final class BuildModel: ObservableObject {
 
     // MARK: Inputs
 
-    @Published var gameURL: URL?
+    /// The dump folder (optional) and the package file inside it. Picking a folder
+    /// auto-selects its game package; picking a file by hand overrides that.
+    @Published private(set) var gameURL: URL?
+    @Published private(set) var gameDirURL: URL?
+    /// True while `gameURL` is just what the folder scan found (not user-chosen).
+    @Published private(set) var gameFileIsAuto = false
+    /// What `nx2mac probe` found in the folder, for the list under the rows.
+    @Published private(set) var packages: [GamePackage] = []
     @Published var keysURL: URL?
     /// Where the .app, the engine build folder and prod.keys should all live.
     /// Follows the game's directory until the user picks one themselves.
@@ -84,9 +91,9 @@ final class BuildModel: ObservableObject {
 
     /// The request the Build button would send right now.
     var request: BuildRequest? {
-        guard let gameURL else { return nil }
+        guard let game = buildPath else { return nil }
         return BuildRequest(
-            game: gameURL,
+            game: game,
             keys: keysURL,
             outDir: outDirURL,
             updates: updateURLs,
@@ -103,11 +110,52 @@ final class BuildModel: ObservableObject {
 
     var firstFailure: DoctorCheck? { doctor?.failedChecks.first }
 
-    /// Choose the game (a dump folder, a package file, or a .nup). The output
-    /// folder follows it while the user has not picked one explicitly.
-    func setGame(_ url: URL?) {
+    /// Choose a dump folder: the package inside it is picked for you.
+    func setGameDir(_ url: URL?) async {
+        gameDirURL = url
+        packages = []
+        guard let url else {
+            gameURL = nil
+            gameFileIsAuto = false
+            if outDirIsAuto { outDirURL = nil }
+            return
+        }
+        if outDirIsAuto { outDirURL = Self.directory(of: url) }
+        await scanGameDir(url)
+    }
+
+    /// Pick the package file yourself (or a .nup): this wins over the folder scan.
+    func setGameFile(_ url: URL?) {
         gameURL = url
-        if outDirIsAuto { outDirURL = url.map(Self.directory(of:)) }
+        gameFileIsAuto = false
+        if outDirIsAuto, let url { outDirURL = Self.directory(of: url) }
+    }
+
+    /// Ask the CLI what the folder holds, and pre-select its game package.
+    func scanGameDir(_ url: URL) async {
+        guard let cli else { return }
+        guard let result = try? await Self.run(cli, ["probe", url.path, "--json"]),
+              let data = result.stdout.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(ProbePayload.self, from: data)
+        else {
+            packages = []
+            return
+        }
+        packages = payload.packages
+        if let chosen = payload.gameFile {
+            gameURL = URL(fileURLWithPath: chosen)
+            gameFileIsAuto = true
+        } else {
+            gameURL = nil
+            gameFileIsAuto = false
+        }
+    }
+
+    /// Which path the build receives: the file you chose, else the folder (so the
+    /// engine still sees updates/DLC kept beside the game).
+    var buildPath: URL? {
+        if let gameURL, !gameFileIsAuto { return gameURL }
+        return gameDirURL ?? gameURL
     }
 
     /// The user picked an output folder: stop following the game.

@@ -24,6 +24,7 @@ from .config import save as save_config
 from .doctor import DoctorContext, DoctorReport, run_checks
 from .engines import EngineError, EngineSource, all_sources, describe, ensure_checkout, source_by_id
 from .installer import InstallResult, install
+from .probe import probe as probe_path
 from .pyenv import PyEnvError
 from .remedies import Remedy, installable_names, remedy_for
 from .runner import Env, RealEnv
@@ -423,6 +424,26 @@ def library(
     for game in games:  # type: ignore[assignment]
         console.print(f"  [green]{game['name']}[/] [dim]{game['version'] or ''} {game['title_id'] or ''}[/]")
         console.print(f"    [dim]{game['path']}[/]")
+
+
+@app.command()
+def probe(
+    ctx: typer.Context,
+    json_flag: bool = _json_option(),
+    path: Path = typer.Argument(..., metavar="PATH", help="Game folder or package file to inspect."),
+) -> None:
+    """Say what a folder holds and which package is the game (the GUI pre-picks it)."""
+    machine_readable = _enter(ctx, json_flag)
+    scan = probe_path(path)
+    if machine_readable:
+        emit.emit(scan.to_dict())
+        return
+    console.print(f"[bold]{scan.path}[/]  [dim]{scan.kind}[/]")
+    console.print(f"game file: [green]{scan.game_file or 'none found'}[/]")
+    for package in scan.packages:
+        selected = "[green]*[/]" if package.path == scan.game_file else " "
+        size = f"{package.size / 1_000_000_000:.2f} GB" if package.size > 1_000_000_000 else f"{package.size / 1_000_000:.0f} MB"
+        console.print(f" {selected} {package.role:8} {package.path.name} [dim]{size}[/]")
 
 
 @app.command()

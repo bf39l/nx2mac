@@ -330,3 +330,30 @@ struct PlayersPayload: Decodable, Equatable {
 
     var activeName: String? { players.first { $0.id == active }?.name }
 }
+
+
+/// One package inside a game folder (`nx2mac probe --json`).
+struct GamePackage: Decodable, Identifiable, Hashable {
+    let path: String
+    let role: String
+    let size: Int
+
+    var id: String { path }
+    var url: URL { URL(fileURLWithPath: path) }
+    var name: String { url.lastPathComponent }
+}
+
+/// `nx2mac probe PATH --json`: what a folder holds and which package is the game.
+struct ProbePayload: Decodable {
+    let path: String
+    let kind: String
+    let gameFile: String?
+    let needsProdKeys: Bool
+    let packages: [GamePackage]
+
+    enum CodingKeys: String, CodingKey {
+        case path, kind, packages
+        case gameFile = "game_file"
+        case needsProdKeys = "needs_prod_keys"
+    }
+}

@@ -488,6 +488,13 @@ private struct CheatsSheet: View {
                                                     Text("not working here — don't enable")
                                                         .font(.caption2)
                                                         .foregroundStyle(.orange)
+                                                } else if let warning = cheat.warning, !warning.isEmpty {
+                                                    // The compile anchored it, but it writes code: the port's
+                                                    // own rewriter owns that code, so it can take the game down.
+                                                    Image(systemName: "exclamationmark.triangle")
+                                                        .font(.caption2)
+                                                        .foregroundStyle(.orange)
+                                                        .help(warning)
                                                 }
                                             }
                                         }
@@ -551,7 +558,7 @@ private struct CheatsSheet: View {
                 ? CheatEntry(name: entry.name, key: entry.key, kind: entry.kind, section: entry.section,
                              broken: entry.broken, switchable: entry.switchable, enabled: enabled,
                              resolved: entry.resolved, unanchored: entry.unanchored,
-                             codePatch: entry.codePatch, blocked: entry.blocked)
+                             codePatch: entry.codePatch, blocked: entry.blocked, warning: entry.warning)
                 : entry
         }
         builds[index] = CheatBuild(build: build.build, file: build.file, enabledFile: build.enabledFile, cheats: updated)

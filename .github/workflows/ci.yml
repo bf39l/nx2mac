@@ -44,7 +44,8 @@ jobs:
 
   # The GUI needs Xcode and an arm64 runner; this is the job that can sit in GitHub's queue.
   gui:
-    name: GUI (swift build + test + release build)
+    # Branch pushes skip the release build, so the name reflects what the run actually does.
+    name: GUI (swift build + test${{ (github.event_name != 'push' || github.ref == 'refs/heads/main') && ' + release build' || '' }})
     runs-on: macos-15
     timeout-minutes: 45
     steps:

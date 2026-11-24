@@ -221,6 +221,43 @@ private final class LockedLines {
     }
 }
 
+final class ToolPathTests: XCTestCase {
+    /// Regression: a Finder-launched app has PATH=/usr/bin:/bin:/usr/sbin:/sbin,
+    /// which made doctor report brew/zstd/glslangValidator as missing.
+    func testHomebrewIsAddedToTheLaunchdPath() {
+        let path = ToolPath.augmented("/usr/bin:/bin:/usr/sbin:/sbin", home: "/Users/me").split(separator: ":").map(String.init)
+
+        XCTAssertTrue(path.contains("/opt/homebrew/bin"))
+        XCTAssertTrue(path.contains("/opt/homebrew/sbin"))
+        XCTAssertTrue(path.contains("/usr/bin"))
+        XCTAssertEqual(path.first, "/opt/homebrew/bin", "tool dirs must come first")
+        XCTAssertEqual(path.last, "/sbin", "inherited order is preserved")
+    }
+
+    func testExistingEntriesAreNotDuplicated() {
+        let path = ToolPath.augmented("/opt/homebrew/bin:/usr/bin:/opt/homebrew/bin", home: "/Users/me")
+
+        XCTAssertEqual(path.components(separatedBy: ":").filter { $0 == "/opt/homebrew/bin" }.count, 1)
+        XCTAssertEqual(path.components(separatedBy: ":").filter { $0 == "/usr/bin" }.count, 1)
+    }
+
+    func testEmptyInheritedPathStillGetsTools() {
+        XCTAssertTrue(ToolPath.augmented(nil, home: "/Users/me").hasPrefix("/opt/homebrew/bin:/opt/homebrew/sbin"))
+        XCTAssertTrue(ToolPath.augmented("", home: "/Users/me").contains("/usr/local/bin"))
+    }
+
+    func testTildeEntriesUseTheHomeDirectory() {
+        XCTAssertTrue(ToolPath.augmented(nil, home: "/Users/me").contains("/Users/me/.local/bin"))
+    }
+
+    func testChildEnvironmentUsesTheAugmentedPath() {
+        let environment = CLIRunner.childEnvironment()
+
+        XCTAssertTrue(environment["PATH"]?.contains("/opt/homebrew/bin") ?? false)
+        XCTAssertEqual(environment["PYTHONUNBUFFERED"], "1")
+    }
+}
+
 final class BundledCLITests: XCTestCase {
     /// A fake app bundle's Resources folder holding a frozen CLI.
     private func resources(withCLI: Bool) throws -> URL {

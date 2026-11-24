@@ -79,7 +79,12 @@ versions side by side, and where the CLI came from. Tests: `swift test --package
 (add `NX2MAC_LIVE_TESTS=1` to drive the real CLI).
 
 `build.sh` resolves the CLI in this order: the path set in Settings → `NX2MAC_BIN` → the copy
-frozen into the bundle → `nx2mac` on `PATH` → a development checkout's `.venv`. While working on
+frozen into the bundle → `nx2mac` on `PATH` → a development checkout's `.venv`.
+
+The app runs the CLI with a PATH that includes `/opt/homebrew/bin`, `/opt/homebrew/sbin`,
+`/usr/local/bin`, `/usr/local/sbin` and `~/.local/bin` ahead of whatever the app inherited: a
+Finder-launched app only gets `/usr/bin:/bin:/usr/sbin:/sbin`, which would otherwise hide Homebrew
+and make the Setup tab report `brew`/`zstd`/`glslangValidator` as missing. While working on
 the SwiftUI side you can skip the (≈7 s) freeze step with `NX2MAC_SKIP_CLI_BUNDLE=1 ./gui/build.sh`.
 
 ## One folder per game

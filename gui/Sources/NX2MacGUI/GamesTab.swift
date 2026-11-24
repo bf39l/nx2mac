@@ -426,33 +426,40 @@ private struct CheatsSheet: View {
                 .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
             }
 
-            if state.safeMode || state.masterOff {
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                    VStack(alignment: .leading, spacing: 1) {
-                        if state.masterOff {
-                            Text("Master switch off — no cheat runs.").font(.caption)
-                        }
-                        if state.safeMode {
-                            Text("Safe mode: the last run ended uncleanly with cheats on, so every cheat starts off.")
-                                .font(.caption)
-                        }
-                    }
-                    Spacer()
-                    if state.masterOff {
-                        Button("Turn cheats on") { Task { await model.setCheatsMaster(for: game, off: false); await load() } }
-                    } else {
-                        Button("Turn all off") { Task { await model.setCheatsMaster(for: game, off: true); await load() } }
-                    }
-                    if state.safeMode {
-                        Button("Restore switches") {
-                            Task { await model.restoreCheatSwitches(for: game); await load() }
-                        }
-                    }
+            // Two switches the engine itself keeps, so they are toggles here rather than actions
+            // you have to remember: "cheats on" is the master switch file, "safe mode" is the marker
+            // a crashed run leaves behind. Turning safe mode off re-applies the saved switches.
+            VStack(alignment: .leading, spacing: 6) {
+                Toggle(isOn: Binding(
+                    get: { !state.masterOff },
+                    set: { on in Task { await model.setCheatsMaster(for: game, off: !on); await load() } }
+                )) {
+                    Text("Cheats on").font(.callout)
+                    Text(state.masterOff ? "the engine runs none at all" : "the switches below are what runs")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
-                .padding(8)
-                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+
+                Toggle(isOn: Binding(
+                    get: { state.safeMode },
+                    set: { on in
+                        // Only the engine turns safe mode on (an unclean exit with cheats on); turning
+                        // it off is ours: drop the marker so the saved switches apply again.
+                        guard !on else { return }
+                        Task { await model.restoreCheatSwitches(for: game); await load() }
+                    }
+                )) {
+                    Text("Safe mode").font(.callout)
+                    Text(state.safeMode
+                         ? "the last run ended uncleanly with cheats on — every cheat starts off"
+                         : "off: the saved switches apply at launch")
+                        .font(.caption2)
+                        .foregroundStyle(state.safeMode ? Color.orange : Color.secondary)
+                }
+                .disabled(!state.safeMode)
             }
+            .padding(8)
+            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
 
             if loading {
                 ProgressView().frame(maxWidth: .infinity, alignment: .center)

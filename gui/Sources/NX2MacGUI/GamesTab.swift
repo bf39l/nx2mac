@@ -400,6 +400,21 @@ private struct CheatsSheet: View {
                 Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
             }
 
+            if !state.masterOff, builds.contains(where: { $0.cheats.contains { $0.enabled } }) {
+                HStack(spacing: 8) {
+                    Text("\(builds.flatMap(\.cheats).filter(\.enabled).count) cheat(s) on — "
+                         + "if the game crashes, turn them off and try one at a time.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Turn all off") {
+                        Task { await model.setCheatsMaster(for: game, off: true); await load() }
+                    }
+                }
+                .padding(8)
+                .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            }
+
             if state.safeMode || state.masterOff {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)

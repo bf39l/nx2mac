@@ -222,6 +222,10 @@ off (**safe mode**); `--restore-safe` drops that marker so the saved switches ap
 cheats on one at a time tells you which one the game cannot survive — cheats that write to code the
 rewriter moved are refused (log: `code writes into them are refused`) and simply do nothing.
 
+Observed with Dead Cells' `6E35EE0A24029143.txt`: its *key-press* cheats (`08010000 0813AA10 …`,
+e.g. `激活修改`, `無限跳`) write into the game's rewritten code and make the host exit with
+`139`. A plain value cheat (`0X…` writes to data, e.g. gold, items) is the safer kind to try first.
+
 ### Cloud saves (optional)
 
 Everything nx2mac writes lives in `<chosen folder>/nx2mac_game_lib/` — no dot-files in your folder:

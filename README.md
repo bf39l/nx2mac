@@ -110,6 +110,25 @@ filename order), so local fixes for the engine or anything vendored in it surviv
 cache. Keep them minimal and drop them once upstream lands the fix — see
 [patches/README.md](patches/README.md).
 
+## Releases
+
+CI runs the Python and Swift suites (plus a full app assembly) on every push; tagging publishes
+both downloads:
+
+```bash
+git tag -a v0.0.1 -m "nx2mac v0.0.1" && git push origin v0.0.1
+```
+
+| asset | what |
+| --- | --- |
+| `nx2mac-cli-<version>-macos-arm64.zip` | standalone CLI (PyInstaller onedir) |
+| `nx2mac-app-<version>-macos-arm64.zip` | `nx2mac.app` with that CLI bundled inside |
+| `SHA256SUMS.txt` | checksums for both |
+
+The workflow refuses to publish when the tag, `src/nx2mac/__init__.py` (`VERSION`) and
+`gui/Info.plist` disagree — bump all three together. From the Actions tab you can also run
+*Release* manually (`create_release: false` uploads artifacts only).
+
 ## Development
 
 ```bash

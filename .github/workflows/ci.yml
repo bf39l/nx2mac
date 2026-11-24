@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cli:
+    name: CLI (ruff + pytest)
+    # macos-15 is Apple silicon for public repos; the engine only builds arm64.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Confirm the runner is arm64
+        run: test "$(uname -m)" = arm64
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check src/ tests/
+
+      - name: Test
+        run: uv run pytest -q
+
+      - name: Smoke test the CLI
+        run: |
+          uv run nx2mac version
+          uv run nx2mac version --json
+          uv run nx2mac --help >/dev/null
+          uv run nx2mac doctor --json | head -c 200; echo
+
+  gui:
+    name: GUI (swift build + test + bundle)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Confirm the runner is arm64
+        run: test "$(uname -m)" = arm64
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --locked
+
+      - name: Build
+        run: swift build --package-path gui
+
+      - name: Test
+        run: swift test --package-path gui
+
+      - name: Assemble the app bundle (freezes the CLI inside it)
+        run: ./gui/build.sh release
+
+      - name: Smoke test the bundled CLI
+        run: |
+          CLI=gui/.build/nx2mac.app/Contents/Resources/cli/nx2mac
+          test -x "$CLI"
+          "$CLI" version
+          codesign -v gui/.build/nx2mac.app

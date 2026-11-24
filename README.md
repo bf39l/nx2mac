@@ -71,10 +71,11 @@ open ~/Applications/nx2mac.app
 - **Setup tab** (opens first) — every prerequisite with its state. Fixable items get an **Install**
   button (runs `nx2mac setup --install <name>` and streams the output); items we must not automate
   (installing Xcode, updating macOS, Homebrew itself) show a command to copy and a link.
-- **Build tab** — pick `prod.keys` (optional), a **Game dir** (the package it holds is picked for
+- **Build tab** — pick the **engine** (source + ref, Save & Pin) first, then `prod.keys` (optional), a **Game dir** (the package it holds is picked for
   you and shown; use **Game → Choose…** to build a different file) and/or the **Game** file itself,
   an update and any number of DLC packages (auto-sized vertical list, five rows then scrolls),
-  an **output folder** (defaults to the game's directory), and the engine + ref.
+  and an **output folder** (defaults to the game library, so builds are filed into
+`<library>/<Game>/`; pick a folder to override).
   The engine's progress streams into the log; when it finishes you can reveal or open the app.
 
 The app reads its icon from `gui/Resources/AppIcon.icns`, regenerated with

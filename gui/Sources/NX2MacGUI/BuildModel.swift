@@ -64,10 +64,10 @@ final class BuildModel: ObservableObject {
     /// What `nx2mac probe` found in the folder, for the list under the rows.
     @Published private(set) var packages: [GamePackage] = []
     @Published var keysURL: URL?
-    /// Where the .app, the engine build folder and prod.keys should all live.
-    /// Follows the game's directory until the user picks one themselves.
+    /// Where the .app and its build folder go. Until the user picks one, this is
+    /// the game library (when set) or the game's own directory.
     @Published private(set) var outDirURL: URL?
-    /// True while `outDirURL` is just "the game's directory" (not user-chosen).
+    /// True while `outDirURL` is the default rather than something the user chose.
     @Published private(set) var outDirIsAuto = true
     /// Optional update package(s) picked outside the game folder (staged by the CLI).
     @Published var updateURLs: [URL] = []
@@ -92,10 +92,13 @@ final class BuildModel: ObservableObject {
     /// The request the Build button would send right now.
     var request: BuildRequest? {
         guard let game = buildPath else { return nil }
+        // A default output folder means "let the CLI file it into the library".
+        let chosenOutDir = outDirIsAuto ? nil : outDirURL
         return BuildRequest(
             game: game,
             keys: keysURL,
-            outDir: outDirURL,
+            library: chosenOutDir == nil ? libraryURL : nil,
+            outDir: chosenOutDir,
             updates: updateURLs,
             dlcs: dlcURLs,
             source: engineChoice,
@@ -120,7 +123,7 @@ final class BuildModel: ObservableObject {
             if outDirIsAuto { outDirURL = nil }
             return
         }
-        if outDirIsAuto { outDirURL = Self.directory(of: url) }
+        if outDirIsAuto { outDirURL = defaultOutDir }
         await scanGameDir(url)
     }
 
@@ -128,7 +131,7 @@ final class BuildModel: ObservableObject {
     func setGameFile(_ url: URL?) {
         gameURL = url
         gameFileIsAuto = false
-        if outDirIsAuto, let url { outDirURL = Self.directory(of: url) }
+        if outDirIsAuto { outDirURL = defaultOutDir }
     }
 
     /// Ask the CLI what the folder holds, and pre-select its game package.
@@ -163,16 +166,25 @@ final class BuildModel: ObservableObject {
         return gameDirURL ?? gameURL
     }
 
-    /// The user picked an output folder: stop following the game.
+    /// The user picked an output folder: stop following the library/game.
     func chooseOutDir(_ url: URL) {
         outDirURL = url
         outDirIsAuto = false
     }
 
-    /// Drop back to the default (the game's own directory).
+    /// Drop back to the default: the game library when one is set, else the game's folder.
     func resetOutDir() {
         outDirIsAuto = true
-        outDirURL = gameURL.map(Self.directory(of:))
+        outDirURL = defaultOutDir
+    }
+
+    /// The game library the build files into (what the user chose in Setup).
+    var libraryURL: URL? { libraryDir.map { URL(fileURLWithPath: $0) } }
+
+    /// The output folder to show/use while the user has not chosen one.
+    var defaultOutDir: URL? {
+        if let libraryURL { return libraryURL }
+        return gameURL.map(Self.directory(of:))
     }
 
     /// The directory holding *url*: itself for a folder, the parent for a file.
@@ -242,6 +254,7 @@ final class BuildModel: ObservableObject {
         else { return }
         libraryDir = payload.dir
         games = payload.games
+        if outDirIsAuto { outDirURL = defaultOutDir }
         await refreshPlayers()
     }
 
@@ -256,6 +269,7 @@ final class BuildModel: ObservableObject {
         else { return }
         libraryDir = payload.dir
         games = payload.games
+        if outDirIsAuto { outDirURL = defaultOutDir }
     }
 
     /// Forget the library setting.
@@ -264,6 +278,7 @@ final class BuildModel: ObservableObject {
         _ = try? await Self.run(cli, ["library", "--clear", "--json"])
         libraryDir = nil
         games = []
+        if outDirIsAuto { outDirURL = defaultOutDir }
     }
 
     /// Read the players of every game in the library (one `player --json` per game).

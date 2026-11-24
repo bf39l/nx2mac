@@ -7,7 +7,9 @@ import Foundation
 struct BuildRequest: Equatable {
     var game: URL
     var keys: URL?
-    /// One folder for the .app, the engine build folder and prod.keys.
+    /// The game library to file into (`--library`): the CLI then uses `<library>/<Game>/`.
+    var library: URL?
+    /// An explicitly chosen output folder (`--out-dir`); wins over the library.
     var outDir: URL?
     var updates: [URL] = []
     var dlcs: [URL] = []
@@ -20,6 +22,7 @@ struct BuildRequest: Equatable {
         let trimmedRef = ref.trimmingCharacters(in: .whitespaces)
         if !trimmedRef.isEmpty { args += ["--ref", trimmedRef] }
         if let keys { args += ["--keys", keys.path] }
+        if let library { args += ["--library", library.path] }
         if let outDir { args += ["--out-dir", outDir.path] }
         for update in updates { args += ["--update", update.path] }
         for dlc in dlcs { args += ["--dlc", dlc.path] }

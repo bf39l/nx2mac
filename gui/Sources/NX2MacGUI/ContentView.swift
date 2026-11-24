@@ -31,8 +31,8 @@ struct BuildTab: View {
         VStack(alignment: .leading, spacing: 14) {
             header
             Divider()
-            inputs
             engineSection
+            inputs
             actions
             LogView(lines: model.log)
         }
@@ -101,16 +101,18 @@ struct BuildTab: View {
 
             row(title: "Output folder") {
                 HStack(spacing: 6) {
-                    pathLabel(model.outDirURL?.path ?? "choose a game first",
+                    pathLabel(model.outDirURL?.path ?? "the game library, or a folder you choose",
                               empty: model.outDirURL == nil)
                     if model.outDirIsAuto {
-                        Text("default")
+                        Text(model.libraryURL == nil ? "default" : "library")
                             .font(.caption2.weight(.medium))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Color.secondary.opacity(0.12), in: Capsule())
-                            .help("Defaults to the game's own directory")
+                            .help(model.libraryURL == nil
+                                  ? "Defaults to the game's own directory"
+                                  : "The game library from Setup: the build is filed into <library>/<Game>/")
                     }
                 }
                 Button("Change…") { chooseOutDir() }

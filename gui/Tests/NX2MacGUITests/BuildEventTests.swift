@@ -452,6 +452,29 @@ final class BuildRequestTests: XCTestCase {
         XCTAssertEqual(request.extrasSummary, "1 update + 2 DLC")
     }
 
+    func testLibraryIsPassedInsteadOfAnOutDir() {
+        let request = BuildRequest(
+            game: URL(fileURLWithPath: "/games/My Game"),
+            library: URL(fileURLWithPath: "/Users/me/Games"),
+            outDir: nil
+        )
+
+        XCTAssertTrue(request.arguments.contains("--library"))
+        XCTAssertFalse(request.arguments.contains("--out-dir"))
+        XCTAssertEqual(request.arguments[request.arguments.firstIndex(of: "--library")! + 1], "/Users/me/Games")
+    }
+
+    func testAChosenOutDirWinsOverTheLibrary() {
+        let request = BuildRequest(
+            game: URL(fileURLWithPath: "/games"),
+            library: nil,
+            outDir: URL(fileURLWithPath: "/tmp/Project")
+        )
+
+        XCTAssertTrue(request.arguments.contains("--out-dir"))
+        XCTAssertFalse(request.arguments.contains("--library"))
+    }
+
     func testArgumentsOmitOptionalInputs() {
         let request = BuildRequest(game: URL(fileURLWithPath: "/g"), source: "upstream", ref: "")
 

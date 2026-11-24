@@ -30,7 +30,9 @@ from .inputs import GAME_EXTENSIONS
 MANIFEST_NAME: str = "nx2mac.json"
 
 #: The library's own layout, keyed by title ID (NX2Apple keeps saves the same way):
-#:   save/<TID>/            DM_SAVE - the base store; profiles/<player>/ below it
+#:   save/<TID>/save/       DM_SAVE - the base store (its .users/.work siblings land in <TID>/)
+#:   save/<TID>/profiles/   one store per player
+#:   save/<TID>/pso_user.tsv  DM_PSO_USER - the game's shared pipeline cache
 #:   logs/<TID>.log         DM_LOG_DIR=<library>/logs (the launcher names the file)
 #:   mods/<TID>/            where this game's mods live
 #:   cheats/<TID>/          DM_CHEATS
@@ -52,6 +54,8 @@ BUILD_ENV_NAME: str = "build-env.txt"
 PLAYERS_FILE: str = "players.json"
 #: Nickname the engine uses for its local user 1 (see hle_account.c: DM_NICK).
 PLAYER_NICK_ENV: str = "DM_NICK"
+#: The engine's cloud-saves folder (save_sync.c): it keeps <folder>/<TITLEID>/save.dmsync.
+CLOUD_ENV: str = "DM_SAVE_SYNC"
 #: How many players one game may have (the engine allows 8 local users; we keep it tidy).
 MAX_PLAYERS: int = 8
 
@@ -124,7 +128,7 @@ class GameEntry:
         if self.library is not None and self.title_id:
             tid = self.title_id
             folders = {
-                "saves": save_dir(self.library, tid),
+                "saves": game_save_root(self.library, tid),
                 "logs": logs_dir(self.library),
                 "mods": mods_dir(self.library, tid),
                 "cheats": cheats_dir(self.library, tid),
@@ -271,12 +275,12 @@ def delete_player(library: Path, name: str) -> Player:
     return player
 
 
-def write_all_player_envs(library: Path) -> list[Path]:
-    """Point every built game at the active player (called when the player changes)."""
+def write_all_player_envs(library: Path, cloud_dir: Path | None = None) -> list[Path]:
+    """Point every built game at the active player (and the cloud folder, when set)."""
     written: list[Path] = []
     for entry in list_games(library):
         if entry.title_id:
-            written.append(write_player_env(library, entry.title_id))
+            written.append(write_player_env(library, entry.title_id, cloud_dir))
     return written
 
 
@@ -361,14 +365,29 @@ def mark_library(folder: Path) -> Path:
     return marker
 
 
-def save_dir(library: Path, title_id: str) -> Path:
-    """The game's save store (DM_SAVE when no player is chosen)."""
+def game_save_root(library: Path, title_id: str) -> Path:
+    """Everything one game saves: `<library>/save/<TID>/`."""
     return library / "save" / title_id
+
+
+def save_dir(library: Path, title_id: str) -> Path:
+    """The base save store (DM_SAVE when no player is chosen).
+
+    It is a `save` sub-folder so the engine's siblings of DM_SAVE (`<store>.users`,
+    `<store>.work`, `<store>_device`) stay inside the game's `<TITLEID>/` folder
+    instead of scattering over `save/`.
+    """
+    return game_save_root(library, title_id) / "save"
+
+
+def pso_user_path(library: Path, title_id: str) -> Path:
+    """The game's shared pipeline cache (DM_PSO_USER), one per game."""
+    return game_save_root(library, title_id) / "pso_user.tsv"
 
 
 def profiles_dir(library: Path, title_id: str) -> Path:
     """Where the players of one game keep their own stores."""
-    return save_dir(library, title_id) / "profiles"
+    return game_save_root(library, title_id) / "profiles"
 
 
 def logs_dir(library: Path) -> Path:
@@ -413,6 +432,7 @@ def ensure_layout(library: Path, title_id: str) -> Path:
     mark_library(library)
     for directory in (
         save_dir(library, title_id),
+        game_save_root(library, title_id),
         logs_dir(library),
         mods_dir(library, title_id),
         cheats_dir(library, title_id),
@@ -436,6 +456,7 @@ def write_build_env(library: Path, title_id: str) -> Path:
         "DM_SUPPORT_DIR": str(support),
         "DM_LOG_DIR": str(logs_dir(library)),
         "DM_SAVE": str(save_dir(library, title_id)),
+        "DM_PSO_USER": str(pso_user_path(library, title_id)),
         "DM_TEMP": str(support / "temp"),
         "DM_ALBUM_DIR": str(screenshots_dir(library, title_id)),
         "DM_CHEATS": str(cheats_dir(library, title_id)),
@@ -460,7 +481,19 @@ def bake_env(app: Path, env_file: Path) -> Path | None:
     return target
 
 
-def write_player_env(library: Path, title_id: str) -> Path:
+def cloud_value(cloud_dir: Path | None, player_id: str | None) -> str | None:
+    """The DM_SAVE_SYNC value for one game (and player), or None to leave it off.
+
+    Each player gets a folder of its own under the cloud root, so two players never
+    fight over one `<cloud>/<TITLEID>/save.dmsync`.
+    """
+    if cloud_dir is None:
+        return None
+    root = cloud_dir.expanduser()
+    return str(root / "players" / player_id) if player_id else str(root)
+
+
+def write_player_env(library: Path, title_id: str, cloud_dir: Path | None = None) -> Path:
     """Point the engine's saves at the *active player's* store, and name them.
 
     Each player is user 1 in their own store under `save/<TID>/profiles/`, which is
@@ -480,6 +513,10 @@ def write_player_env(library: Path, title_id: str) -> Path:
         store.mkdir(parents=True, exist_ok=True)
         managed["DM_SAVE"] = str(store)
         managed[PLAYER_NICK_ENV] = player.name
+    cloud = cloud_value(cloud_dir, player.id if player is not None else None)
+    if cloud is not None:
+        managed[CLOUD_ENV] = cloud
+        (cloud_dir.expanduser() if cloud_dir else Path(cloud)).mkdir(parents=True, exist_ok=True)
 
     kept: list[str] = []
     if path.is_file():

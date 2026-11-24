@@ -448,6 +448,51 @@ def probe(
 
 
 @app.command()
+def cloud(
+    ctx: typer.Context,
+    json_flag: bool = _json_option(),
+    set_dir: Path | None = typer.Option(None, "--set", metavar="DIR", help="a synced folder (iCloud Drive, Dropbox, …)."),
+    clear: bool = typer.Option(False, "--clear", help="stop syncing saves to a cloud folder."),
+) -> None:
+    """Keep each game's saves local and copy them to a synced folder (engine cloud saves)."""
+    machine_readable = _enter(ctx, json_flag)
+    cfg = load_config()
+
+    if clear:
+        save_config(replace(cfg, cloud_dir=None))
+        library_dir = Path(cfg.library_dir) if cfg.library_dir else None
+        if library_dir is not None and library_dir.is_dir():
+            library_mod.write_all_player_envs(library_dir)
+        if machine_readable:
+            emit.emit({"dir": None, "env_files": []})
+        else:
+            console.print("[green]Cloud saves off.[/] The games keep playing from their local save.")
+        return
+
+    if set_dir is not None:
+        folder = set_dir.expanduser()
+        if not folder.is_dir():
+            _fail(ctx, f"cloud folder does not exist: {folder} (create it first, e.g. in iCloud Drive)")
+        save_config(replace(cfg, cloud_dir=str(folder)))
+        library_dir = Path(cfg.library_dir) if cfg.library_dir else None
+        written = (
+            library_mod.write_all_player_envs(library_dir, folder) if library_dir and library_dir.is_dir() else []
+        )
+        if machine_readable:
+            emit.emit({"dir": str(folder), "env_files": [str(path) for path in written]})
+        else:
+            console.print(f"[green]Cloud saves:[/] {folder}")
+            console.print("[dim]Each game copies its save to <folder>/<title id>/save.dmsync (per player: "
+                          "<folder>/players/<player>/<title id>/).[/]")
+        return
+
+    if machine_readable:
+        emit.emit({"dir": cfg.cloud_dir})
+    else:
+        console.print(f"cloud saves: [green]{cfg.cloud_dir}[/]" if cfg.cloud_dir else "[yellow]off[/]")
+
+
+@app.command()
 def player(
     ctx: typer.Context,
     json_flag: bool = _json_option(),
@@ -472,7 +517,9 @@ def player(
             library_mod.delete_player(library_dir, delete)
         players, active = library_mod.load_players(library_dir)
         # every built game reads the active player from its own env file
-        env_files = library_mod.write_all_player_envs(library_dir)
+        env_files = library_mod.write_all_player_envs(
+            library_dir, Path(cfg.cloud_dir) if cfg.cloud_dir else None
+        )
     except library_mod.LibraryError as error:
         _fail(ctx, str(error))
 

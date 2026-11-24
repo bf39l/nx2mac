@@ -126,11 +126,17 @@ support dir, logs, saves, cheats and screenshots inside that folder instead of `
 | --- | --- |
 | `DM_SUPPORT_DIR` | `<game>/support` (its env.txt, temp, user registry) — added by our patch |
 | `DM_LOG_DIR` | `<game>/logs` — added by our patch |
-| `DM_SAVE` / `DM_CHEATS` / `DM_ALBUM_DIR` | `<game>/saves`, `<game>/cheats`, `<game>/screenshots` |
+| `DM_SAVE` / `DM_CHEATS` / `DM_ALBUM_DIR` | `save/<TID>/save` (or `…/profiles/<player>`), `cheats/<TID>`, `screenshots/<TID>` |
+| `DM_PSO_USER` | `save/<TID>/pso_user.tsv` — the shared pipeline cache, one per game |
+| `DM_SAVE_SYNC` | the synced folder from `nx2mac cloud --set` (off by default) |
 
 Players are **library-wide** (`<library>/players.json`, one list for every game, mirroring
 NX2Apple's launcher-wide `PlayerProfileStore`): the GUI picks the active player at the top of the
-Games tab, and `nx2mac player` rewrites *every* built game's env. `nx2mac player --create NAME` adds a player; each player is **user 1 in their own save store**
+Games tab, and `nx2mac player` rewrites *every* built game's env. Cloud saves use the engine's own `save_sync.c`: the save stays local and `<cloud>/<TITLEID>/save.dmsync`
+is the copy (per player: `<cloud>/players/<player>/…`). Only `DM_SAVE_SYNC` is ours to set — the
+download-before-mount, upload-after-commit and the backup/conflict rules are the engine's.
+
+`nx2mac player --create NAME` adds a player; each player is **user 1 in their own save store**
 (`<game>/players/<id>/saves`) with `DM_NICK=<name>` in `<game>/support/env.txt`, which the launcher
 reads after the baked file and lets win. That is the only way to give every player a custom name:
 the engine reads `DM_NICK` for user 1 only and hard-codes "Player 2"..8.

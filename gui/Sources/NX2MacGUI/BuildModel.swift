@@ -40,6 +40,8 @@ final class BuildModel: ObservableObject {
     @Published private(set) var libraryBusy = false
     /// Why the library folder was refused (or "" when it was accepted).
     @Published private(set) var libraryError: String = ""
+    /// A synced folder the engine copies each game's save into ("" = off).
+    @Published private(set) var cloudDir: String = ""
 
     /// True while a game is being launched (so its row can show a spinner).
     @Published private(set) var playing: String?
@@ -223,6 +225,7 @@ final class BuildModel: ObservableObject {
         // The output folder defaults to the library from Setup, so it has to be known
         // here too — not only when the Games tab is opened.
         await refreshLibrary()
+        await refreshCloud()
     }
 
     private func refreshVersion(_ cli: CLICommand) async {
@@ -294,6 +297,37 @@ final class BuildModel: ObservableObject {
         games = payload.games
     }
 
+    /// Keep saves local and copy them into a synced folder (iCloud Drive, Dropbox, …).
+    func setCloud(_ url: URL) async {
+        guard let cli else { return }
+        if let result = try? await Self.run(cli, ["cloud", "--set", url.path, "--json"]),
+           let data = result.stdout.data(using: .utf8),
+           let payload = try? JSONDecoder().decode(CloudPayload.self, from: data) {
+            cloudDir = payload.dir ?? url.path
+        }
+    }
+
+    /// Stop syncing saves to a cloud folder.
+    func clearCloud() async {
+        guard let cli else { return }
+        _ = try? await Self.run(cli, ["cloud", "--clear", "--json"])
+        cloudDir = ""
+    }
+
+    /// Read the cloud setting (shown in Setup).
+    func refreshCloud() async {
+        guard let cli else { return }
+        guard let result = try? await Self.run(cli, ["cloud", "--json"]),
+              let data = result.stdout.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(CloudPayload.self, from: data)
+        else { return }
+        cloudDir = payload.dir ?? ""
+    }
+
+    private struct CloudPayload: Decodable {
+        let dir: String?
+    }
+
     /// Forget the library setting.
     func clearLibrary() async {
         guard let cli else { return }
@@ -355,6 +389,7 @@ final class BuildModel: ObservableObject {
         _ = try? await Self.run(cli, ["library", "--played", game.path, "--json"])
         NSWorkspace.shared.open(app)
         await refreshLibrary()
+        await refreshCloud()
     }
 
     private func refreshEngine(_ cli: CLICommand) async {

@@ -139,6 +139,30 @@ and tool checkouts shows no phantom entries; the GUI's **Games** tab lists only 
 name and version, with Play (records "recently played"), a Players menu and a Data menu for
 saves/logs/mods/cheats/screenshots.
 
+### Where a game's data lives
+
+Everything one game saves sits under its title ID:
+
+```
+<library>/save/<TITLEID>/
+├── save/                  DM_SAVE — the base store (`save.users`, `save.work` land here too)
+├── profiles/<player>/     one store per player
+└── pso_user.tsv           DM_PSO_USER — the game's shared pipeline cache
+```
+
+### Cloud saves (optional)
+
+```bash
+nx2mac cloud --set "~/Library/Mobile Documents/com~apple~CloudDocs/nx2mac"
+nx2mac cloud --clear          # back to local only
+```
+
+Saves always stay in the library (the game plays from them); the engine additionally copies each
+game's save into that synced folder as `<folder>/<TITLEID>/save.dmsync` (per player:
+`<folder>/players/<player>/<TITLEID>/save.dmsync`), and pulls it back when it is newer. The engine
+keeps 10 backups per side and refuses to overwrite a save that changed on both sides — it plays the
+newer one and keeps the other in the backups. GUI: **Setup → Cloud saves**.
+
 ### Players (library-wide, like NX2Apple)
 
 Players are one list for the whole library, so the picker sits at the top of the **Games** tab and

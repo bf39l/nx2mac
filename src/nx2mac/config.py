@@ -20,6 +20,8 @@ class Config:
     # Where built games live (their .app, saves, logs, mods, cheats). No default:
     # the user picks an existing folder; nx2mac never creates it.
     library_dir: str | None = None
+    # A synced folder (iCloud Drive, Dropbox, …) the engine copies each game's save into.
+    cloud_dir: str | None = None
 
 
 def config_path() -> Path:
@@ -65,6 +67,9 @@ def load(path: Path | None = None) -> Config:
     library = data.get("library", {})
     if not isinstance(library, dict):
         raise ConfigError(f"[library] table in {path} must be a table")
+    cloud = data.get("cloud", {})
+    if not isinstance(cloud, dict):
+        raise ConfigError(f"[cloud] table in {path} must be a table")
 
     def opt(table: dict[str, object], key: str) -> str | None:
         value = table.get(key)
@@ -74,6 +79,7 @@ def load(path: Path | None = None) -> Config:
         engine_id=opt(engine, "id"),
         engine_ref=opt(engine, "ref"),
         library_dir=opt(library, "dir"),
+        cloud_dir=opt(cloud, "dir"),
     )
 
 
@@ -89,5 +95,7 @@ def save(config: Config, path: Path | None = None) -> None:
             lines.append(f"ref = {_format_str(config.engine_ref)}")
     if config.library_dir is not None:
         lines += ["", "[library]", f"dir = {_format_str(config.library_dir)}"]
+    if config.cloud_dir is not None:
+        lines += ["", "[cloud]", f"dir = {_format_str(config.cloud_dir)}"]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

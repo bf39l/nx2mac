@@ -29,11 +29,13 @@ from nx2mac.library import (
     build_env_path,
     cheats_dir,
     check_library_choice,
+    cloud_value,
     create_player,
     delete_player,
     describe_library,
     ensure_layout,
     find_game,
+    game_save_root,
     is_library,
     list_games,
     load_players,
@@ -140,7 +142,8 @@ def test_build_env_points_every_kind_at_the_library(tmp_path: Path) -> None:
     assert path == build_env_path(support_dir(library, TID))
     assert f"DM_SUPPORT_DIR={support_dir(library, TID)}" in text
     assert f"DM_LOG_DIR={logs_dir(library)}" in text
-    assert f"DM_SAVE={save_dir(library, TID)}" in text
+    assert f"DM_SAVE={game_save_root(library, TID) / 'save'}" in text
+    assert f"DM_PSO_USER={game_save_root(library, TID) / 'pso_user.tsv'}" in text
     assert f"DM_CHEATS={cheats_dir(library, TID)}" in text
     assert f"DM_ALBUM_DIR={screenshots_dir(library, TID)}" in text
     assert "~/Library" not in text
@@ -223,7 +226,7 @@ def test_player_env_without_players_uses_the_base_store(tmp_path: Path) -> None:
 
     text = write_player_env(library, TID).read_text(encoding="utf-8")
 
-    assert f"DM_SAVE={save_dir(library, TID)}" in text and "DM_NICK=" not in text
+    assert f"DM_SAVE={game_save_root(library, TID) / 'save'}" in text and "DM_NICK=" not in text
 
 
 def test_app_metadata_reads_the_bundle(tmp_path: Path) -> None:
@@ -259,7 +262,7 @@ def test_root_app_with_sidecar_manifest_is_a_game(tmp_path: Path) -> None:
     assert game.has_app and game.icon_path == app / "Contents" / "Resources" / "AppIcon.icns"
     assert game.engine_commit == "69513b66656d" and game.patches == ("0001-launcher-state-dirs.patch",)
     # the data folders come from the library layout, not from beside the app
-    assert Path(str(game.to_dict()["saves"])) == save_dir(library, TID)
+    assert Path(str(game.to_dict()["saves"])) == game_save_root(library, TID)  # <TID>/ holds save/ and profiles/
     assert Path(str(game.to_dict()["logs"])) == logs_dir(library)
     assert Path(str(game.to_dict()["cheats"])) == cheats_dir(library, TID)
 
@@ -352,3 +355,40 @@ def test_manifest_round_trip(tmp_path: Path) -> None:
 
     assert manifest["name"] == "Dead Cells" and manifest["title_id"] == TID
     assert manifest["engine"]["commit"] == "69513b66656d" and manifest["built_at"]
+
+
+def test_saves_live_in_one_folder_per_title_id(tmp_path: Path) -> None:
+    """`save/<TID>/` holds the store, the players and the engine's siblings."""
+    library = _library(tmp_path)
+
+    text = write_build_env(library, TID).read_text(encoding="utf-8")
+    root = game_save_root(library, TID)
+
+    assert f"DM_SAVE={root / 'save'}" in text  # <store>.users/.work stay inside <TID>/
+    assert f"DM_PSO_USER={root / 'pso_user.tsv'}" in text
+    write_player_env(library, TID)
+    assert (root / "save").is_dir()
+
+
+def test_cloud_saves_are_off_until_a_folder_is_chosen(tmp_path: Path) -> None:
+    library = _library(tmp_path)
+    cloud = tmp_path / "iCloud Drive"
+
+    text = write_player_env(library, TID).read_text(encoding="utf-8")
+    assert "DM_SAVE_SYNC=" not in text  # local only
+
+    cloud.mkdir()
+    text = write_player_env(library, TID, cloud).read_text(encoding="utf-8")
+    assert f"DM_SAVE_SYNC={cloud}" in text  # the engine writes <cloud>/<TID>/save.dmsync
+
+
+def test_each_player_syncs_to_its_own_cloud_folder(tmp_path: Path) -> None:
+    library = _library(tmp_path)
+    cloud = tmp_path / "Dropbox"
+    cloud.mkdir()
+    ada = create_player(library, "Ada")
+
+    text = write_player_env(library, TID, cloud).read_text(encoding="utf-8")
+
+    assert f"DM_SAVE_SYNC={cloud / 'players' / ada.id}" in text
+    assert cloud_value(cloud, ada.id) == str(cloud / "players" / ada.id)

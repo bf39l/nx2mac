@@ -1,17 +1,19 @@
 import AppKit
 import SwiftUI
 
-/// The window: a Build tab (pick inputs and go) and a Setup tab (see what the
-/// machine is missing and install it one piece at a time).
+/// The window: a Setup tab (see what the machine is missing and install it one
+/// piece at a time) followed by the Build tab (pick inputs and go).
 struct ContentView: View {
     @EnvironmentObject private var model: BuildModel
 
     var body: some View {
         TabView {
-            BuildTab()
-                .tabItem { Label("Build", systemImage: "hammer") }
+            // Setup first: prerequisites before the first build, and it is what
+            // the app opens on.
             SetupTab()
                 .tabItem { Label("Setup", systemImage: "wrench.and.screwdriver") }
+            BuildTab()
+                .tabItem { Label("Build", systemImage: "hammer") }
         }
         .padding(14)
         .frame(minWidth: 780, minHeight: 660)

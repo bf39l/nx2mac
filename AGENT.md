@@ -148,14 +148,14 @@ renderer of the same results.
 
 A native SwiftUI app that only shells out to `nx2mac … --json` (no Python imports):
 
+- **Setup tab** (first tab, opened by default): every prerequisite with an Install button for the
+  fixable ones (`setup --install <name> --json`), Copy command / Open page for manual ones, and
+  "Install all missing" (`setup --all`).
 - **Build tab**: one picker for the game (dump folder, single package file, or `.nup`), optional `prod.keys`, optional update(s) and any
   number of DLC packages/folders (both shown as vertical lists with per-item remove), one optional
   **Output folder** (`--out-dir`: app + build folder + keys), engine + ref ("Save & Pin"), then
   Build with a live log and the engine's stage tags (`[8/8] Mac app`); Done reveals/opens the
   `.app` the CLI reported.
-- **Setup tab**: every prerequisite with an Install button for the fixable ones
-  (`setup --install <name> --json`), Copy command / Open page for manual ones, and "Install all
-  missing" (`setup --all`).
 
 Build it with `./gui/build.sh release [dest]` (SwiftPM + a script that wraps the binary into
 `nx2mac.app`; no Xcode project). The icon is committed at `gui/Resources/AppIcon.icns` and

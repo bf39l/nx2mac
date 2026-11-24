@@ -268,6 +268,7 @@ private struct GameRow: View {
     let game: LibraryGame
     @EnvironmentObject private var model: BuildModel
     @State private var showingCheats = false
+    @State private var showingLog = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -313,9 +314,19 @@ private struct GameRow: View {
                     .environmentObject(model)
             }
 
+            Button {
+                showingLog = true
+            } label: {
+                Image(systemName: "doc.text.magnifyingglass")
+            }
+            .help("The game's own log (the engine writes it on every run)")
+            .sheet(isPresented: $showingLog) {
+                GameLogSheet(game: game)
+            }
+
             Menu {
                 Button("Saves") { open(game.saves) }
-                Button("Logs") { open(game.logs) }
+                Button("Open log folder") { open(game.logs) }
                 Button("Mods") { open(game.mods) }
                 Button("Cheats") { open(game.cheats) }
                 Button("Screenshots") { open(game.screenshots) }
@@ -522,5 +533,79 @@ private struct CheatsSheet: View {
     private func toggle(_ cheat: CheatEntry, _ build: CheatBuild, _ enabled: Bool) async {
         await model.setCheat(cheat, build: build, for: game, enabled: enabled)
         await load()
+    }
+}
+
+
+/// The game's own log, read straight from the library: the engine writes `<title id>.log` on every
+/// run (and the previous one as `.prev.log`), which is what a crash has to be debugged from.
+private struct GameLogSheet: View {
+    let game: LibraryGame
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var which: Which = .current
+    @State private var text: String = ""
+
+    private enum Which: String, CaseIterable, Identifiable {
+        case current = "This run"
+        case previous = "Previous run"
+        var id: String { rawValue }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Log — \(game.name)").font(.title3.weight(.semibold))
+                    Text(path).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle).help(path)
+                }
+                Spacer()
+                Picker("", selection: $which) {
+                    ForEach(Which.allCases) { option in Text(option.rawValue).tag(option) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 220)
+                .onChange(of: which) { _, _ in load() }
+            }
+
+            ScrollView {
+                Text(text.isEmpty ? "No log yet — run the game once." : text)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+            }
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary))
+
+            HStack {
+                Button("Refresh") { load() }
+                Spacer()
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                } label: {
+                    Label("Copy log", systemImage: "doc.on.doc")
+                }
+                .disabled(text.isEmpty)
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(16)
+        .frame(width: 760, height: 520)
+        .onAppear(perform: load)
+    }
+
+    private var titleID: String { game.titleID ?? (game.appURL?.deletingPathExtension().lastPathComponent ?? "") }
+
+    private var path: String {
+        let name = which == .current ? "\(titleID).log" : "\(titleID).prev.log"
+        return URL(fileURLWithPath: game.logs).appendingPathComponent(name).path
+    }
+
+    private func load() {
+        text = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
     }
 }

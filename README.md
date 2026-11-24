@@ -231,6 +231,13 @@ library, which is why the game's baked env names it.
 - Cheats run once per presented frame, so an "infinite health" style cheat can still let you die for
   a frame; that is the engine's semantics, documented in its `docs/reference/cheats.md`.
 
+**Reading a crash**
+
+The game's own log is one click away: **Games** tab → the log button on a game row
+(`doc.text.magnifyingglass`) → *This run* / *Previous run*, selectable text plus **Copy log**.
+The engine writes `<library>/nx2mac_game_lib/<TITLEID>/logs/<TITLEID>.log` on every run; the build
+log in the Build tab copies the same way (⌘A/⌘C or the **Copy log** button).
+
 **If the game crashes or quits after switching cheats on**
 
 That is the cheat code writing into the game, not nx2mac (the engine logs `the host exited with 139`

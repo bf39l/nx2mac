@@ -454,7 +454,10 @@ def mods(
         if entry["game"] != game:
             game = str(entry["game"])
             console.print(f"[bold]{game}[/] [dim]{entry['title_id']}[/]")
-        marker = "[green]on[/]" if entry["active"] else "[yellow]no romfs[/]"
+        if not entry["usable"]:
+            marker = "[yellow]no romfs[/]"
+        else:
+            marker = "[green]on[/]" if entry["active"] else "[dim]off[/]"
         console.print(f"  {marker} {entry['name']}")
 
 
@@ -549,7 +552,16 @@ def cheats(
         for build in entry["builds"]:  # type: ignore[union-attr]
             console.print(f"  build [dim]{build['build']}[/]")
             for cheat in build["cheats"]:  # type: ignore[union-attr]
-                marker = "[green]on [/]" if cheat["enabled"] else "[dim]off[/]"
+                if cheat["kind"] == "master":
+                    marker = "[cyan]always[/]"
+                elif cheat["kind"] == "label":
+                    continue  # credits lines and section markers are not switches
+                elif cheat["broken"]:
+                    marker = "[red]broken[/]"
+                elif not cheat["switchable"]:
+                    marker = "[dim] one-pass[/]"
+                else:
+                    marker = "[green]on [/]" if cheat["enabled"] else "[dim]off[/]"
                 console.print(f"    {marker} {cheat['name']}")
 
 

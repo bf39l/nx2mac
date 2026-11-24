@@ -527,12 +527,29 @@ def cloud_value(cloud_dir: Path | None, player_id: str | None) -> str | None:
     return str(root / "players" / player_id) if player_id else str(root)
 
 
-def mod_romfs(library: Path, title_id: str) -> list[Path]:
-    """Every RomFS folder of this game's mods, in the order the engine should overlay them.
+def mod_overlay(mod: Path, title_id: str) -> Path | None:
+    """The RomFS folder a mod overrides, or None when it has none (a code-only mod).
 
-    A mod is `<mods>/<name>/` holding `romfs` (or an Atmosphère layout,
-    `atmosphere/contents/<TID>/romfs`, or `contents/<TID>/romfs`), like NX2Apple's mods.
+    The shapes NX2Apple accepts (GameMod.list): `romfs/`, an Atmosphère layout
+    (`atmosphere/contents/<TID>/romfs`, `contents/<TID>/romfs`), or the mod folder itself when its
+    files sit directly in it. A folder holding only `exefs/` (and the Atmosphère wrapper) changes
+    the game's code, which the rewriter cannot take — it has no overlay.
     """
+    for candidate in (
+        mod / "romfs",
+        mod / "atmosphere" / "contents" / title_id / "romfs",
+        mod / "contents" / title_id / "romfs",
+    ):
+        if candidate.is_dir():
+            return candidate
+    top = [entry.name.lower() for entry in mod.iterdir() if not entry.name.startswith(".")]
+    if not top or all(name in {"exefs", "atmosphere", "contents"} for name in top):
+        return None  # code only, or empty
+    return mod
+
+
+def mod_romfs(library: Path, title_id: str) -> list[Path]:
+    """Every RomFS folder of this game's mods, in the order the engine should overlay them."""
     root = mods_dir(library, title_id)
     found: list[Path] = []
     if not root.is_dir():
@@ -540,14 +557,9 @@ def mod_romfs(library: Path, title_id: str) -> list[Path]:
     for mod in sorted(root.iterdir()):
         if not mod.is_dir() or mod.name == "cheats" or mod.name.startswith("."):
             continue
-        for candidate in (
-            mod / "romfs",
-            mod / "atmosphere" / "contents" / title_id / "romfs",
-            mod / "contents" / title_id / "romfs",
-        ):
-            if candidate.is_dir():
-                found.append(candidate)
-                break
+        overlay = mod_overlay(mod, title_id)
+        if overlay is not None:
+            found.append(overlay)
     return found
 
 
@@ -767,6 +779,140 @@ def describe_library(library: Path) -> dict[str, object]:
     }
 
 
+#: One cheat file's entries, parsed the way the host does (hle_cheats.c parse_file, mirrored by NX2Apple's CheatFiles.parse).
+CHEAT_NAME_MAX = 127  # bytes of a [Name] header the host keeps (NAME_MAX 128 with its terminator)
+CHEAT_MAX = 256  # entries in one file; the host skips the rest
+_HEX = set("0123456789abcdefABCDEF")
+_WS = " \t\r"
+
+
+def _section_marker(name: str) -> tuple[bool, str] | None:
+    """`--SectionStart:Name--` / `--SectionEnd:Name--`, as EdiZon and Atmosphere packs write them."""
+    if not name.startswith("--Section"):
+        return None
+    body = name.strip("-")
+    for prefix, start in (("SectionStart:", True), ("SectionEnd:", False)):
+        if body.startswith(prefix):
+            return start, body[len(prefix):]
+    return None
+
+
+def _meta_entries(meta: str) -> dict[str, dict[str, str]]:
+    """The rows of a `<build id>.meta.tsv` keyed by cheat name (cheat_anchor.py writes it)."""
+    rows: dict[str, dict[str, str]] = {}
+    header: list[str] | None = None
+    for line in meta.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split("\t")
+        if header is None:
+            header = fields
+            if "name" not in header:
+                return {}
+            continue
+        row = dict(zip(header, fields))
+        if row.get("kind") == "unresolved":
+            continue
+        rows[row.get("name", "")] = row
+    return rows
+
+
+def parse_cheat_file(text: str, meta: str | None = None) -> list[dict[str, object]]:
+    """Parse an Atmosphère cheat file into entries with the keys the host uses in `.enabled`.
+
+    Mirrors the host (hle_cheats.c parse_file, as NX2Apple's CheatFiles does): `[Name]` is a cheat,
+    `{Name}` a master (always on, never listed), a header with no code words is a label, a duplicate
+    name's later entries get the key `Name #2`, and an entry mixing code with prose is broken (kept
+    off). A `.meta.tsv` beside the file marks one-pass cheats and on/off pairs.
+    """
+    glued: list[str] = []
+    for index, char in enumerate(text):
+        if (
+            char in "[{"
+            and index >= 8
+            and all(c in _HEX for c in text[index - 8:index])
+            and (index == 8 or text[index - 9] in _WS + "\n")
+        ):
+            glued.append("\x0b")  # a header glued to a word ("00000008[Next]") starts on its own
+        glued.append(char)
+
+    entries: list[dict[str, object]] = []
+    section = ""
+    for piece in "".join(glued).split("\n"):
+        for part in piece.split("\x0b"):
+            line = part.strip(_WS)
+            entry: dict[str, object] | None = None
+            if line[:1] in ("[", "{"):
+                closing = "]" if line[0] == "[" else "}"
+                end_of_name = line.find(closing, 1)
+                if end_of_name <= 1 or len(entries) >= CHEAT_MAX:
+                    continue  # an empty/unclosed header (and its lines) belongs to nothing
+                raw_name = line[1:end_of_name][:CHEAT_NAME_MAX]
+                marker = _section_marker(raw_name)
+                if marker is not None:
+                    if marker[0]:
+                        section = marker[1]
+                    entry = {"name": raw_name, "key": raw_name, "kind": "label", "section": section,
+                             "broken": False, "once": False, "pair_off": False}
+                    if not marker[0]:
+                        section = ""
+                else:
+                    kind = "master" if line[0] == "{" else "cheat"
+                    earlier = sum(1 for e in entries if e.get("name") == raw_name)
+                    entry = {"name": raw_name, "key": raw_name if earlier == 0 else f"{raw_name} #{earlier + 1}",
+                             "kind": kind, "section": section, "broken": False, "once": False, "pair_off": False}
+                line = line[end_of_name + 1:].strip(_WS)
+            else:
+                entry = entries[-1] if entries else None
+                if entry is None:
+                    continue
+
+            words = 0
+            prose = False
+            odd = False
+            for token in line.split():
+                if not all(c in _HEX for c in token):
+                    prose = True
+                elif len(token) % 8 != 0:
+                    odd = True
+                else:
+                    words += len(token) // 8
+
+            if words:
+                entry["broken"] = bool(prose or odd)
+                entry["words"] = int(entry.get("words", 0)) + words
+                entries.append(entry) if entry not in entries else None
+            elif prose or odd:
+                entry["broken"] = True
+                entries.append(entry) if entry not in entries else None
+            elif line:
+                continue
+            elif entry not in entries:
+                entries.append(entry)  # a header with no code words: a label (or the master's name)
+
+    for entry in entries:
+        if entry["kind"] != "master" and not entry["broken"] and not entry.get("words"):
+            entry["kind"] = "label"
+
+    if meta:
+        rows = _meta_entries(meta)
+        for entry in entries:
+            row = rows.get(str(entry["name"]))
+            if not row:
+                continue
+            if row.get("once", "").lower() in ("1", "true"):
+                entry["once"] = True
+            if row.get("pair", ""):
+                entry["pair_off"] = row.get("kind") == "off"
+
+    for entry in entries:
+        entry["switchable"] = (
+            entry["kind"] == "cheat" and not entry["broken"] and not entry["once"] and not entry["pair_off"]
+        )
+        entry.pop("words", None)
+    return entries
+
+
 def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
     """The cheat files of one game, with their switches and which are on.
 
@@ -783,17 +929,26 @@ def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
         enabled: set[str] = set()
         if enabled_file.is_file():
             enabled = {line.strip() for line in enabled_file.read_text(encoding="utf-8").splitlines() if line.strip()}
-        names: list[str] = []
-        for line in txt.read_text(encoding="utf-8", errors="replace").splitlines():
-            stripped = line.strip()
-            if stripped.startswith("[") and stripped.endswith("]") and "--" not in stripped:
-                names.append(stripped[1:-1])
+        meta_file = folder / f"{build}.meta.tsv"
+        meta = meta_file.read_text(encoding="utf-8", errors="replace") if meta_file.is_file() else None
+        cheats = parse_cheat_file(txt.read_text(encoding="utf-8", errors="replace"), meta)
         builds.append(
             {
                 "build": build,
                 "file": str(txt),
                 "enabled_file": str(enabled_file),
-                "cheats": [{"name": name, "enabled": name in enabled} for name in names],
+                "cheats": [
+                    {
+                        "name": cheat["name"],
+                        "key": cheat["key"],
+                        "kind": cheat["kind"],
+                        "section": cheat["section"],
+                        "broken": cheat["broken"],
+                        "switchable": cheat["switchable"],
+                        "enabled": cheat["key"] in enabled,
+                    }
+                    for cheat in cheats
+                ],
             }
         )
     return builds
@@ -873,17 +1028,39 @@ def _is_build_id(text: str) -> bool:
 
 
 def set_cheat(library: Path, title_id: str, build: str, name: str, enabled: bool) -> Path:
-    """Switch one cheat on/off in the build's `.enabled` file (what the in-game menu writes)."""
+    """Switch one cheat on/off in the build's `.enabled` file (what the in-game menu writes).
+
+    `name` may be the cheat's name or its key (`Name #2` for a duplicate); the file is rewritten in
+    the cheat file's own order, as the host does, and only switchable entries are listed.
+    """
     folder = cheats_dir(library, title_id)
     path = folder / f"{build}.enabled"
-    current: list[str] = []
+    txt = folder / f"{build}.txt"
+    meta_file = folder / f"{build}.meta.tsv"
+    meta = meta_file.read_text(encoding="utf-8", errors="replace") if meta_file.is_file() else None
+    cheats = parse_cheat_file(txt.read_text(encoding="utf-8", errors="replace"), meta) if txt.is_file() else []
+
+    wanted = name.strip()
+    keys = {str(cheat["key"]) for cheat in cheats if str(cheat["key"]).casefold() == wanted.casefold()
+            or str(cheat["name"]).casefold() == wanted.casefold()}
+    if not keys:
+        keys = {wanted}  # no file to read (a hand-written toggle): keep the name as given
+
+    on: set[str] = set()
     if path.is_file():
-        current = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-    names = [line for line in current if line.casefold() != name.casefold()]
+        on = {line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()}
     if enabled:
-        names.append(name)
+        on |= keys
+    else:
+        on -= keys
+
+    if cheats:
+        ordered = [str(cheat["key"]) for cheat in cheats if cheat["switchable"] and str(cheat["key"]) in on]
+        text = "".join(f"{key}\n" for key in ordered)
+    else:
+        text = "".join(f"{key}\n" for key in sorted(on))
     folder.mkdir(parents=True, exist_ok=True)
-    path.write_text("".join(f"{line}\n" for line in names), encoding="utf-8")
+    path.write_text(text, encoding="utf-8")
     return path
 
 
@@ -900,13 +1077,19 @@ def describe_mods(library: Path) -> list[dict[str, object]]:
         for mod in sorted(root.iterdir()):
             if not mod.is_dir() or mod.name == "cheats" or mod.name.startswith("."):
                 continue
+            overlay = mod_overlay(mod, game.title_id)
             entries.append(
                 {
                     "game": game.name,
                     "title_id": game.title_id,
                     "name": mod.name,
                     "path": str(mod),
-                    "active": any(mod == overlay or mod in overlay.parents for overlay in overlays),
+                    "overlay": str(overlay) if overlay is not None else None,
+                    "usable": overlay is not None,
+                    "note": "" if overlay is not None else "no romfs (code-only mods cannot be loaded)",
+                    "active": overlay is not None and any(
+                        mod == candidate or mod in candidate.parents for candidate in overlays
+                    ),
                 }
             )
     return entries

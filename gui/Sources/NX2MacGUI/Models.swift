@@ -360,8 +360,14 @@ struct ProbePayload: Decodable {
 /// One switch inside a cheat file.
 struct CheatEntry: Decodable, Identifiable, Hashable {
     let name: String
+    let key: String
+    let kind: String  // "cheat" | "master" | "label"
+    let section: String?
+    let broken: Bool
+    let switchable: Bool
     let enabled: Bool
-    var id: String { name }
+
+    var id: String { key }
 }
 
 /// One cheat file: the game build it belongs to and its switches.

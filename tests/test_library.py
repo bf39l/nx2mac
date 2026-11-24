@@ -41,6 +41,7 @@ from nx2mac.library import (
     load_players,
     logs_dir,
     mods_dir,
+    parse_cheat_file,
     player_save_dir,
     profiles_dir,
     read_manifest,
@@ -461,3 +462,41 @@ def test_cheat_files_and_switches_round_trip(tmp_path: Path) -> None:
 
     set_cheat(library, TID, "0123456789ABCDEF", "Max gold", False)
     assert path.read_text(encoding="utf-8") == ""
+
+
+def test_cheat_parser_matches_the_host_keys(tmp_path: Path) -> None:
+    """Masters, labels, duplicate names and broken entries — the keys `.enabled` must use."""
+    text = """{Master code}
+01000000 00000000
+[Unlimited health]
+01000000 00000000
+[Max HP]
+02000000 00000000
+[Max HP]
+02000000 00000000
+[--SectionStart:Items--]
+[Gold x100]
+03000000 00000000
+[Not a cheat, just a note]
+[Broken here]
+0G000000 00000000
+"""
+    entries = parse_cheat_file(text)
+
+    assert [e["kind"] for e in entries] == ["master", "cheat", "cheat", "cheat", "label", "cheat", "label", "cheat"]
+    assert [e["key"] for e in entries if e["switchable"]] == ["Unlimited health", "Max HP", "Max HP #2", "Gold x100"]
+    assert entries[7]["broken"] is True and entries[7]["switchable"] is False
+    assert entries[5]["section"] == "Items"  # the section marker applies to what follows
+
+
+def test_enabling_a_duplicate_uses_its_hash_key(tmp_path: Path) -> None:
+    library = _library(tmp_path)
+    folder = cheats_dir(library, TID)
+    folder.mkdir(parents=True)
+    (folder / "0123456789ABCDEF.txt").write_text(
+        "[Max HP]\n02000000 00000000\n[Max HP]\n02000000 00000000\n", encoding="utf-8"
+    )
+
+    set_cheat(library, TID, "0123456789ABCDEF", "Max HP #2", True)
+
+    assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "Max HP #2\n"

@@ -177,6 +177,9 @@ nx2mac mods                # list them; `on` = the game will load it
 shapes per mod: `romfs/`, `atmosphere/contents/<TITLEID>/romfs/` or `contents/<TITLEID>/romfs/`.
 Pressing "Refresh" in the GUI re-applies them too.
 
+- Accepted shapes per mod: `romfs/`, `atmosphere/contents/<TITLEID>/romfs/`, `contents/<TITLEID>/romfs/`,
+  or the mod folder itself when its files sit directly in it (NX2Apple's `GameMod.list` accepts the
+  same four).
 - Mods are loaded in folder-name order, so an earlier name wins a file both replace.
 - **RomFS mods only.** A mod that ships code (`exefs/`) cannot be loaded: the engine would have to
   rewrite its plugins first (`scripts/prepare_mod.py` in the engine). Such a mod shows up in
@@ -205,8 +208,11 @@ library, which is why the game's baked env names it.
 - The file name must be the game's **build ID** — cheat sites publish it as
   `atmosphere/contents/<TITLEID>/cheats/<BUILDID>.txt`; copy it in as-is. Any `.txt` whose name is
   not 20 characters ending in `.txt` is ignored.
-- In game, open the window's **Cheats** menu (or panel) and switch entries on; the engine remembers
-  the toggles per build in `cheats/<build id>.enabled`.
+- The switches are engine-format: `[Name]` entries are switchable, `{Name}` **masters are always on**
+  and never written to `.enabled`, a header with no code words is a label, and a duplicate name gets
+  the key `Name #2` — nx2mac parses a file exactly like the host, so its switches land in the same
+  keys the in-game menu writes. `nx2mac cheats` prints `always` / `broken` / `one-pass` for the
+  entries that are not plain switches; only plain ones get a toggle in the GUI.
 - From nx2mac: `nx2mac cheats --game "Dead Cells"` lists them, `--enable NAME` / `--disable NAME`
   switches one (same file the game writes), and the GUI's **Games** tab has a cheats button per game
   (⌘-clickable list with switches).

@@ -466,13 +466,24 @@ private struct CheatsSheet: View {
                                     .font(.caption.monospaced())
                                     .foregroundStyle(.secondary)
                                 ForEach(build.cheats) { cheat in
-                                    Toggle(isOn: Binding(
-                                        get: { cheat.enabled },
-                                        set: { value in Task { await toggle(cheat, build, value) } }
-                                    )) {
-                                        Text(cheat.name).font(.callout)
+                                    if cheat.switchable {
+                                        Toggle(isOn: Binding(
+                                            get: { cheat.enabled },
+                                            set: { value in Task { await toggle(cheat, build, value) } }
+                                        )) {
+                                            Text(cheat.name).font(.callout)
+                                        }
+                                        .toggleStyle(.switch)
+                                    } else if cheat.kind != "label" {
+                                        HStack {
+                                            Text(cheat.name).font(.callout)
+                                            Spacer()
+                                            Text(cheat.kind == "master" ? "always on"
+                                                 : cheat.broken ? "broken" : "one-pass")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
                                     }
-                                    .toggleStyle(.switch)
                                 }
                             }
                             .padding(8)

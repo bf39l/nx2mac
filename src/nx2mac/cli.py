@@ -343,7 +343,11 @@ def engine(
 def build(
     ctx: typer.Context,
     json_flag: bool = _json_option(),
-    game_dir: Path = typer.Argument(..., metavar="GAME", help="Game folder (NSP/NSZ/XCI + updates) or a .nup file."),
+    game_dir: Path = typer.Argument(
+        ...,
+        metavar="GAME",
+        help="Game folder (NSP/NSZ/XCI + updates), a single package file, or a .nup container.",
+    ),
     keys: Path | None = typer.Option(
         None, "--keys", "-k", help="path to prod.keys (default: auto-detect in/next to the game)."
     ),

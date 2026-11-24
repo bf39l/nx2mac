@@ -112,3 +112,15 @@ def test_cleanup_removes_links_but_keeps_build_folder(tmp_path: Path) -> None:
 
     assert not any(entry.is_symlink() for entry in directory.iterdir())
     assert build.is_dir() and not (directory / MANIFEST_NAME).exists()
+
+
+def test_prepare_staging_accepts_a_single_package_file(tmp_path: Path) -> None:
+    cache = tmp_path / "cache"
+    package = _file(tmp_path, "Game [0100].nsp")
+    update = _file(tmp_path, "update.nsp")
+
+    directory = prepare_staging(cache, package, [update])
+
+    assert (directory / package.name).is_symlink()
+    assert (directory / "update.nsp").is_symlink()
+    assert "Game" in directory.name and directory.parent == cache / "staging"

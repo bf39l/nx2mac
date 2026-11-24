@@ -46,7 +46,8 @@ checkout. Mirror it; do not invent a different set.
 
 User-provided inputs (validated at build time, with friendly errors):
 
-- Switch 1 game: a folder of `.nsp/.nsz/.xci/.xcz` (+ updates/DLC) and a `prod.keys` file
+- Switch 1 game: a folder of `.nsp/.nsz/.xci/.xcz` (+ updates/DLC) **or a single package file**
+  (staged into a folder, since the engine wants a folder), and a `prod.keys` file
   (`name = hex value` lines; one file decrypts all games for its key generation). NX2Apple's
   BUILDING.md notes dumps can contain malformed-length lines that make extractors reject the
   file - detect and report those.
@@ -139,7 +140,7 @@ renderer of the same results.
 
 A native SwiftUI app that only shells out to `nx2mac … --json` (no Python imports):
 
-- **Build tab**: pick the dump folder or `.nup`, optional `prod.keys`, optional update(s) and any
+- **Build tab**: one picker for the game (dump folder, single package file, or `.nup`), optional `prod.keys`, optional update(s) and any
   number of DLC packages/folders (both shown as vertical lists with per-item remove), one optional
   **Output folder** (`--out-dir`: app + build folder + keys), engine + ref ("Save & Pin"), then
   Build with a live log and the engine's stage tags (`[8/8] Mac app`); Done reveals/opens the

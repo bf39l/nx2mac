@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// The window: a Build tab (pick inputs and go) and a Setup tab (see what the
 /// machine is missing and install it one piece at a time).
@@ -55,9 +54,8 @@ struct BuildTab: View {
     private var inputs: some View {
         VStack(alignment: .leading, spacing: 10) {
             row(title: "Game") {
-                pathLabel(model.gameURL?.path ?? "choose a dump folder or a .nup file", empty: model.gameURL == nil)
-                Button("Folder…") { chooseGameFolder() }
-                Button("NSO (.nup)…") { chooseNUFile() }
+                pathLabel(model.gameURL?.path ?? "choose a dump folder, a package file, or a .nup", empty: model.gameURL == nil)
+                Button("Choose…") { chooseGame() }
             }
             row(title: "prod.keys") {
                 pathLabel(model.keysURL?.path ?? "optional — auto-detected in/next to the game",
@@ -258,22 +256,18 @@ struct BuildTab: View {
 // MARK: - Panels
 
 extension BuildTab {
-    func chooseGameFolder() {
+    /// One picker for either shape of input: a dump folder, a single package
+    /// file (.nsp/.nsz/.xci/.xcz — staged for the engine) or a .nup container.
+    func chooseGame() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
-        panel.canChooseFiles = false
+        panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "Use this dump"
-        panel.message = "Pick the game's dump folder (the one holding .nsp/.nsz/.xci files)."
-        if panel.runModal() == .OK, let url = panel.url { model.gameURL = url }
-    }
-
-    func chooseNUFile() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [UTType(filenameExtension: "nup")].compactMap { $0 }
-        panel.prompt = "Use this .nup"
+        // No content-type filter: there is no system type for .nsp/.nup, and a
+        // folder has to stay selectable. The CLI validates whatever we hand it.
+        panel.prompt = "Use this game"
+        panel.message = "Pick the dump folder holding the game's .nsp/.nsz/.xci files, "
+            + "a single package file, or a .nup container."
         if panel.runModal() == .OK, let url = panel.url { model.gameURL = url }
     }
 

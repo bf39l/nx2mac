@@ -31,10 +31,11 @@ def _slug(text: str) -> str:
     return cleaned.strip("-._")[:40] or "game"
 
 
-def staging_dir(cache_root: Path, game_dir: Path, extras: Sequence[Path]) -> Path:
+def staging_dir(cache_root: Path, game_path: Path, extras: Sequence[Path]) -> Path:
     """Stable directory for one (game, update/DLC selection) combination."""
-    key = hashlib.sha256("\n".join([str(game_dir), *map(str, extras)]).encode()).hexdigest()[:16]
-    return cache_root / "staging" / f"{_slug(game_dir.stem if game_dir.is_file() else game_dir.name)}-{key}"
+    key = hashlib.sha256("\n".join([str(game_path), *map(str, extras)]).encode()).hexdigest()[:16]
+    label = game_path.stem if game_path.is_file() else game_path.name
+    return cache_root / "staging" / f"{_slug(label)}-{key}"
 
 
 def _link(source: Path, directory: Path, taken: set[str]) -> str:
@@ -53,15 +54,17 @@ def _link(source: Path, directory: Path, taken: set[str]) -> str:
     return name
 
 
-def _game_entries(directory: Path) -> list[Path]:
-    """The entries of a game folder worth staging.
+def _game_entries(game: Path) -> list[Path]:
+    """The entries of a game folder worth staging (a single package file stages itself).
 
     Files with a game extension are linked individually; dump layout folders
     (`base/`, `updates/<version>/`, `dlc/`) are linked whole so their structure
     survives.
     """
+    if game.is_file():
+        return [game]
     entries: list[Path] = []
-    for entry in sorted(directory.iterdir()):
+    for entry in sorted(game.iterdir()):
         if entry.name.startswith(".") or entry.name.endswith("_build"):
             continue
         if entry.is_dir() or entry.suffix.lower() in GAME_EXTENSIONS:
@@ -82,15 +85,18 @@ def _extra_entries(path: Path) -> list[Path]:
     return entries
 
 
-def prepare_staging(cache_root: Path, game_dir: Path, updates: Sequence[Path] = (), dlcs: Sequence[Path] = ()) -> Path:
+def prepare_staging(cache_root: Path, game_path: Path, updates: Sequence[Path] = (), dlcs: Sequence[Path] = ()) -> Path:
     """Create/refresh the staging folder for one game and its chosen extras.
+
+    `game_path` may be a dump folder or a single package file (`.nsp/.nsz/.xci/.xcz`);
+    the engine wants a folder, so a lone file is staged as a folder holding it.
 
     Symlinks are cheap and transparent to the engine, keep the user's game folder
     untouched, and let several selections coexist (different update = different
     staging dir, each with its own build cache).
     """
     extras = [*updates, *dlcs]
-    directory = staging_dir(cache_root, game_dir, extras)
+    directory = staging_dir(cache_root, game_path, extras)
     directory.mkdir(parents=True, exist_ok=True)
 
     manifest = directory / MANIFEST_NAME
@@ -102,7 +108,7 @@ def prepare_staging(cache_root: Path, game_dir: Path, updates: Sequence[Path] = 
 
     taken: set[str] = set()
     created: list[str] = []
-    sources = _game_entries(game_dir)
+    sources = _game_entries(game_path)
     for extra in extras:
         sources.extend(_extra_entries(extra))
 

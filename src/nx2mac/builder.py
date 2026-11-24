@@ -240,8 +240,9 @@ def run_build(
 
     updates = validate_extras(updates, "--update")
     dlcs = validate_extras(dlcs, "--dlc")
+    # The engine wants a folder: stage a lone Switch 1 package (and any extras) for it.
     input_dir = game.path
-    if updates or dlcs:
+    if updates or dlcs or (game.kind == "switch1" and game.path.is_file()):
         if game.kind == "nso":
             raise BuildError(
                 "a .nup already carries its own updates and DLC; pick them inside the container "

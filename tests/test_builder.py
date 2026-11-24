@@ -295,3 +295,35 @@ def test_discover_app_picks_newest(tmp_path: Path) -> None:
 
     assert discover_app(tmp_path) == new
     assert discover_app(tmp_path / "nope") is None
+
+
+def test_run_build_stages_a_lone_switch1_package_file(tmp_path: Path, monkeypatch) -> None:
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("NX2MAC_CACHE_ROOT", str(cache))
+    env = _good_env(tmp_path)
+    package = tmp_path / "Game_0100.nsp"
+    package.write_bytes(b"\x00")
+    keys = tmp_path / "prod.keys"
+    keys.write_text("keys\n", encoding="utf-8")
+
+    result = run_build(env, cache, _engine(tmp_path), package, prod_keys=keys)
+
+    argv, _cwd = env.stream_calls[0]
+    staged = Path(argv[2])
+    assert classify_game(package).kind == "switch1"
+    assert staged.is_dir() and staged != package  # the engine needs a folder
+    assert (staged / package.name).is_symlink()
+    assert result.input_path == staged and staged.parent.parent == cache
+
+
+def test_run_build_passes_a_nup_file_through(tmp_path: Path, monkeypatch) -> None:
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("NX2MAC_CACHE_ROOT", str(cache))
+    env = _good_env(tmp_path)
+    nup = tmp_path / "Game.nup"
+    nup.write_bytes(b"\x00")
+
+    result = run_build(env, cache, _engine(tmp_path), nup)
+
+    assert result.input_path == nup.resolve()  # the engine accepts a .nup file itself
+    assert env.stream_calls[0][0][2] == str(nup.resolve())

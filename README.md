@@ -58,13 +58,13 @@ Exit codes: `0` success, non-zero failure; `build` propagates the engine's code.
 open ~/Applications/nx2mac.app
 ```
 
+- **Setup tab** (opens first) — every prerequisite with its state. Fixable items get an **Install**
+  button (runs `nx2mac setup --install <name>` and streams the output); items we must not automate
+  (installing Xcode, updating macOS, Homebrew itself) show a command to copy and a link.
 - **Build tab** — pick `prod.keys` (optional), the game (dump folder, package file or `.nup`),
   an update and any number of DLC packages (auto-sized vertical list, five rows then scrolls),
   an **output folder** (defaults to the game's directory), and the engine + ref.
   The engine's progress streams into the log; when it finishes you can reveal or open the app.
-- **Setup tab** — every prerequisite with its state. Fixable items get an **Install** button
-  (runs `nx2mac setup --install <name>` and streams the output); items we must not automate
-  (installing Xcode, updating macOS, Homebrew itself) show a command to copy and a link.
 
 The app reads its icon from `gui/Resources/AppIcon.icns`, regenerated with
 `swift gui/tools/make_icon.swift gui/Resources/AppIcon.icns`. Settings shows the app and CLI

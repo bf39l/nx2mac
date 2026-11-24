@@ -169,6 +169,30 @@ final class DoctorReportTests: XCTestCase {
     }
 }
 
+final class LibraryGameIDTests: XCTestCase {
+    /// Apps sit directly in the library root, so every game shares `path`; the id must come from
+    /// the app's own path, or `ForEach` sees duplicate ids and renders only some rows.
+    func testRootLevelAppsGetUniqueIDs() throws {
+        let json = """
+        {"dirs": ["/Users/me/switch"], "missing": [],
+         "games": [
+           {"name": "Dead Cells", "path": "/Users/me/switch", "app_path": "/Users/me/switch/Dead Cells.app",
+            "has_app": true, "icon_path": null, "title_id": "0100646009FBE000", "version": "1.25.0",
+            "engine_commit": null, "engine_ref": null, "built_at": null, "last_played": null,
+            "size_bytes": 1, "saves": "/s", "logs": "/l", "mods": "/m", "cheats": "/c", "screenshots": "/sh", "library": "/Users/me/switch"},
+           {"name": "Fire Emblem", "path": "/Users/me/switch", "app_path": "/Users/me/switch/Fire Emblem.app",
+            "has_app": true, "icon_path": null, "title_id": "04007EF01F8AE000", "version": "1.0",
+            "engine_commit": null, "engine_ref": null, "built_at": null, "last_played": null,
+            "size_bytes": 1, "saves": "/s", "logs": "/l", "mods": "/m", "cheats": "/c", "screenshots": "/sh", "library": "/Users/me/switch"}
+         ]}
+        """
+        let payload = try JSONDecoder().decode(LibraryPayload.self, from: Data(json.utf8))
+        XCTAssertEqual(payload.games.count, 2)
+        XCTAssertEqual(payload.games.map(\.path), ["/Users/me/switch", "/Users/me/switch"])  // same folder
+        XCTAssertEqual(Set(payload.games.map(\.id)).count, 2)  // but unique ids
+    }
+}
+
 final class CheatFileTests: XCTestCase {
     /// The Build tab must show the copy the library keeps, not the file the user imported.
     func testTheRowShowsTheLibraryCopy() throws {

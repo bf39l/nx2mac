@@ -79,15 +79,18 @@ def classify_game(path: Path) -> GameInput:
     )
 
 
-def find_prod_keys(explicit: Path | None, game_dir: Path) -> Path | None:
-    """Locate prod.keys: an explicit path wins, else look beside/inside *game_dir*."""
+def find_prod_keys(explicit: Path | None, game_dir: Path, out_dir: Path | None = None) -> Path | None:
+    """Locate prod.keys: explicit wins, else inside/beside the game, else in *out_dir*."""
     if explicit is not None:
         resolved = explicit.expanduser().resolve()
         if not resolved.is_file():
             raise BuildError(f"prod.keys file not found at {resolved}")
         return resolved
 
-    for directory in (game_dir, game_dir.parent):
+    directories = [game_dir, game_dir.parent]
+    if out_dir is not None:
+        directories.append(out_dir.expanduser().resolve())
+    for directory in directories:
         for name in KEYS_FILENAMES:
             candidate = directory / name
             if candidate.is_file():
@@ -102,16 +105,51 @@ def build_argv(
     keys: Path | None,
     output: Path | None,
     extra_args: Sequence[str],
+    work_dir: Path | None = None,
 ) -> list[str]:
-    """Assemble the argv for the engine's build script (macOS app target)."""
+    """Assemble the argv for the engine's build script (macOS app target).
+
+    `work_dir` keeps the engine's build folder (extracted files, shader caches)
+    where the caller wants it; the engine writes the app next to that folder when
+    no explicit `-o` is given.
+    """
     args = [str(venv_python), str(engine.path / "scripts" / "build_ipa_from_nsp.py"), str(game_dir)]
     if keys is not None:
         args.extend(["-k", str(keys)])
     args.extend(["--platform", "mac-app"])
+    if work_dir is not None:
+        args.extend(["--work-dir", str(work_dir)])
     if output is not None:
         args.extend(["-o", str(output)])
     args.extend(extra_args)
     return args
+
+
+def _safe_name(text: str) -> str:
+    """Filesystem-friendly fragment for a folder name (CJK titles are fine)."""
+    cleaned = "".join(char if char.isalnum() or char in "._-" else "-" for char in text)
+    return cleaned.strip("-._")[:60] or "game"
+
+
+def work_dir_for(out_dir: Path, game: GameInput) -> Path:
+    """The engine's build folder inside the user's output directory."""
+    base = game.path.stem if game.path.is_file() else game.path.name
+    return out_dir / f"{_safe_name(base)}_build"
+
+
+def keep_keys(keys: Path, out_dir: Path) -> Path:
+    """Copy prod.keys into *out_dir* so app, build folder and keys live together."""
+    destination = out_dir / "prod.keys"
+    if destination.resolve() == keys.resolve():
+        return destination
+    destination.write_bytes(keys.read_bytes())
+    return destination
+
+
+def discover_app(out_dir: Path) -> Path | None:
+    """Newest `.app` directly inside *out_dir* (the engine names the app itself)."""
+    apps = [entry for entry in out_dir.glob("*.app") if entry.is_dir()]
+    return max(apps, key=lambda entry: entry.stat().st_mtime) if apps else None
 
 
 def validate_extras(paths: Sequence[Path], flag: str) -> list[Path]:
@@ -140,6 +178,9 @@ class BuildResult:
     app_path: Path | None  # the .app produced when given an explicit -o and exit was 0
     returncode: int
     input_path: Path | None = None  # folder handed to the engine (a staging dir when extras were chosen)
+    out_dir: Path | None = None  # where the app, build folder and keys were collected
+    work_dir: Path | None = None  # the engine's build folder (extracted files, shader caches)
+    keys_path: Path | None = None  # prod.keys the build actually used
 
     @property
     def ok(self) -> bool:
@@ -152,6 +193,9 @@ class BuildResult:
             "returncode": self.returncode,
             "app_path": str(self.app_path) if self.app_path is not None else None,
             "input_path": str(self.input_path) if self.input_path is not None else None,
+            "out_dir": str(self.out_dir) if self.out_dir is not None else None,
+            "work_dir": str(self.work_dir) if self.work_dir is not None else None,
+            "keys_path": str(self.keys_path) if self.keys_path is not None else None,
             "argv": list(self.argv),
         }
 
@@ -167,6 +211,7 @@ def run_build(
     on_line: Callable[[str], None] | None = None,
     updates: Sequence[Path] = (),
     dlcs: Sequence[Path] = (),
+    out_dir: Path | None = None,
 ) -> BuildResult:
     """Preflight-check, prepare the Python env and stream the engine build.
 
@@ -184,8 +229,9 @@ def run_build(
         )
 
     game = classify_game(game_path)
+    out_dir = out_dir.expanduser().resolve() if out_dir is not None else None
     keys_dir = game.path if game.path.is_dir() else game.path.parent
-    keys = find_prod_keys(prod_keys, keys_dir)
+    keys = find_prod_keys(prod_keys, keys_dir, out_dir)
     if game.needs_prod_keys and keys is None:
         raise BuildError(
             f"no prod.keys found for this Switch 1 game. Pass --keys <file>, or put `prod.keys` "
@@ -203,6 +249,13 @@ def run_build(
             )
         input_dir = prepare_staging(cache_root, game.path, updates, dlcs)
 
+    work_dir: Path | None = None
+    if out_dir is not None:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        work_dir = work_dir_for(out_dir, game)
+        if keys is not None:
+            keys = keep_keys(keys, out_dir)
+
     venv = ensure_venv(cache_root, env=env)
     argv = build_argv(
         venv.python,
@@ -211,11 +264,23 @@ def run_build(
         keys if game.needs_prod_keys or prod_keys is not None else None,
         output,
         extra_args,
+        work_dir=work_dir,
     )
     returncode = env.run_stream(argv, cwd=engine.path, on_line=on_line)
 
     app_path: Path | None = None
-    if output is not None and returncode == 0:
-        app_path = output.expanduser().resolve()
+    if returncode == 0:
+        if output is not None:
+            app_path = output.expanduser().resolve()
+        elif out_dir is not None:
+            app_path = discover_app(out_dir)  # the engine names it and writes it here
 
-    return BuildResult(argv=tuple(argv), app_path=app_path, returncode=returncode, input_path=input_dir)
+    return BuildResult(
+        argv=tuple(argv),
+        app_path=app_path,
+        returncode=returncode,
+        input_path=input_dir,
+        out_dir=out_dir,
+        work_dir=work_dir,
+        keys_path=keys,
+    )

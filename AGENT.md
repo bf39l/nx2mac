@@ -76,8 +76,13 @@ nx2mac setup       # per missing item: "Install zstd? (brew install zstd) [y/N]"
                    # manual-only items (full Xcode, macOS, Homebrew itself) get a note + link
                    #   --install NAME (repeatable) / --all / --yes / --no-prompt
 nx2mac engine      # select + pin a source; reports branch name + commit hash (--show: no network)
-nx2mac build DIR   # full pipeline; -k <prod.keys>, -o <out.app>, --update F, --dlc F (repeatable)
+nx2mac build DIR   # full pipeline; -k <prod.keys>, -o <out.app>, --update F, --dlc F (repeatable),
+                   # --out-dir DIR (app + build folder + prod.keys together)
 ```
+
+`--out-dir DIR` is the recommended workflow: the engine gets `--work-dir DIR/<game>_build`, which
+makes it write the `.app` into DIR as well; the key set is copied to `DIR/prod.keys` and used from
+there, so a rebuild only needs the dump folder and `--out-dir`. `-o` still overrides the app path.
 
 `build --update`/`--dlc` **stage** a folder of symlinks (game + chosen extras) because the engine
 takes exactly one input folder; the staging dir lives in the cache keyed by the selection, so the
@@ -135,8 +140,10 @@ renderer of the same results.
 A native SwiftUI app that only shells out to `nx2mac … --json` (no Python imports):
 
 - **Build tab**: pick the dump folder or `.nup`, optional `prod.keys`, optional update(s) and any
-  number of DLC packages/folders, optional output, engine + ref ("Save & Pin"), then Build with a
-  live log and the engine's stage tags (`[8/8] Mac app`); Done reveals/opens the `.app`.
+  number of DLC packages/folders (both shown as vertical lists with per-item remove), one optional
+  **Output folder** (`--out-dir`: app + build folder + keys), engine + ref ("Save & Pin"), then
+  Build with a live log and the engine's stage tags (`[8/8] Mac app`); Done reveals/opens the
+  `.app` the CLI reported.
 - **Setup tab**: every prerequisite with an Install button for the fixable ones
   (`setup --install <name> --json`), Copy command / Open page for manual ones, and "Install all
   missing" (`setup --all`).

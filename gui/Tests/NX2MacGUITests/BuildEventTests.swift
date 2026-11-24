@@ -222,11 +222,11 @@ private final class LockedLines {
 }
 
 final class BuildRequestTests: XCTestCase {
-    func testArgumentsIncludeKeysOutputAndExtras() {
+    func testArgumentsIncludeKeysOutDirAndExtras() {
         let request = BuildRequest(
             game: URL(fileURLWithPath: "/games/My Game"),
             keys: URL(fileURLWithPath: "/games/prod.keys"),
-            output: URL(fileURLWithPath: "/out/My Game.app"),
+            outDir: URL(fileURLWithPath: "/out/MyGameProject"),
             updates: [URL(fileURLWithPath: "/extras/update.nsp")],
             dlcs: [URL(fileURLWithPath: "/extras/dlc-a.nsp"), URL(fileURLWithPath: "/extras/dlc-b.nsp")],
             source: "fork",
@@ -237,7 +237,7 @@ final class BuildRequestTests: XCTestCase {
             "build", "/games/My Game", "--json", "--source", "fork",
             "--ref", "fork-customizations",
             "--keys", "/games/prod.keys",
-            "-o", "/out/My Game.app",
+            "--out-dir", "/out/MyGameProject",
             "--update", "/extras/update.nsp",
             "--dlc", "/extras/dlc-a.nsp",
             "--dlc", "/extras/dlc-b.nsp",

@@ -386,3 +386,29 @@ def test_build_json_reports_input_path(isolated_paths: Path, monkeypatch: pytest
     final = _ndjson(result)[-1]
     assert result.exit_code == 0 and final["event"] == "result"
     assert final["input_path"] != str(game.resolve()) and "/staging/" in final["input_path"]
+
+
+def test_build_out_dir_keeps_everything_together(isolated_paths: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    tmp = isolated_paths
+    env = _make_env(tmp)
+    _prepare_checkout(tmp)
+    game = _game(tmp)  # already has prod.keys next to base.nsp
+    out = tmp / "MyGameProject"
+    monkeypatch.setattr(cli_module, "_get_env", lambda: env)
+
+    def fake_build(argv: list[str]) -> int:
+        work = Path(argv[argv.index("--work-dir") + 1])
+        (work.parent / "My Game.app").mkdir(parents=True)
+        return 0
+
+    env.stream_effects.append((r"build_ipa_from_nsp\.py", fake_build))
+    result = runner.invoke(app, ["build", str(game), "--out-dir", str(out), "--json"])
+
+    final = _ndjson(result)[-1]
+    argv = env.stream_calls[0][0]
+    assert result.exit_code == 0 and final["event"] == "result"
+    assert final["out_dir"] == str(out.resolve()) and final["work_dir"].endswith("_build")
+    assert final["keys_path"] == str((out / "prod.keys").resolve())
+    assert (out / "prod.keys").is_file()
+    assert final["app_path"] == str(out / "My Game.app")
+    assert argv[argv.index("--work-dir") + 1] == final["work_dir"]

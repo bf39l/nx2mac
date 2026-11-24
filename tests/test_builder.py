@@ -1,5 +1,6 @@
 """Tests for nx2mac.builder (input validation + build orchestration)."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -9,9 +10,11 @@ from nx2mac.builder import (
     BuildError,
     build_argv,
     classify_game,
+    discover_app,
     find_prod_keys,
     run_build,
     validate_extras,
+    work_dir_for,
 )
 from nx2mac.engines import UPSTREAM, ResolvedEngine
 
@@ -208,3 +211,87 @@ def test_run_build_rejects_extras_for_nup(tmp_path: Path, monkeypatch) -> None:
 
     with pytest.raises(BuildError, match="already carries its own updates and DLC"):
         run_build(env, cache, _engine(tmp_path), nup, updates=[update])
+
+
+def test_work_dir_for_uses_the_game_name(tmp_path: Path) -> None:
+    game = _game_dir(tmp_path, ("base.nsp",), name="Mercenaries Wings [010094500C216000]")
+    out = tmp_path / "out"
+
+    work = work_dir_for(out, classify_game(game))
+
+    assert work.parent == out and work.name.endswith("_build")
+    assert "Mercenaries-Wings" in work.name and "010094500C216000" in work.name  # CJK/alnum kept, brackets made safe
+
+
+def test_work_dir_for_keeps_cjk_names(tmp_path: Path) -> None:
+    game = _game_dir(tmp_path, ("base.nsp",), name="1佣兵之翼[Mercenaries]")
+    work = work_dir_for(tmp_path / "out", classify_game(game))
+
+    assert "佣兵之翼" in work.name and "/" not in work.name
+
+
+def test_find_prod_keys_prefers_game_folder_then_out_dir(tmp_path: Path) -> None:
+    game = _game_dir(tmp_path)
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "prod.keys").write_text("out-keys\n", encoding="utf-8")
+
+    assert find_prod_keys(None, game, out) == out / "prod.keys"
+
+    (game / "prod.keys").write_text("game-keys\n", encoding="utf-8")
+    assert find_prod_keys(None, game, out) == game / "prod.keys"
+
+
+def test_run_build_out_dir_collects_app_build_and_keys(tmp_path: Path, monkeypatch) -> None:
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("NX2MAC_CACHE_ROOT", str(cache))
+    env = _good_env(tmp_path)
+    game = _game_dir(tmp_path)
+    keys = tmp_path / "prod.keys"
+    keys.write_text("keys\n", encoding="utf-8")
+    out = tmp_path / "out"
+
+    def fake_build(argv: list[str]) -> int:  # the engine writes the app next to its work dir
+        work = Path(argv[argv.index("--work-dir") + 1])
+        (work.parent / "Mercenaries Wings.app").mkdir(parents=True)
+        return 0
+
+    env.stream_effects.append((r"build_ipa_from_nsp\.py", fake_build))
+    result = run_build(env, cache, _engine(tmp_path), game, prod_keys=keys, out_dir=out)
+
+    argv, _cwd = env.stream_calls[0]
+    work_dir = out / f"{game.name}_build"
+    assert argv[argv.index("--work-dir") + 1] == str(work_dir)
+    assert result.work_dir == work_dir and result.out_dir == out.resolve()
+    # keys are copied in and used from there
+    assert (out / "prod.keys").read_text(encoding="utf-8") == "keys\n"
+    assert argv[argv.index("-k") + 1] == str((out / "prod.keys").resolve())
+    assert result.keys_path == (out / "prod.keys").resolve()
+    # no -o given: the app is discovered in the output folder
+    assert "-o" not in argv and result.app_path == out / "Mercenaries Wings.app"
+
+
+def test_run_build_explicit_output_still_wins(tmp_path: Path, monkeypatch) -> None:
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("NX2MAC_CACHE_ROOT", str(cache))
+    env = _good_env(tmp_path)
+    game = _game_dir(tmp_path)
+    (game / "prod.keys").write_text("keys\n", encoding="utf-8")
+    explicit = tmp_path / "elsewhere" / "Custom.app"
+
+    result = run_build(env, cache, _engine(tmp_path), game, output=explicit, out_dir=tmp_path / "out")
+
+    assert result.app_path == explicit.resolve()
+    assert env.stream_calls[0][0][env.stream_calls[0][0].index("-o") + 1] == str(explicit)
+
+
+def test_discover_app_picks_newest(tmp_path: Path) -> None:
+    old = tmp_path / "Old.app"
+    new = tmp_path / "New.app"
+    old.mkdir()
+    new.mkdir()
+    (old / "stamp").write_text("x", encoding="utf-8")
+    os.utime(old, (1_000_000, 1_000_000))
+
+    assert discover_app(tmp_path) == new
+    assert discover_app(tmp_path / "nope") is None

@@ -350,6 +350,12 @@ def build(
     output: Path | None = typer.Option(
         None, "--output", "-o", help="where to write the .app (default: engine default)."
     ),
+    out_dir: Path | None = typer.Option(
+        None,
+        "--out-dir",
+        metavar="DIR",
+        help="keep the .app, the engine build folder and prod.keys in this one directory.",
+    ),
     update: list[Path] = typer.Option(
         [],
         "--update",
@@ -375,6 +381,8 @@ def build(
         console.print(f"[dim]Using engine:[/] {describe(resolved)}")
         if update or dlc:
             console.print(f"[dim]Extras:[/] {len(update)} update(s), {len(dlc)} DLC package(s) staged with the game")
+        if out_dir is not None:
+            console.print(f"[dim]Output folder:[/] {out_dir} (app + build folder + prod.keys)")
 
     try:
         result = run_build(
@@ -387,6 +395,7 @@ def build(
             on_line=emit.log_line if machine_readable else None,
             updates=update,
             dlcs=dlc,
+            out_dir=out_dir,
         )
     except (BuildError, PyEnvError) as error:
         _fail(ctx, str(error))
@@ -397,6 +406,8 @@ def build(
         console.print(f"[red]Engine build failed with exit code {result.returncode}.[/]")
     elif result.app_path is not None:
         console.print(f"[green]Done.[/] App at [bold green]{result.app_path}[/]")
+        if result.work_dir is not None:
+            console.print(f"[dim]Build folder (kept for rebuilds):[/] {result.work_dir}")
     else:
         console.print("[green]Done.[/] App location: see engine output (default is <game>.app in the game folder)")
 

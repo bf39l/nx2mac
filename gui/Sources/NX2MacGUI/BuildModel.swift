@@ -41,7 +41,8 @@ final class BuildModel: ObservableObject {
 
     @Published var gameURL: URL?
     @Published var keysURL: URL?
-    @Published var outputURL: URL?
+    /// Where the .app, the engine build folder and prod.keys should all live.
+    @Published var outDirURL: URL?
     /// Optional update package(s) picked outside the game folder (staged by the CLI).
     @Published var updateURLs: [URL] = []
     /// Optional DLC packages/folders picked outside the game folder (staged by the CLI).
@@ -68,7 +69,7 @@ final class BuildModel: ObservableObject {
         return BuildRequest(
             game: gameURL,
             keys: keysURL,
-            output: outputURL,
+            outDir: outDirURL,
             updates: updateURLs,
             dlcs: dlcURLs,
             source: engineChoice,

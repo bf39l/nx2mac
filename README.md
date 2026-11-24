@@ -24,11 +24,27 @@ open gui/.build/NX2Mac.app
 ```
 
 - **Build tab** — pick the dump folder (or a `.nup`), optionally `prod.keys`, an update and any
-  number of DLC packages, where to save the `.app`, and which engine/ref to pin. The engine's
-  progress streams into the log; when it finishes you can reveal or open the app.
+  number of DLC packages (listed vertically, remove one by one), an optional **output folder**,
+  and which engine/ref to pin. The engine's progress streams into the log; when it finishes you
+  can reveal or open the app.
 - **Setup tab** — every prerequisite with its state. Fixable items get an **Install** button
   (it runs `nx2mac setup --install <name>` and streams the output); items we must not automate
   (installing Xcode, updating macOS, Homebrew itself) show the command to copy and a link.
 
 `swift test --package-path gui` runs the GUI tests; add `NX2MAC_LIVE_TESTS=1` to also drive the
 real CLI.
+
+### One folder per game
+
+`--out-dir DIR` (GUI: *Output folder*) keeps a build self-contained:
+
+```bash
+nx2mac build "/path/to/Game [0100...]" --out-dir ~/Downloads/MyGame \
+  --update update.nsp --dlc "DLC folder" --keys prod.keys
+```
+
+| path | what |
+| --- | --- |
+| `DIR/<Game>.app` | the finished app (the engine names it) |
+| `DIR/<game>_build/` | the engine's build folder — extracted files + shader caches, reused on rebuild |
+| `DIR/prod.keys` | the key set, copied in so a rebuild needs only the dump and `--out-dir` |

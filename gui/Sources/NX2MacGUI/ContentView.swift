@@ -68,28 +68,39 @@ struct BuildTab: View {
                 }
             }
             row(title: "Update") {
-                chips(model.updateURLs, empty: "optional — pick an update .nsp/.nsz from anywhere") { index in
-                    model.updateURLs.remove(at: index)
-                }
+                Text(model.updateURLs.isEmpty
+                     ? "optional — pick an update .nsp/.nsz from anywhere"
+                     : "\(model.updateURLs.count) selected")
+                    .font(.callout)
+                    .foregroundStyle(model.updateURLs.isEmpty ? .tertiary : .primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Button("Add…") { chooseUpdate() }
                 if !model.updateURLs.isEmpty {
                     Button("Clear") { model.updateURLs.removeAll() }
                 }
             }
+            selectionList(model.updateURLs) { index in model.updateURLs.remove(at: index) }
+
             row(title: "DLC") {
-                chips(model.dlcURLs, empty: "optional — pick one or more DLC .nsp/.nsz (or a folder)") { index in
-                    model.dlcURLs.remove(at: index)
-                }
+                Text(model.dlcURLs.isEmpty
+                     ? "optional — pick one or more DLC .nsp/.nsz (or a folder)"
+                     : "\(model.dlcURLs.count) selected")
+                    .font(.callout)
+                    .foregroundStyle(model.dlcURLs.isEmpty ? .tertiary : .primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Button("Add…") { chooseDLC() }
                 if !model.dlcURLs.isEmpty {
                     Button("Clear") { model.dlcURLs.removeAll() }
                 }
             }
-            row(title: "Save app to") {
-                pathLabel(model.outputURL?.path ?? "default: next to the game", empty: model.outputURL == nil)
-                Button("Choose…") { chooseOutput() }
-                if model.outputURL != nil {
-                    Button("Clear") { model.outputURL = nil }
+            selectionList(model.dlcURLs) { index in model.dlcURLs.remove(at: index) }
+
+            row(title: "Output folder") {
+                pathLabel(model.outDirURL?.path ?? "optional — keeps the .app, build folder and prod.keys together",
+                          empty: model.outDirURL == nil)
+                Button("Choose…") { chooseOutDir() }
+                if model.outDirURL != nil {
+                    Button("Clear") { model.outDirURL = nil }
                 }
             }
         }
@@ -113,40 +124,42 @@ struct BuildTab: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// A compact list of chosen files: names with a remove button each.
-    private func chips(_ urls: [URL], empty: String, remove: @escaping (Int) -> Void) -> some View {
-        Group {
-            if urls.isEmpty {
-                Text(empty)
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(Array(urls.enumerated()), id: \.offset) { index, url in
-                            HStack(spacing: 4) {
-                                Text(url.lastPathComponent)
-                                    .font(.caption)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                Button {
-                                    remove(index)
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                }
-                                .buttonStyle(.plain)
+    /// The chosen files as a vertical, scrollable list — many DLCs must stay readable.
+    @ViewBuilder
+    private func selectionList(_ urls: [URL], remove: @escaping (Int) -> Void) -> some View {
+        if !urls.isEmpty {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(urls.enumerated()), id: \.offset) { index, url in
+                        HStack(spacing: 6) {
+                            Image(systemName: "shippingbox")
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
+                            Text(url.lastPathComponent)
+                                .font(.caption.monospaced())
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .help(url.path)
+                            Spacer(minLength: 4)
+                            Button {
+                                remove(index)
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
                             }
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(Color.secondary.opacity(0.12), in: Capsule())
-                            .help(url.path)
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                            .help("Remove")
                         }
+                        .padding(.vertical, 1)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
             }
+            .frame(maxHeight: 104)
+            .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
+            .padding(.leading, 104)
         }
     }
 
@@ -302,23 +315,15 @@ extension BuildTab {
         }
     }
 
-    func chooseOutput() {
-        let panel = NSSavePanel()
+    /// One folder that collects the .app, the engine's build folder and prod.keys.
+    func chooseOutDir() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        panel.prompt = "Save app here"
-        panel.nameFieldStringValue = "\(suggestedAppName).app"
-        panel.message = "Where should the .app be written?"
-        if panel.runModal() == .OK, let url = panel.url {
-            model.outputURL = url.pathExtension == "app" ? url : url.appendingPathExtension("app")
-        }
-    }
-
-    /// Best-effort app name from the game folder (engine uses the game's title).
-    var suggestedAppName: String {
-        guard let game = model.gameURL else { return "Game" }
-        if game.pathExtension.lowercased() == "nup" {
-            return game.deletingPathExtension().lastPathComponent
-        }
-        return game.lastPathComponent
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Use this folder"
+        panel.message = "The app, the engine build folder (kept for fast rebuilds) and prod.keys go here."
+        if panel.runModal() == .OK, let url = panel.url { model.outDirURL = url }
     }
 }

@@ -635,3 +635,27 @@ def test_import_names_a_pasted_file_after_the_build_id(tmp_path: Path) -> None:
     written = import_cheats(library, TID, [pasted])
 
     assert [path.name for path in written] == ["6E35EE0A24029143.txt"]
+
+
+def test_a_switch_the_compile_proved_unusable_is_turned_off(tmp_path: Path) -> None:
+    """An imported file has no meta yet; after compiling, a live switch that patches code is off."""
+    from nx2mac.cheats import neutralise
+
+    library = _library(tmp_path)
+    folder = cheats_dir(library, TID)
+    folder.mkdir(parents=True)
+    (folder / "0123456789ABCDEF.txt").write_text(
+        "[ZR health]\n04000000 04800158 4B140108\n[Max gold]\n02000000 00000000\n", encoding="utf-8"
+    )
+    (folder / "0123456789ABCDEF.meta.tsv").write_text(
+        "name\tkind\tsection\ttype\taction\tvalue\task\tvalue_words\tonce\tpair\tresolved\tnote\taddress\n"
+        "ZR health\tpatch\t\t\t\t\t\t\t\t\texact\t\t\n"
+        "Max gold\tdata\t\t\t\t\t\t\t\t\t0x1234\t\t\n",
+        encoding="utf-8",
+    )
+    (folder / "0123456789ABCDEF.enabled").write_text("ZR health\nMax gold\n", encoding="utf-8")
+
+    reports = neutralise(folder)
+
+    assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "Max gold\n"
+    assert any("switched off" in report for report in reports)

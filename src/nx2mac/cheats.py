@@ -133,7 +133,46 @@ def neutralise(cheats_dir: Path) -> list[str]:
         if dropped:
             txt.write_text(text, encoding="utf-8")
             reports.append("disabled (could not be anchored): " + ", ".join(dropped))
+    reports.extend(_disable_unrunnable_switches(cheats_dir))
     reports.extend(_code_patch_warning(cheats_dir))
+    return reports
+
+
+def _disable_unrunnable_switches(cheats_dir: Path) -> list[str]:
+    """Turn off switches the compile proved unusable, so a stale toggle cannot crash the game.
+
+    A file imported before it was anchored has no meta yet, so nothing knows its entries patch code;
+    after the build they do. Whatever is on but cannot run is switched off here, and said so.
+    """
+    reports: list[str] = []
+    for meta_file in sorted(cheats_dir.glob("*.meta.tsv")):
+        enabled_file = meta_file.with_suffix("").with_suffix(".enabled")
+        if not enabled_file.is_file():
+            continue
+        build = meta_file.with_suffix("").name
+        rows = [line.split("\t") for line in meta_file.read_text(encoding="utf-8", errors="replace").splitlines()
+                if line and not line.startswith("#")]
+        if len(rows) < 2:
+            continue
+        head, body = rows[0], rows[1:]
+        try:
+            name_at, kind_at, resolved_at = head.index("name"), head.index("kind"), head.index("resolved")
+        except ValueError:
+            continue
+        unusable = {
+            row[name_at]
+            for row in body
+            if len(row) > max(name_at, kind_at, resolved_at)
+            and (row[kind_at] == "patch" or row[resolved_at] == "no anchors")
+        }
+        on = [line.strip() for line in enabled_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+        keep = [key for key in on if key.split(" #")[0] not in unusable]
+        if len(keep) != len(on):
+            enabled_file.write_text("".join(f"{key}\n" for key in keep), encoding="utf-8")
+            reports.append(
+                f"switched off for {build} (cannot run on this port): "
+                + ", ".join(key for key in on if key not in keep)
+            )
     return reports
 
 

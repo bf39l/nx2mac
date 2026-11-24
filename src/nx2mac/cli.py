@@ -372,7 +372,7 @@ def library(
 
     if set_dir is not None:
         try:
-            chosen = library_mod.require_library(set_dir)
+            chosen = library_mod.check_library_choice(set_dir)
         except library_mod.LibraryError as error:
             _fail(ctx, str(error))
         save_config(replace(cfg, library_dir=str(chosen)))

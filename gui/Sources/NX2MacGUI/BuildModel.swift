@@ -38,6 +38,8 @@ final class BuildModel: ObservableObject {
     @Published private(set) var libraryDir: String?
     @Published private(set) var games: [LibraryGame] = []
     @Published private(set) var libraryBusy = false
+    /// Why the library folder was refused (or "" when it was accepted).
+    @Published private(set) var libraryError: String = ""
 
     /// True while a game is being launched (so its row can show a spinner).
     @Published private(set) var playing: String?
@@ -230,6 +232,12 @@ final class BuildModel: ObservableObject {
         cliVersion = payload.version
     }
 
+    /// `{"event": "error", "message": …}` from a refused command.
+    private struct CliErrorPayload: Decodable {
+        let event: String
+        let message: String
+    }
+
     private struct VersionPayload: Decodable {
         let name: String
         let version: String
@@ -272,10 +280,15 @@ final class BuildModel: ObservableObject {
         guard let cli else { return }
         libraryBusy = true
         defer { libraryBusy = false }
+        libraryError = ""
         guard let result = try? await Self.run(cli, ["library", "--set", url.path, "--json"]),
-              let data = result.stdout.data(using: .utf8),
-              let payload = try? JSONDecoder().decode(LibraryPayload.self, from: data)
+              let data = result.stdout.data(using: .utf8)
         else { return }
+        if let problem = try? JSONDecoder().decode(CliErrorPayload.self, from: data) {
+            libraryError = problem.message
+            return
+        }
+        guard let payload = try? JSONDecoder().decode(LibraryPayload.self, from: data) else { return }
         applyLibrary(payload.dir)
         games = payload.games
     }

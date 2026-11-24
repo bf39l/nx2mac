@@ -110,7 +110,9 @@ nx2mac build "/path/to/Game [0100...]" --out-dir ~/Develop/MyGame \
 ### The game library (CLI + GUI)
 
 `nx2mac library --set DIR` (GUI: *Setup → Game library*) picks a folder that already exists —
-there is no default and nx2mac never creates it. Building with the library set files each game into
+there is no default and nx2mac never creates it. A folder holding game packages is refused: that
+is a dump, and builds must not be scattered into it. Choosing a game folder in the Build tab never
+changes this setting. Building with the library set files each game into
 its own folder, and everything the game writes stays there:
 
 ```

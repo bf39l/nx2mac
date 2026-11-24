@@ -94,15 +94,21 @@ struct SetupTab: View {
                         .foregroundStyle(.tertiary)
                 }
                 Spacer()
-                Button("Choose…") { chooseLibrary() }
+                Button("Choose folder…") { chooseLibrary() }
                 if model.libraryDir != nil {
                     Button("Clear") { Task { await model.clearLibrary() } }
                 }
             }
-            Text("Each build gets its own folder there: the .app plus saves, logs, mods and cheats. "
-                 + "The folder must already exist.")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            if model.libraryError.isEmpty {
+                Text("Built games are filed there: each app plus its saves, logs, mods and cheats. "
+                     + "The folder must already exist, and must not be a game dump.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            } else {
+                Text(model.libraryError)
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
         }
         .padding(9)
         .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))

@@ -27,6 +27,7 @@ from nx2mac.library import (
     app_metadata,
     build_dir,
     build_env_path,
+    check_library_choice,
     cheats_dir,
     create_player,
     delete_player,
@@ -88,6 +89,22 @@ def test_require_library_insists_it_exists(tmp_path: Path) -> None:
 
     library = _library(tmp_path)
     assert require_library(library) == library.resolve()
+
+
+def test_a_game_dump_cannot_be_the_library(tmp_path: Path) -> None:
+    """Choosing the dump you build from would scatter the build into it."""
+    dump = tmp_path / "Dumps" / "Dead Cells [0100646009FBE000]"
+    dump.mkdir(parents=True)
+    (dump / "base.nsp").write_bytes(b"\x00")
+
+    with pytest.raises(LibraryError, match="looks like a game dump"):
+        check_library_choice(dump)
+
+    # an empty folder, or one that only holds built apps, is fine
+    library = _library(tmp_path)
+    assert check_library_choice(library) == library.resolve()
+    _app(library)
+    assert check_library_choice(library) == library.resolve()
 
 
 def test_safe_name_keeps_letters_of_any_script() -> None:

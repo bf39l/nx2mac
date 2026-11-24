@@ -24,6 +24,8 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .inputs import GAME_EXTENSIONS
+
 #: Manifest written into every library game folder.
 MANIFEST_NAME: str = "nx2mac.json"
 
@@ -270,6 +272,17 @@ def safe_name(text: str) -> str:
     return " ".join(cleaned.split()).strip(" .-_")[:80] or "Game"
 
 
+def check_library_choice(folder: Path) -> Path:
+    """Validate a folder chosen as the library: it must exist and must not be a dump."""
+    path = require_library(folder)
+    if looks_like_game_dump(path):
+        raise LibraryError(
+            f"{path} holds game packages, so it looks like a game dump. Choose a folder for the "
+            "built games instead (nx2mac files each game's app, saves, logs, mods and cheats there)."
+        )
+    return path
+
+
 def require_library(library_dir: Path | None) -> Path:
     """Resolve a configured library, insisting it exists (we never create it)."""
     if library_dir is None:
@@ -280,6 +293,14 @@ def require_library(library_dir: Path | None) -> Path:
     if not path.is_dir():
         raise LibraryError(f"game library does not exist: {path} (create it first; nx2mac does not create it)")
     return path
+
+
+def looks_like_game_dump(folder: Path) -> bool:
+    """Whether a folder holds game packages directly (a dump, not a place for builds)."""
+    for entry in folder.iterdir() if folder.is_dir() else ():
+        if entry.is_file() and entry.suffix.lower() in GAME_EXTENSIONS:
+            return True
+    return False
 
 
 def game_dir(library: Path, name: str) -> Path:

@@ -262,6 +262,14 @@ file in `mods/cheats/` changes the game even with every switch off — that is n
 adds, it is the contract every front end (NX2Apple included) works with. Hence the master switch:
 while `.cheats-off-<title id>` exists, no cheat runs at all — that is the safe state to play in.
 
+**Addresses: offsets, not absolutes.** A Switch cheat file often carries *absolute* addresses
+(`0813AA10` = `main` at `0x08000000` + `0x13AA10`). Import rewrites those to offsets
+(`0013AA10`) automatically — the format `cheat_anchor.py` and the Mac host work in — and the build
+then anchors them. Without that step the tool reports *"address … is outside the main NSO image"*
+and every write is refused. After rebasing, Dead Cells' v1.25.0 file anchored **13 of 15** entries
+(the master and the hold-a-key `激活修改` stayed build-bound), which is the normal outcome for a
+file whose instructions match the build.
+
 **A whole file can be unusable.** Dead Cells' `6E35EE0A24029143.txt` (Aug 2024) is made of
 *code patches*: every one of its 15 entries writes to `0x0813AA10 … 0x0813AC7C`, i.e. absolute
 instructions of the game's code. This Mac port relocates that code, so those writes land on whatever

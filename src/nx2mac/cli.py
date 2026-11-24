@@ -548,6 +548,11 @@ def cheats(
                 _fail(ctx, f"no engine checkout with scripts/cheat_anchor.py under {cache_root() / 'engines'}")
             venv = ensure_venv(cache_root().expanduser(), env=_get_env())
             for source in compile_file:
+                # Import first: that is what rebases Switch-absolute addresses to main offsets.
+                library_mod.import_cheats(directory, entry.title_id, [source])
+                imported = sorted(library_mod.cheats_dir(directory, entry.title_id).glob("*.txt"))
+                if imported:
+                    source = imported[0]
                 # The re-anchor source and its output both live in the game's mods folder:
                 # <game>/mods/<build id>.txt is what DM_CHEATS reads, and the .toml beside it keeps
                 # the addresses' meaning so a later build can be compiled again.

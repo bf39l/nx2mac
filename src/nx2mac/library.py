@@ -1029,7 +1029,12 @@ def import_cheats(library: Path, title_id: str, sources: Sequence[Path], enable:
                 "cheat sites name their files that way"
             )
         target = folder / path.name
-        if target != path:
+        data = path.read_text(encoding="utf-8", errors="replace")
+        rebased, changed = rebase_cheats(data)
+        if changed:
+            # log where the caller can see it: the CLI reports this line
+            target.write_text(rebased, encoding="utf-8")
+        elif target != path:
             target.write_bytes(path.read_bytes())
         written.append(target)
         _keep_single_cheat_file(folder, keep=target.stem)
@@ -1060,6 +1065,39 @@ def clear_cheats(library: Path, title_id: str) -> list[Path]:
             entry.unlink(missing_ok=True)
             removed.append(entry)
     return removed
+
+
+#: Where a Switch maps the game's `main` module; cheat files written as absolute addresses assume it.
+SWITCH_MAIN_BASE = 0x08000000
+#: A sane upper bound for an offset inside main (the largest main images are ~120 MB).
+MAIN_OFFSET_LIMIT = 0x0C000000
+
+
+def rebase_cheats(text: str, base: int = SWITCH_MAIN_BASE) -> tuple[str, int]:
+    """Turn absolute addresses into main offsets, as the engine's tools expect.
+
+    A cheat file written for a Switch often carries absolute addresses (`0813AA10` = main at
+    `0x08000000` + `0x13AA10`). `cheat_anchor.py` and the Mac app work in offsets, so those
+    addresses look "outside the main NSO image". Subtracting the base gives `13AA10`, which
+    resolves in any build.
+    """
+    out: list[str] = []
+    changed = 0
+    for line in text.splitlines():
+        words = line.split()
+        if words and all(len(word) == 8 and all(c in _HEX for c in word) for word in words):
+            fixed: list[str] = []
+            for index, word in enumerate(words):
+                value = int(word, 16)
+                if index > 0 and base <= value < base + MAIN_OFFSET_LIMIT:
+                    fixed.append(f"{value - base:08X}")
+                    changed += 1
+                else:
+                    fixed.append(word)
+            out.append(" ".join(fixed))
+        else:
+            out.append(line)
+    return "\n".join(out) + ("\n" if text.endswith("\n") else ""), changed
 
 
 def _is_build_id(text: str) -> bool:

@@ -78,7 +78,7 @@ def anchor_build_cheats(
     the code this app actually runs — the Switch-absolute addresses a cheat site ships are rewritten
     into ones that fit. The result replaces `<build id>.txt` in the game's cheats folder.
     """
-    lines = reanchor(env, python, script, cheat_file, main, main, source_toml, cheats_dir)
+    lines = reanchor(env, python, script, cheat_file, main, main, source_toml, cheats_dir, on_line=on_line)
     if on_line is not None:
         for line in lines:
             on_line(line)
@@ -95,10 +95,17 @@ def reanchor(
     source_toml: Path,
     out_dir: Path,
     replace: bool = True,
+    on_line=None,
 ) -> list[str]:
     """Run the tool; returns its output lines (warnings included). Raises CheatToolError on failure."""
     plan = plan_anchor(python, script, cheats_file, source_main, target_main, source_toml, out_dir, replace)
     lines: list[str] = []
+    # The tool keeps the file it replaced as `<build id>.txt.orig` and refuses a second run while
+    # that exists; our re-anchor source (.cheats.toml) is the durable backup, so drop the stale copy.
+    for stale in out_dir.glob("*.txt.orig"):
+        stale.unlink(missing_ok=True)
+        if on_line is not None:
+            on_line(f"removed the previous backup {stale.name}")
     for step, argv in (("import", plan.import_argv), ("compile", plan.compile_argv)):
         result = env.run(list(argv), cwd=script.parent.parent)
         output = (result.stdout + result.stderr).strip()

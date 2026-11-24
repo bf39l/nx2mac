@@ -6,16 +6,22 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var model: BuildModel
 
+    /// Which tab is showing, as an index so it survives a relaunch: a build run
+    /// on the Build tab puts you back there next time, and Setup is the first
+    /// launch's tab (prerequisites before the first build).
+    @AppStorage("tab") private var tab = 0
+
     var body: some View {
-        TabView {
-            // Setup first: prerequisites before the first build, and it is what
-            // the app opens on.
+        TabView(selection: $tab) {
             SetupTab()
                 .tabItem { Label("Setup", systemImage: "wrench.and.screwdriver") }
+                .tag(0)
             GamesTab()
                 .tabItem { Label("Games", systemImage: "square.stack.3d.up") }
+                .tag(1)
             BuildTab()
                 .tabItem { Label("Build", systemImage: "hammer") }
+                .tag(2)
         }
         .padding(14)
         .frame(minWidth: 780, minHeight: 660)

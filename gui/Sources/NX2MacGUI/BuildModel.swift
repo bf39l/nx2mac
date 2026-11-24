@@ -151,6 +151,11 @@ final class BuildModel: ObservableObject {
         }
     }
 
+    /// The package the build will use, when the folder scan knows it.
+    var chosenPackage: GamePackage? {
+        packages.first { $0.path == gameURL?.path }
+    }
+
     /// Which path the build receives: the file you chose, else the folder (so the
     /// engine still sees updates/DLC kept beside the game).
     var buildPath: URL? {

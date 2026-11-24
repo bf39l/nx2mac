@@ -173,8 +173,8 @@ A native SwiftUI app that only shells out to `nx2mac … --json` (no Python impo
   fixable ones (`setup --install <name> --json`), Copy command / Open page for manual ones, and
   "Install all missing" (`setup --all`).
 - **Build tab**: a **Game dir** row and a **Game** row — choosing the folder runs `nx2mac probe`
-  and auto-selects the base package (the list under it shows every package with its role and size;
-  clicking one builds that instead), and the file can also be chosen by hand; optional `prod.keys`, optional update(s) and any
+  and auto-selects the base package, which is the only package listed (role + size); a different
+  file is chosen by hand with **Game → Choose…**; optional `prod.keys`, optional update(s) and any
   number of DLC packages/folders (both shown as vertical lists with per-item remove), one optional
   **Output folder** (`--out-dir`: app + build folder + keys), engine + ref ("Save & Pin"), then
   Build with a live log and the engine's stage tags (`[8/8] Mac app`); Done reveals/opens the

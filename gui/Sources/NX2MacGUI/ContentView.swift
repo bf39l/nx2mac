@@ -178,20 +178,32 @@ struct BuildTab: View {
             .help("Found in the folder above; pick a file to override it")
     }
 
-    /// What the folder holds, with the package the build will use marked.
+    /// The one package this build uses — the auto-picked game. Other packages in
+    /// the folder (updates, DLC) are not listed: pick a different file with
+    /// "Game → Choose…" if that is what you want to build.
     @ViewBuilder
     private var packageList: some View {
-        if model.gameDirURL != nil, !model.packages.isEmpty {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(model.packages) { package in
-                    PackageRow(package: package, selected: package.path == model.gameURL?.path) {
-                        model.setGameFile(package.url)
-                    }
-                }
+        if model.gameURL != nil, let chosen = model.chosenPackage {
+            HStack(spacing: 6) {
+                Image(systemName: "largecircle.fill.circle")
+                    .font(.caption2)
+                    .foregroundStyle(Color.accentColor)
+                Text(chosen.name)
+                    .font(.caption.monospaced())
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(chosen.path)
+                Text(chosen.role)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Spacer(minLength: 4)
+                Text(ByteCountFormatter.string(fromByteCount: Int64(chosen.size), countStyle: .file))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, SelectionList.padding / 2)
-            .frame(height: SelectionList.height(for: model.packages.count))
+            .frame(height: SelectionList.height(for: 1))
             .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
             .padding(.leading, 104)
@@ -409,36 +421,3 @@ extension BuildTab {
 }
 
 
-/// One package found in the game folder; click it to build that one instead.
-private struct PackageRow: View {
-    let package: GamePackage
-    let selected: Bool
-    let choose: () -> Void
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: selected ? "largecircle.fill.circle" : "circle")
-                .font(.caption2)
-                .foregroundStyle(selected ? Color.accentColor : Color.secondary)
-            Text(package.name)
-                .font(.caption.monospaced())
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Text(package.role)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-            Spacer(minLength: 4)
-            Text(sizeLabel)
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.tertiary)
-        }
-        .padding(.vertical, 1)
-        .contentShape(Rectangle())
-        .onTapGesture(perform: choose)
-        .help("Build this package")
-    }
-
-    private var sizeLabel: String {
-        ByteCountFormatter.string(fromByteCount: Int64(package.size), countStyle: .file)
-    }
-}

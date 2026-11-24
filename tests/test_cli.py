@@ -440,3 +440,58 @@ def test_probe_picks_the_game_package(isolated_paths: Path) -> None:
     assert payload["kind"] == "switch1" and payload["needs_prod_keys"] is True
     assert payload["game_file"].endswith("Dead_Cells_0100646009FBE000_v1.0.0.nsp")
     assert {package["role"] for package in payload["packages"]} == {"base", "update"}
+
+
+def test_cheats_resolve_the_game_by_title_id(isolated_paths: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The GUI addresses a game by title ID (the dump folder's name is not an entry)."""
+    import plistlib
+
+    tmp = isolated_paths
+    env = _make_env(tmp)
+    monkeypatch.setattr(cli_module, "_get_env", lambda: env)
+    library = tmp / "Games"
+    library.mkdir()
+    app = library / "Dead Cells.app"
+    (app / "Contents").mkdir(parents=True)
+    (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps({
+        "CFBundleName": "Dead Cells",
+        "CFBundleShortVersionString": "1.25.0",
+        "CFBundleIdentifier": "org.nxnative.0100646009fbe000",
+    }))
+    cheats = library / "nx2mac_game_lib" / "0100646009FBE000" / "mods" / "cheats"
+    cheats.mkdir(parents=True)
+    (cheats / "0123456789ABCDEF.txt").write_text("[Max gold]\n02000000 00000000\n", encoding="utf-8")
+    runner.invoke(app_module := cli_module.app, ["library", "--add", str(library)])
+
+    by_title = runner.invoke(app_module, ["cheats", "--game", "0100646009FBE000", "--json"])
+    by_folder_name = runner.invoke(app_module, ["cheats", "--game", "0Dead_Cells[0100646009FBE000]", "--json"])
+
+    assert by_title.exit_code == 0 and _json(by_title)["games"][0]["builds"][0]["cheats"][0]["name"] == "Max gold"
+    assert by_folder_name.exit_code == 1  # a dump folder name is not a game
+
+    imported = runner.invoke(app_module, ["cheats", "--game", "0100646009FBE000",
+                                          "--import", str(cheats / "0123456789ABCDEF.txt"), "--json"])
+    assert imported.exit_code == 0
+
+
+def test_cheats_work_before_the_game_is_built(isolated_paths: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cheats belong to a title ID: import/list works with only a game folder chosen."""
+    tmp = isolated_paths
+    env = _make_env(tmp)
+    monkeypatch.setattr(cli_module, "_get_env", lambda: env)
+    library = tmp / "Games"
+    library.mkdir()
+    source = tmp / "0123456789ABCDEF.txt"
+    source.write_text("[Max gold]\n02000000 00000000\n", encoding="utf-8")
+    runner.invoke(app, ["library", "--add", str(library)])
+
+    imported = runner.invoke(app, ["cheats", "--game", "0100646009FBE000",
+                                   "--library", str(library), "--import", str(source), "--json"])
+    listed = runner.invoke(app, ["cheats", "--game", "0100646009fbe000",
+                                 "--library", str(library), "--json"])
+
+    assert imported.exit_code == 0 and listed.exit_code == 0
+    build = _json(listed)["games"][0]["builds"][0]
+    assert build["file"].endswith("0123456789ABCDEF.txt")
+    assert [cheat["name"] for cheat in build["cheats"]] == ["Max gold"]
+    assert (library / "nx2mac_game_lib" / "0100646009FBE000" / "mods" / "cheats").is_dir()

@@ -333,6 +333,12 @@ struct GamePackage: Decodable, Identifiable, Hashable {
     let role: String
     let size: Int
     let version: String?
+    let titleID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case path, role, size, version
+        case titleID = "title_id"
+    }
 
     var id: String { path }
     var url: URL { URL(fileURLWithPath: path) }

@@ -511,6 +511,11 @@ def cheats(
                 continue
         else:
             games.extend((directory, entry) for entry in library_mod.list_games(directory))
+    if not games and game and library_mod._is_build_id(game.strip()):
+        # Cheats belong to a title ID, not to a build: they work before the game is built too.
+        title_id = game.strip().upper()
+        entry = library_mod.GameEntry(name=title_id, path=libraries[0], app_path=None, title_id=title_id)
+        games = [(libraries[0], entry)]
     if not games:
         _fail(ctx, f"no game called {game!r}" if game else "no games built yet")
 

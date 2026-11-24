@@ -368,7 +368,9 @@ final class BuildModel: ObservableObject {
             cheatFileName = nil
             return
         }
-        guard let result = try? await Self.run(cli, ["cheats", "--game", game, "--json"]),
+        var arguments = ["cheats", "--game", game, "--json"]
+        if let library = libraryURL { arguments += ["--library", library.path] }
+        guard let result = try? await Self.run(cli, arguments),
               let data = result.stdout.data(using: .utf8),
               let payload = try? JSONDecoder().decode(CheatsPayload.self, from: data),
               let build = payload.games.first?.builds.first
@@ -381,32 +383,66 @@ final class BuildModel: ObservableObject {
 
     /// Delete the game's cheat file (nx2mac keeps one).
     func clearCheats() async {
-        guard let cli, let game = cheatGameName else { return }
-        _ = try? await Self.run(cli, ["cheats", "--game", game, "--remove", "--json"])
-        await refreshCheatFile()
+        await runCheats(["--remove"])
     }
 
-    /// The game the cheat commands address: the built entry's name, or the input's folder name.
+    /// The title ID of the game being built (from the probe), when it is known.
+    var gameTitleID: String? {
+        chosenPackage?.titleID ?? packages.first(where: { $0.role == "base" })?.titleID
+            ?? packages.compactMap(\.titleID).first
+    }
+
+    /// What the cheat commands address: the title ID (how the library finds the game), else its name.
     var cheatGameName: String? {
         guard gameURL != nil else { return nil }
+        if let title = gameTitleID { return title }
         if let dir = gameDirURL { return dir.lastPathComponent }
         return gameURL?.deletingPathExtension().lastPathComponent
     }
 
-    /// Copy cheat files into the game's cheats folder.
-    func importCheats(_ urls: [URL]) async {
-        guard let cli, let game = cheatGameName else { return }
-        for url in urls {
-            _ = try? await Self.run(cli, ["cheats", "--game", game, "--import", url.path, "--json"])
+    /// Run a `cheats` sub-command and put whatever the CLI says into the build log.
+    @discardableResult
+    private func runCheats(_ arguments: [String]) async -> Bool {
+        guard let cli, let game = cheatGameName else {
+            log.append("Cheats: choose a game folder first.")
+            return false
+        }
+        var arguments = ["cheats", "--game", game, "--json"] + arguments
+        if let library = libraryURL { arguments += ["--library", library.path] }
+        guard let result = try? await Self.run(cli, arguments) else {
+            log.append("Cheats: could not run the CLI.")
+            return false
+        }
+        for line in (result.stdout + result.stderr).split(separator: "\n") {
+            if let data = String(line).data(using: .utf8),
+               let failure = try? JSONDecoder().decode(CheatErrorPayload.self, from: data) {
+                log.append("Cheats: \(failure.message)")
+                return false
+            }
         }
         await refreshCheatFile()
+        return true
+    }
+
+    private struct CheatErrorPayload: Decodable {
+        let event: String
+        let message: String
+    }
+
+    /// Copy cheat files into the game's cheats folder.
+    func importCheats(_ urls: [URL]) async {
+        for url in urls {
+            await runCheats(["--import", url.path])
+        }
     }
 
     /// Re-anchor a cheat file to this build with the engine's cheat_anchor.py.
     func reanchorCheats(_ url: URL) async {
         guard let cli, let game = cheatGameName else { return }
         log.append("Re-anchoring \(url.lastPathComponent) for this build …")
-        guard let result = try? await Self.run(cli, ["cheats", "--game", game, "--compile", url.path]) else { return }
+        var arguments = ["cheats", "--game", game, "--compile", url.path]
+        if let library = libraryURL { arguments += ["--library", library.path] }
+        guard let result = try? await Self.run(cli, arguments) else { return }
         for line in (result.stdout + result.stderr).split(separator: "\n") {
             log.append(String(line))
         }

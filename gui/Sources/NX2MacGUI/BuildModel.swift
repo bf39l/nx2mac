@@ -359,13 +359,15 @@ final class BuildModel: ObservableObject {
         struct Removed: Decodable { let game: String; let path: String }
     }
 
-    /// The game's one cheat file (its name), shown in the Build tab.
-    @Published private(set) var cheatFileName: String?
+    /// The game's one cheat file, shown in the Build tab (a build re-anchors it).
+    @Published private(set) var cheatFileURL: URL?
+
+    var cheatFileName: String? { cheatFileURL?.lastPathComponent }
 
     /// Read the selected game's cheat file, if it has one.
     func refreshCheatFile() async {
         guard let cli, let game = cheatGameName else {
-            cheatFileName = nil
+            cheatFileURL = nil
             return
         }
         var arguments = ["cheats", "--game", game, "--json"]
@@ -375,10 +377,10 @@ final class BuildModel: ObservableObject {
               let payload = try? JSONDecoder().decode(CheatsPayload.self, from: data),
               let build = payload.games.first?.builds.first
         else {
-            cheatFileName = nil
+            cheatFileURL = nil
             return
         }
-        cheatFileName = URL(fileURLWithPath: build.file).lastPathComponent
+        cheatFileURL = URL(fileURLWithPath: build.file)
     }
 
     /// Delete the game's cheat file (nx2mac keeps one).

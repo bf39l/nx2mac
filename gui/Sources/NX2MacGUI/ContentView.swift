@@ -87,15 +87,8 @@ struct BuildTab: View {
             }
             selectionList(model.dlcURLs) { index in model.dlcURLs.remove(at: index) }
 
-            row(title: "Switch Cheat") {
-                pathLabel(model.cheatFileName ?? "one cheat file for this game — a build anchors it to the build",
-                          empty: model.cheatFileName == nil)
-                Button("Import…") { importCheats() }
-                    .disabled(model.cheatGameName == nil)
-                if model.cheatFileName != nil {
-                    Button("Clear") { Task { await model.clearCheats() } }
-                }
-            }
+            cheatRow
+            cheatLine
 
             row(title: "Output folder") {
                 HStack(spacing: 6) {
@@ -201,6 +194,38 @@ struct BuildTab: View {
             .help("Found in the folder above; pick a file to override it")
     }
 
+    /// The game's cheat file: one file, like the update, re-anchored by every build.
+    private var cheatRow: some View {
+        row(title: "Switch Cheat") {
+            HStack(spacing: 6) {
+                pathLabel(model.cheatFileURL?.path ?? "optional — one cheat file (.txt) for this game",
+                          empty: model.cheatFileURL == nil)
+                if model.cheatFileURL != nil {
+                    Text("anchored on build")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.12), in: Capsule())
+                        .help("Every build re-anchors this file to the build's own code")
+                }
+            }
+            Button("Choose…") { importCheats() }
+                .disabled(model.cheatGameName == nil)
+            if model.cheatFileURL != nil {
+                Button("Clear") { Task { await model.clearCheats() } }
+            }
+        }
+    }
+
+    /// The cheat file as one list line, the same shape as the game and update packages.
+    @ViewBuilder
+    private var cheatLine: some View {
+        if let cheat = model.cheatFileURL {
+            packageLine(url: cheat, role: "cheat")
+        }
+    }
+
     /// The update package, listed the same way as the game package.
     @ViewBuilder
     private var updateList: some View {
@@ -220,7 +245,7 @@ struct BuildTab: View {
     }
 
     /// One package as a single list row: name, role, version, size — like Finder's list view.
-    private func packageLine(url: URL) -> some View {
+    private func packageLine(url: URL, role forcedRole: String? = nil) -> some View {
         let known = model.packages.first { $0.path == url.path }
         return HStack(spacing: 6) {
             Image(systemName: "largecircle.fill.circle")
@@ -231,7 +256,7 @@ struct BuildTab: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .help(url.path)
-            Text(known?.role ?? "package")
+            Text(forcedRole ?? known?.role ?? "package")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
             if let version = known?.version {

@@ -188,8 +188,19 @@ Pressing "Refresh" in the GUI re-applies them too.
 
 ```
 nx2mac_game_lib/<TITLEID>/mods/cheats/
-└── <build id>.txt          e.g. 0100646009FBE000's build id, 16 hex digits
+├── <build id>.txt          the codes (cheat sites name files this way)
+├── <build id>.meta.tsv     optional: sections, on/off pairs, typed values (cheat_anchor.py writes it)
+└── <build id>.enabled      written by the game/nx2mac: the switches that are on
 ```
+
+```bash
+nx2mac cheats --game "Dead Cells" --import ~/Downloads/6E35EE0A24029143.txt
+```
+
+A cheat file is **never** a build input: the app is built once, and the host reads this folder at
+launch (that is also how NX2Apple works — its Import only copies the file into
+`~/Library/Application Support/nxnative/<TITLEID>/cheats`). nx2mac just keeps the folder in the
+library, which is why the game's baked env names it.
 
 - The file name must be the game's **build ID** — cheat sites publish it as
   `atmosphere/contents/<TITLEID>/cheats/<BUILDID>.txt`; copy it in as-is. Any `.txt` whose name is

@@ -836,6 +836,42 @@ def clear_safe_mode(library: Path, title_id: str) -> bool:
     return existed
 
 
+def import_cheats(library: Path, title_id: str, sources: Sequence[Path], enable: bool = False) -> list[Path]:
+    """Copy cheat files (`<build id>.txt`, and a sibling `.meta.tsv`) into the game's folder.
+
+    Exactly what NX2Apple's "Import" does: the host reads them at the next launch. A file whose
+    name is not a build ID, or that belongs to another game's build, is refused.
+    """
+    folder = cheats_dir(library, title_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    for source in sources:
+        path = source.expanduser()
+        if not path.is_file():
+            raise LibraryError(f"no such cheat file: {path}")
+        stem = path.stem
+        if path.suffix.lower() == ".tsv" and stem.endswith(".meta"):
+            stem = stem[: -len(".meta")]
+        if not _is_build_id(stem):
+            raise LibraryError(
+                f"{path.name} is not named after a build ID (16 hex digits, e.g. 6E35EE0A24029143.txt); "
+                "cheat sites name their files that way"
+            )
+        target = folder / path.name
+        if target != path:
+            target.write_bytes(path.read_bytes())
+        written.append(target)
+        if enable:
+            enabled_file = folder / f"{stem}.enabled"
+            if not enabled_file.exists():
+                enabled_file.write_text("", encoding="utf-8")
+    return written
+
+
+def _is_build_id(text: str) -> bool:
+    return len(text) == 16 and all(char in "0123456789abcdefABCDEF" for char in text)
+
+
 def set_cheat(library: Path, title_id: str, build: str, name: str, enabled: bool) -> Path:
     """Switch one cheat on/off in the build's `.enabled` file (what the in-game menu writes)."""
     folder = cheats_dir(library, title_id)

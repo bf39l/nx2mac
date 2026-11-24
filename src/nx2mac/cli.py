@@ -465,6 +465,9 @@ def cheats(
     game: str | None = typer.Option(None, "--game", metavar="GAME", help="the game (default: every game)."),
     enable: list[str] = typer.Option([], "--enable", metavar="NAME", help="switch a cheat on."),
     disable: list[str] = typer.Option([], "--disable", metavar="NAME", help="switch a cheat off."),
+    import_from: list[Path] = typer.Option(
+        [], "--import", metavar="FILE", help="copy a cheat file (and its .meta.tsv) into the game's cheats folder."
+    ),
     off: bool = typer.Option(False, "--off", help="master switch: no cheat runs at all."),
     on: bool = typer.Option(False, "--on", help="clear the master switch again."),
     restore_safe: bool = typer.Option(
@@ -494,6 +497,11 @@ def cheats(
     for directory, entry in games:
         if not entry.title_id:
             continue
+        if import_from:
+            try:
+                library_mod.import_cheats(directory, entry.title_id, import_from)
+            except library_mod.LibraryError as error:
+                _fail(ctx, str(error))
         if off:
             library_mod.set_cheats_master(directory, entry.title_id, True)
         if on:

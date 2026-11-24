@@ -62,6 +62,29 @@ def plan_anchor(
     return AnchorPlan(import_argv=import_argv, compile_argv=compile_argv)
 
 
+def anchor_build_cheats(
+    env: Env,
+    python: Path,
+    script: Path,
+    cheat_file: Path,
+    main: Path,
+    source_toml: Path,
+    cheats_dir: Path,
+    on_line=None,
+) -> list[str]:
+    """Re-anchor a game's cheat file to the build that just ran.
+
+    The build extracted the game's `ExeFS/main`, so every address in the file can be resolved in
+    the code this app actually runs — the Switch-absolute addresses a cheat site ships are rewritten
+    into ones that fit. The result replaces `<build id>.txt` in the game's cheats folder.
+    """
+    lines = reanchor(env, python, script, cheat_file, main, main, source_toml, cheats_dir)
+    if on_line is not None:
+        for line in lines:
+            on_line(line)
+    return lines
+
+
 def reanchor(
     env: Env,
     python: Path,

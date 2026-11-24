@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import library as library_mod
+from .cheats import CheatToolError, anchor_build_cheats
 from .doctor import BUILD_PREFLIGHT_EXCLUDE, DoctorContext, run_checks
 from .engines import ResolvedEngine
 from .inputs import GAME_EXTENSIONS, KEYS_FILENAMES, NSO_EXTENSION, SWITCH1_EXTENSIONS
@@ -185,6 +186,47 @@ def validate_extras(paths: Sequence[Path], flag: str) -> list[Path]:
             raise BuildError(f"{flag} folder holds no game packages: {path}")
         resolved.append(path)
     return resolved
+
+
+def _anchor_cheats(
+    env: Env,
+    library: Path,
+    key: str,
+    engine: ResolvedEngine,
+    cache_root: Path,
+    on_line: Callable[[str], None] | None = None,
+) -> None:
+    """Re-anchor the game's cheat file to the build that just finished.
+
+    A cheat file ships Switch-absolute addresses, which point nowhere in this app; the extraction
+    the build just made lets the engine's `cheat_anchor.py` rewrite them for this build. Missing an
+    extracted `main` (or the tool) is not an error: the file is left exactly as it was.
+    """
+    folder = library_mod.cheats_dir(library, key)
+    files = sorted(folder.glob("*.txt"))
+    if not files:
+        return
+    main = library_mod.extracted_main(library, key)
+    script = engine.path / "scripts" / "cheat_anchor.py"
+    if main is None or not script.is_file():
+        if on_line is not None:
+            on_line("cheats: no extracted ExeFS/main or cheat_anchor.py; the cheat file is left as it is")
+        return
+
+    if on_line is not None:
+        on_line(f"cheats: re-anchoring {files[0].name} for this build …")
+    toml = library_mod.mods_dir(library, key) / f"{key}.cheats.toml"
+    venv = ensure_venv(cache_root, env=env)
+    try:
+        anchor_build_cheats(env, venv.python, script, files[0], main, toml, folder, on_line)
+    except CheatToolError as error:
+        if on_line is not None:
+            on_line(f"cheats: re-anchor failed ({error})")
+        return
+    anchored = sorted(folder.glob("*.txt"))
+    if on_line is not None and anchored:
+        on_line(f"cheats: {anchored[0].name} is anchored to this build")
+        on_line(f"cheats: source kept for later builds: {toml}")
 
 
 def _file_app(library: Path, key: str, produced: Path | None) -> Path | None:
@@ -386,6 +428,7 @@ def run_build(
     player_env: Path | None = None
     if library is not None and returncode == 0:
         manifest, player_env = _record_in_library(library, key, engine, game, app_path)
+        _anchor_cheats(env, library, key, engine, cache_root, on_line)
 
     return BuildResult(
         argv=tuple(argv),

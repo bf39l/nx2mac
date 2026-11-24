@@ -436,19 +436,6 @@ final class BuildModel: ObservableObject {
         }
     }
 
-    /// Re-anchor a cheat file to this build with the engine's cheat_anchor.py.
-    func reanchorCheats(_ url: URL) async {
-        guard let cli, let game = cheatGameName else { return }
-        log.append("Re-anchoring \(url.lastPathComponent) for this build …")
-        var arguments = ["cheats", "--game", game, "--compile", url.path]
-        if let library = libraryURL { arguments += ["--library", library.path] }
-        guard let result = try? await Self.run(cli, arguments) else { return }
-        for line in (result.stdout + result.stderr).split(separator: "\n") {
-            log.append(String(line))
-        }
-        await refreshCheatFile()
-    }
-
     /// Read a game's cheat files, their switches and the engine's master/safe flags.
     func cheats(for game: LibraryGame) async -> (builds: [CheatBuild], state: CheatsState) {
         guard let cli else { return ([], .unknown) }

@@ -201,10 +201,14 @@ nx2mac cheats --game "Dead Cells" --import ~/Downloads/6E35EE0A24029143.txt
 nx2mac cheats --game "Dead Cells" --compile ~/Downloads/6E35EE0A24029143.txt   # re-anchor it
 ```
 
-`--compile` runs the engine's `scripts/cheat_anchor.py` (`import` then `compile`) against the
-`ExeFS/main` the last build extracted (`<game>/build/extract/<version>/ExeFS/main`), which rewrites
-every address in terms of this build's code and writes the result into the game's cheats folder.
-Both commands are in the **Build** tab too (*Cheats → Import… / Re-anchor…*).
+**A build anchors the cheat file for you.** After a build finishes, if the game has a cheat file,
+nx2mac runs the engine's `scripts/cheat_anchor.py` (`import` then `compile`) against the
+`ExeFS/main` that build extracted (`<game>/build/extract/<version>/ExeFS/main`), rewrites every
+address in terms of the code this app actually runs, and writes the result to
+`<TID>/mods/cheats/<build id>.txt` — the file the game loads. The re-anchor source is kept at
+`<TID>/mods/<TID>.cheats.toml` for the next build. The Build tab therefore only needs
+**Import…** and **Clear**; the log shows `cheats: … is anchored to this build`.
+(`nx2mac cheats --compile FILE` still does the same by hand, e.g. right after importing.)
 
 A cheat file is **never** a build input: the app is built once, and the host reads this folder at
 launch (that is also how NX2Apple works — its Import only copies the file into

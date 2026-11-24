@@ -88,12 +88,10 @@ struct BuildTab: View {
             selectionList(model.dlcURLs) { index in model.dlcURLs.remove(at: index) }
 
             row(title: "Switch Cheat") {
-                pathLabel(model.cheatFileName ?? "one cheat file (…/<build id>.txt) for this game",
+                pathLabel(model.cheatFileName ?? "one cheat file for this game — a build anchors it to the build",
                           empty: model.cheatFileName == nil)
                 Button("Import…") { importCheats() }
                     .disabled(model.cheatGameName == nil)
-                Button("Re-anchor…") { reanchorCheats() }
-                    .disabled(model.cheatGameName == nil || model.cheatFileName == nil)
                 if model.cheatFileName != nil {
                     Button("Clear") { Task { await model.clearCheats() } }
                 }
@@ -443,19 +441,6 @@ extension BuildTab {
             Task {
                 await model.importCheats([url])   // one cheat file per game: this replaces the old one
             }
-        }
-    }
-
-    /// Re-anchor a cheat file for this build (the engine's cheat_anchor.py; needs a build's extract).
-    private func reanchorCheats() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.allowsMultipleSelection = false
-        panel.message = "A cheat file written for another build: its addresses are re-anchored to this one."
-        panel.prompt = "Re-anchor"
-        if panel.runModal() == .OK, let url = panel.url {
-            Task { await model.reanchorCheats(url) }
         }
     }
 

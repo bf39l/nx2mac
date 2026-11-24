@@ -151,6 +151,7 @@ private struct BuildSetupSection: View {
                 inputs
                 actions
                 LogView(lines: setup.log)
+                    .frame(maxHeight: 240)   // bound the log so it scrolls inside the setup instead of growing the window
             }
             .padding(.top, 8)
         } label: {

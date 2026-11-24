@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nx2mac"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Build Nintendo Switch games into native macOS apps"
 requires-python = ">=3.11"
 dependencies = [
@@ -31,6 +31,10 @@ ignore = ["B008"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The version lives in src/nx2mac/__init__.py so the CLI and the package agree.
+[tool.hatch.version]
+path = "src/nx2mac/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/nx2mac"]
 

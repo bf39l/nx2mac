@@ -10,6 +10,7 @@ from test_doctor import _good_env
 from typer.testing import CliRunner
 
 import nx2mac.cli as cli_module
+from nx2mac import VERSION
 from nx2mac.cli import app
 from nx2mac.runner import RunResult
 
@@ -56,7 +57,7 @@ def _game(tmp: Path) -> Path:
 def test_version(isolated_paths: Path) -> None:
     result = runner.invoke(app, ["version"])
 
-    assert result.exit_code == 0 and "0.1" in result.output
+    assert result.exit_code == 0 and VERSION in result.output
 
 
 def test_help_lists_commands(isolated_paths: Path) -> None:
@@ -162,7 +163,7 @@ def _ndjson(result) -> list[dict]:  # one event object per line
 def test_version_json(isolated_paths: Path) -> None:
     result = runner.invoke(app, ["version", "--json"])
 
-    assert result.exit_code == 0 and _json(result) == {"name": "nx2mac", "version": "0.1.0"}
+    assert result.exit_code == 0 and _json(result) == {"name": "nx2mac", "version": VERSION}
 
 
 def test_global_json_flag_also_applies(isolated_paths: Path) -> None:

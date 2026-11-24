@@ -17,6 +17,8 @@ final class BuildModel: ObservableObject {
 
     @Published private(set) var cli: CLICommand?
     @Published private(set) var cliError: String?
+    /// Version the CLI reports (`nx2mac version --json`), for the Settings pane.
+    @Published private(set) var cliVersion: String?
 
     // MARK: Prerequisites / setup
 
@@ -126,8 +128,22 @@ final class BuildModel: ObservableObject {
 
     func refresh() async {
         guard let cli else { return }
+        await refreshVersion(cli)
         await refreshDoctor(cli)
         await refreshEngine(cli)
+    }
+
+    private func refreshVersion(_ cli: CLICommand) async {
+        guard let result = try? await Self.run(cli, ["version", "--json"]),
+              let data = result.stdout.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(VersionPayload.self, from: data)
+        else { return }
+        cliVersion = payload.version
+    }
+
+    private struct VersionPayload: Decodable {
+        let name: String
+        let version: String
     }
 
     private func refreshDoctor(_ cli: CLICommand) async {

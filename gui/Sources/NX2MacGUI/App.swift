@@ -61,6 +61,15 @@ struct SettingsView: View {
                     }
                 }
             }
+            Section("Versions") {
+                LabeledContent("nx2mac app", value: appVersion)
+                LabeledContent("nx2mac CLI", value: model.cliVersion ?? "unknown")
+                if let cliVersion = model.cliVersion, cliVersion != appVersion {
+                    Text("The app and the CLI disagree; reinstall the CLI or rebuild the app.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
             Section {
                 Text("The GUI only runs the CLI (`nx2mac doctor|engine|build --json`) and renders its output. "
                      + "Install it with `uv tool install nx2mac`, or point this at a development checkout's "
@@ -71,5 +80,10 @@ struct SettingsView: View {
         }
         .padding(18)
         .frame(width: 480)
+    }
+
+    /// The bundle's version, e.g. "0.0.1".
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
     }
 }

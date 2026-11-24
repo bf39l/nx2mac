@@ -158,7 +158,10 @@ A native SwiftUI app that only shells out to `nx2mac … --json` (no Python impo
   missing" (`setup --all`).
 
 Build it with `./gui/build.sh release [dest]` (SwiftPM + a script that wraps the binary into
-`NX2Mac.app`; no Xcode project). It finds the CLI via `NX2MAC_BIN`, the `cliPath` setting, PATH,
+`nx2mac.app`; no Xcode project). The icon is committed at `gui/Resources/AppIcon.icns` and
+regenerated with `swift gui/tools/make_icon.swift gui/Resources/AppIcon.icns`; `build.sh` copies
+it into the bundle and ad-hoc signs it. Settings shows the app version next to
+`nx2mac version --json`, so a GUI/CLI mismatch is visible. It finds the CLI via `NX2MAC_BIN`, the `cliPath` setting, PATH,
 well-known install dirs, then a dev checkout's `.venv/bin/python -m nx2mac`. Tests:
 `swift test --package-path gui` (add `NX2MAC_LIVE_TESTS=1` to also drive the real CLI).
 
@@ -175,7 +178,12 @@ All v1 slices are implemented with unit tests (run: `uv run pytest`, lint: `uv r
 - `cli.py` — `version|doctor|setup|engine|build` with human and `--json` rendering
 - `remedies.py` / `installer.py` — per-check fixes the CLI can run (`setup --install/--all`)
 - `staging.py` — update/DLC staging for the engine's single-folder input model
-- `gui/` — SwiftUI app (Build + Setup tabs), `swift test` covers payload parsing and arg assembly
+- `gui/` — SwiftUI app (Build + Setup tabs, app icon), `swift test` covers payload parsing,
+  arg assembly and the output-folder default
+
+Version lives in `src/nx2mac/__init__.py` (`VERSION`); pyproject reads it via
+`[tool.hatch.version]`, and `gui/Info.plist` must be bumped alongside it (v0.0.1 at the time of
+writing).
 - `patches/` — engine patch series + README
 
 **Acceptance test passed** (real build, human + `--json` modes):

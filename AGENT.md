@@ -213,7 +213,10 @@ All v1 slices are implemented with unit tests (run: `uv run pytest`, lint: `uv r
 - `remedies.py` / `installer.py` — per-check fixes the CLI can run (`setup --install/--all`)
 - `staging.py` — update/DLC staging for the engine's single-folder input model
 - `library.py` — the game library: per-game folders, `nx2mac.json` manifest, `players.json`,
-  the `--env-file` that keeps the engine's state in the game folder, and the scan for `library --json`
+  the `--env-file` that keeps the engine's state in the game folder, and the scan for
+  `library --json`. The scan lists only **built** games (a folder with a manifest or a `.app`, plus
+  `.app`s directly in the library root); dumps, key files and tool checkouts in the same folder are
+  ignored, because users do point the library at a folder that already holds their dumps.
 - `gui/` — SwiftUI app (Setup, Games, Build tabs, app icon), `swift test` covers payload parsing,
   arg assembly and the output-folder default
 

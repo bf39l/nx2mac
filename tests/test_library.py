@@ -315,3 +315,35 @@ def test_build_env_keeps_everything_inside_the_game_folder(tmp_path: Path) -> No
     assert f"DM_LOG_DIR={directory / 'logs'}" in text
     assert f"DM_SAVE={directory / 'saves'}" in text
     assert "~/Library" not in text and "/Users/" not in text
+
+
+def test_only_built_games_are_listed(tmp_path: Path) -> None:
+    """A library folder also holds dumps, key files and tool checkouts: none are games."""
+    library = _library(tmp_path)
+    # junk that must never appear
+    (library / "0Dead_Cells[0100646009FBE000]").mkdir()  # a dump folder
+    (library / "0Dead_Cells[0100646009FBE000]" / "base.nsp").write_bytes(b"\x00")
+    (library / "nxnative-dev").mkdir()
+    (library / "nup").mkdir()
+    (library / "prod.keys").write_text("k\n", encoding="utf-8")
+    # a real game folder (manifest) and one with only an app
+    built = prepare_game_dir(library, "Dead Cells")
+    write_manifest(built, name="Dead Cells", app_path=built / "Dead Cells.app", title_id="0100646009FBE000",
+                   version="1.25.0", engine_source="fork", engine_ref="fork-customizations",
+                   engine_commit="c" * 40, patches=(), inputs={})
+    (built / "Dead Cells.app").mkdir()
+    loose = library / "Hand Built"
+    (loose / "Something.app" / "Contents").mkdir(parents=True)
+    (loose / "Something.app" / "Contents" / "Info.plist").write_bytes(
+        plistlib.dumps({"CFBundleName": "Something", "CFBundleShortVersionString": "2.0"})
+    )
+    # an app sitting directly in the library root (-o can put it there)
+    (library / "Root Game.app" / "Contents").mkdir(parents=True)
+
+    names = [game.name for game in list_games(library)]
+
+    assert names == ["Dead Cells", "Something", "Root Game"] or set(names) == {"Dead Cells", "Something", "Root Game"}
+    assert not ({"0Dead_Cells[0100646009FBE000]", "nxnative-dev", "nup"} & set(names))
+    by_name = {game.name: game for game in list_games(library)}
+    assert by_name["Something"].version == "2.0" and by_name["Something"].app_path is not None
+    assert by_name["Root Game"].path == library

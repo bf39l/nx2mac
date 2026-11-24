@@ -396,33 +396,64 @@ def read_manifest(game_directory: Path) -> dict[str, object] | None:
     return data if isinstance(data, dict) else None
 
 
+def _entry(directory: Path, app: Path | None) -> GameEntry:
+    """One library entry, from its manifest when present, else from the app itself."""
+    manifest = read_manifest(directory) or {}
+    app_str = manifest.get("app")
+    if isinstance(app_str, str) and Path(app_str).is_dir():
+        app = Path(app_str)
+    engine = manifest.get("engine") if isinstance(manifest.get("engine"), dict) else {}
+    patches = engine.get("patches") if isinstance(engine, dict) else None
+
+    # A game built before the manifest existed (or moved in by hand) still shows
+    # its real name/version: they are in the bundle's Info.plist.
+    metadata: dict[str, str | None] = {}
+    if app is not None and not manifest:
+        metadata = app_metadata(app)
+
+    return GameEntry(
+        name=str(manifest.get("name") or metadata.get("name") or (app.stem if app else directory.name)),
+        path=directory,
+        app_path=app,
+        title_id=manifest.get("title_id") or metadata.get("title_id"),  # type: ignore[arg-type]
+        version=manifest.get("version") or metadata.get("version"),  # type: ignore[arg-type]
+        engine_commit=engine.get("commit") if isinstance(engine, dict) else None,
+        engine_ref=engine.get("ref") if isinstance(engine, dict) else None,
+        built_at=manifest.get("built_at"),  # type: ignore[arg-type]
+        last_played=manifest.get("last_played"),  # type: ignore[arg-type]
+        patches=tuple(str(p) for p in patches) if isinstance(patches, list) else (),
+    )
+
+
+def _is_game_folder(directory: Path) -> bool:
+    """A built game: nx2mac's manifest, or an app bundle somebody built/put here."""
+    if (directory / MANIFEST_NAME).is_file():
+        return True
+    return any(directory.glob("*.app"))
+
+
 def list_games(library: Path) -> list[GameEntry]:
-    """Every built game in the library, newest build first."""
+    """Every *built* game in the library, newest build first.
+
+    Only folders that hold a build (an `nx2mac.json` manifest or a `.app`) count —
+    a library folder routinely also holds dumps, key files and tool checkouts, and
+    those must not show up as games. Apps sitting directly in the library root are
+    listed too, since `-o` can put them there.
+    """
     entries: list[GameEntry] = []
+    if not library.is_dir():
+        return entries
+
     for directory in sorted(library.iterdir()):
         if not directory.is_dir() or directory.name.startswith("."):
             continue
-        manifest = read_manifest(directory) or {}
-        app = next(iter(sorted(directory.glob("*.app"))), None)
-        app_str = manifest.get("app")
-        if isinstance(app_str, str) and Path(app_str).is_dir():
-            app = Path(app_str)
-        engine = manifest.get("engine") if isinstance(manifest.get("engine"), dict) else {}
-        patches = engine.get("patches") if isinstance(engine, dict) else None
-        entries.append(
-            GameEntry(
-                name=str(manifest.get("name") or (app.stem if app else directory.name)),
-                path=directory,
-                app_path=app,
-                title_id=manifest.get("title_id"),  # type: ignore[arg-type]
-                version=manifest.get("version"),  # type: ignore[arg-type]
-                engine_commit=engine.get("commit") if isinstance(engine, dict) else None,
-                engine_ref=engine.get("ref") if isinstance(engine, dict) else None,
-                built_at=manifest.get("built_at"),  # type: ignore[arg-type]
-                last_played=manifest.get("last_played"),  # type: ignore[arg-type]
-                patches=tuple(str(p) for p in patches) if isinstance(patches, list) else (),
-            )
-        )
+        if not _is_game_folder(directory):
+            continue
+        entries.append(_entry(directory, next(iter(sorted(directory.glob("*.app"))), None)))
+
+    for app in sorted(library.glob("*.app")):
+        entries.append(_entry(library, app))
+
     # "Recently played" first (like NX2Apple), then newest build, then name.
     entries.sort(key=lambda entry: (entry.last_played or "", entry.built_at or "", entry.name), reverse=True)
     return entries

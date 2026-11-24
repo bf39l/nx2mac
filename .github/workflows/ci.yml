@@ -1,27 +1,51 @@
 name: CI
 
 # Policy:
-#   pull_request        -> lint, test, and build (a new commit cancels the previous run)
-#   push to main        -> the same; runs are never cancelled by a later push, so a build that
-#                          waited in the macOS runner queue still gets to finish
-#   tag vX.Y.Z          -> see release.yml, which publishes the release
+#   pull_request  -> lint, test, and build (a newer commit cancels the previous run)
+#   push to main  -> the same, and the release build is uploaded as an artifact; runs are never
+#                    cancelled by a later push, so a job that waited in the macOS queue finishes
+#   tag vX.Y.Z    -> see release.yml, which publishes the release
 on:
   pull_request:
   push:
     branches: [main]
   workflow_dispatch:
 
-# One runner per ref: a push no longer kills a queued/running job (that looked like a hang).
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build:
-    name: CLI + GUI on macOS
-    # Apple silicon: the engine and the frozen CLI are arm64 only.
+  # The CLI is pure Python (every check runs through the fake Env in tests): Linux gives fast
+  # feedback instead of waiting for an Apple-silicon runner.
+  cli:
+    name: CLI (ruff + pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --locked
+      - name: Lint
+        run: uv run ruff check src/ tests/
+      - name: Test
+        run: uv run pytest -q
+      - name: Smoke test the CLI
+        run: |
+          uv run nx2mac version
+          uv run nx2mac version --json
+          uv run nx2mac --help >/dev/null
+          uv run nx2mac probe --help >/dev/null
+          uv run nx2mac doctor --json | head -c 200 || true   # doctor exits 1 off macOS, by design
+          echo
+
+  # The GUI needs Xcode and an arm64 runner; this is the job that can sit in GitHub's queue.
+  gui:
+    name: GUI (swift build + test + release build)
     runs-on: macos-15
-    # A stuck job fails instead of hanging for the 6-hour default.
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -33,29 +57,14 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Install
-        run: uv sync --locked
-
-      - name: Lint
-        run: uv run ruff check src/ tests/
-
-      - name: Test the CLI
-        run: uv run pytest -q
-
-      - name: Smoke test the CLI
-        run: |
-          uv run nx2mac version
-          uv run nx2mac version --json
-          uv run nx2mac --help >/dev/null
-          uv run nx2mac doctor --json | head -c 200; echo
-
-      - name: Build the GUI
+      - run: uv sync --locked
+      - name: Build
         run: swift build --package-path gui
-
-      - name: Test the GUI
+      - name: Test
         run: swift test --package-path gui
 
-      - name: Assemble the app bundle (freezes the CLI inside it)
+      # Also freezes the CLI into Contents/Resources/cli, exactly like a release.
+      - name: Assemble the app bundle
         run: ./gui/build.sh release dist
 
       - name: Smoke test the bundled CLI

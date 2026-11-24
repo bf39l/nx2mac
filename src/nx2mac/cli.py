@@ -19,6 +19,7 @@ from rich.table import Table
 from . import VERSION, emit
 from . import library as library_mod
 from .builder import BuildError, run_build
+from .cheats import CheatToolError, reanchor
 from .config import cache_root, primary_library
 from .config import load as load_config
 from .config import save as save_config
@@ -26,7 +27,7 @@ from .doctor import DoctorContext, DoctorReport, run_checks
 from .engines import EngineError, EngineSource, all_sources, describe, ensure_checkout, source_by_id
 from .installer import InstallResult, install
 from .probe import probe as probe_path
-from .pyenv import PyEnvError
+from .pyenv import PyEnvError, ensure_venv
 from .remedies import Remedy, installable_names, remedy_for
 from .runner import Env, RealEnv
 
@@ -468,8 +469,15 @@ def cheats(
     game: str | None = typer.Option(None, "--game", metavar="GAME", help="the game (default: every game)."),
     enable: list[str] = typer.Option([], "--enable", metavar="NAME", help="switch a cheat on."),
     disable: list[str] = typer.Option([], "--disable", metavar="NAME", help="switch a cheat off."),
+    library: Path | None = typer.Option(None, "--library", metavar="DIR", help="only this library."),
     import_from: list[Path] = typer.Option(
         [], "--import", metavar="FILE", help="copy a cheat file (and its .meta.tsv) into the game's cheats folder."
+    ),
+    compile_file: list[Path] = typer.Option(
+        [],
+        "--compile",
+        metavar="FILE",
+        help="re-anchor a cheat file to this build with the engine's cheat_anchor.py (needs a build's extract).",
     ),
     off: bool = typer.Option(False, "--off", help="master switch: no cheat runs at all."),
     on: bool = typer.Option(False, "--on", help="clear the master switch again."),
@@ -480,7 +488,9 @@ def cheats(
     """List a game's cheat files and which switches are on (what the in-game Cheats menu writes)."""
     machine_readable = _enter(ctx, json_flag)
     cfg = load_config()
-    libraries = [Path(entry) for entry in cfg.library_dirs]
+    libraries = [library_mod.require_library(library)] if library is not None else [
+        Path(entry) for entry in cfg.library_dirs
+    ]
     if not libraries:
         _fail(ctx, "no game library set; add one with `nx2mac library --add <folder>`")
 
@@ -505,6 +515,37 @@ def cheats(
                 library_mod.import_cheats(directory, entry.title_id, import_from)
             except library_mod.LibraryError as error:
                 _fail(ctx, str(error))
+
+        if compile_file:
+            main = library_mod.extracted_main(directory, entry.title_id)
+            if main is None:
+                _fail(ctx, f"no extracted game files for {entry.name}; build it once "
+                           "(the engine keeps ExeFS/main under <game>/build/extract)")
+            engine = library_mod.require_library(directory)
+            script = None
+            for candidate in sorted((cache_root().expanduser() / "engines").glob("*/scripts/cheat_anchor.py")):
+                script = candidate
+            if script is None:
+                _fail(ctx, f"no engine checkout with scripts/cheat_anchor.py under {cache_root() / 'engines'}")
+            venv = ensure_venv(cache_root().expanduser(), env=_get_env())
+            for source in compile_file:
+                toml = library_mod.game_root(engine, entry.title_id) / f"{entry.title_id}.cheats.toml"
+                try:
+                    report = reanchor(
+                        _get_env(),
+                        venv.python,
+                        script,
+                        source.expanduser(),
+                        main,
+                        main,
+                        toml,
+                        library_mod.cheats_dir(engine, entry.title_id),
+                    )
+                except CheatToolError as error:
+                    _fail(ctx, str(error))
+                if not machine_readable:
+                    for line in report:
+                        console.print(f"[dim]{line}[/]")
         if off:
             library_mod.set_cheats_master(directory, entry.title_id, True)
         if on:

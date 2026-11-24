@@ -353,6 +353,31 @@ final class BuildModel: ObservableObject {
         struct Removed: Decodable { let game: String; let path: String }
     }
 
+    /// The game the cheat commands address: the built entry's name, or the input's folder name.
+    var cheatGameName: String? {
+        guard gameURL != nil else { return nil }
+        if let dir = gameDirURL { return dir.lastPathComponent }
+        return gameURL?.deletingPathExtension().lastPathComponent
+    }
+
+    /// Copy cheat files into the game's cheats folder.
+    func importCheats(_ urls: [URL]) async {
+        guard let cli, let game = cheatGameName else { return }
+        for url in urls {
+            _ = try? await Self.run(cli, ["cheats", "--game", game, "--import", url.path, "--json"])
+        }
+    }
+
+    /// Re-anchor a cheat file to this build with the engine's cheat_anchor.py.
+    func reanchorCheats(_ url: URL) async {
+        guard let cli, let game = cheatGameName else { return }
+        log.append("Re-anchoring \(url.lastPathComponent) for this build …")
+        guard let result = try? await Self.run(cli, ["cheats", "--game", game, "--compile", url.path]) else { return }
+        for line in (result.stdout + result.stderr).split(separator: "\n") {
+            log.append(String(line))
+        }
+    }
+
     /// Read a game's cheat files, their switches and the engine's master/safe flags.
     func cheats(for game: LibraryGame) async -> (builds: [CheatBuild], state: CheatsState) {
         guard let cli else { return ([], .unknown) }

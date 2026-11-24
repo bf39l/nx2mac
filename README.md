@@ -198,7 +198,13 @@ nx2mac_game_lib/<TITLEID>/mods/cheats/
 
 ```bash
 nx2mac cheats --game "Dead Cells" --import ~/Downloads/6E35EE0A24029143.txt
+nx2mac cheats --game "Dead Cells" --compile ~/Downloads/6E35EE0A24029143.txt   # re-anchor it
 ```
+
+`--compile` runs the engine's `scripts/cheat_anchor.py` (`import` then `compile`) against the
+`ExeFS/main` the last build extracted (`<game>/build/extract/<version>/ExeFS/main`), which rewrites
+every address in terms of this build's code and writes the result into the game's cheats folder.
+Both commands are in the **Build** tab too (*Cheats → Import… / Re-anchor…*).
 
 A cheat file is **never** a build input: the app is built once, and the host reads this folder at
 launch (that is also how NX2Apple works — its Import only copies the file into

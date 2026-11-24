@@ -991,6 +991,21 @@ def clear_safe_mode(library: Path, title_id: str) -> bool:
     return existed
 
 
+def extracted_main(library: Path, title_id: str) -> Path | None:
+    """The game's `ExeFS/main` from the last build (what cheat_anchor.py anchors addresses in)."""
+    build = game_root(library, title_id) / "build" / "extract"
+    if not build.is_dir():
+        return None
+    candidates = sorted(build.glob("*/ExeFS/main"), reverse=True)
+    return candidates[0] if candidates else None
+
+
+def cheat_anchor_script(engine_root: Path) -> Path | None:
+    """The engine's tool that re-anchors a cheat file to a build (`scripts/cheat_anchor.py`)."""
+    script = engine_root / "scripts" / "cheat_anchor.py"
+    return script if script.is_file() else None
+
+
 def import_cheats(library: Path, title_id: str, sources: Sequence[Path], enable: bool = False) -> list[Path]:
     """Copy cheat files (`<build id>.txt`, and a sibling `.meta.tsv`) into the game's folder.
 

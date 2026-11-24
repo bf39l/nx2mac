@@ -87,6 +87,17 @@ struct BuildTab: View {
             }
             selectionList(model.dlcURLs) { index in model.dlcURLs.remove(at: index) }
 
+            row(title: "Cheats") {
+                Text("cheat files live with the game; import one or re-anchor it for this build")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Import…") { importCheats() }
+                    .disabled(model.cheatGameName == nil)
+                Button("Re-anchor…") { reanchorCheats() }
+                    .disabled(model.cheatGameName == nil)
+            }
+
             row(title: "Output folder") {
                 HStack(spacing: 6) {
                     pathLabel(model.outDirURL?.path ?? "the game library, or a folder you choose",
@@ -417,6 +428,30 @@ extension BuildTab {
         panel.prompt = "Use these keys"
         panel.message = "Pick prod.keys (one console's key set decrypts that console's games)."
         if panel.runModal() == .OK, let url = panel.url { model.keysURL = url }
+    }
+
+    /// Copy one or more cheat files into the selected game's cheats folder.
+    private func importCheats() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        panel.message = "Cheat files are named after the game's build ID (16 hex digits)."
+        panel.prompt = "Import"
+        if panel.runModal() == .OK { Task { await model.importCheats(panel.urls) } }
+    }
+
+    /// Re-anchor a cheat file for this build (the engine's cheat_anchor.py; needs a build's extract).
+    private func reanchorCheats() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.message = "A cheat file written for another build: its addresses are re-anchored to this one."
+        panel.prompt = "Re-anchor"
+        if panel.runModal() == .OK, let url = panel.url {
+            Task { await model.reanchorCheats(url) }
+        }
     }
 
     /// The update package (one file; a folder picks the newest update inside it).

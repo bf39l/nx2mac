@@ -571,3 +571,26 @@ final class LiveBuildTests: XCTestCase {
         }
     }
 }
+
+final class ProgressUpdateTests: XCTestCase {
+    func testDecodesTheCliProgressEvent() throws {
+        let line = """
+        {"event": "progress", "kind": "progress", "index": 5, "stages": 7, "stage": "Mac shaders",
+         "step": "compiling", "done": 1203, "total": 19592, "unit": "shaders"}
+        """
+
+        guard case .progress(let update)? = BuildEvent.parse(line) else {
+            return XCTFail("expected a progress event")
+        }
+        XCTAssertEqual(update.label, "5/7 Mac shaders · compiling 1,203/19,592 shaders")
+    }
+
+    func testStageEventHasNoCountYet() {
+        let line = #"{"event": "progress", "kind": "stage", "index": 4, "stages": 7, "stage": "shader split"}"#
+
+        guard case .progress(let update)? = BuildEvent.parse(line) else {
+            return XCTFail("expected a progress event")
+        }
+        XCTAssertEqual(update.label, "4/7 shader split")
+    }
+}

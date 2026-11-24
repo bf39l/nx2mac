@@ -25,9 +25,13 @@ def emit(payload: dict[str, Any]) -> None:
     print(json.dumps(payload, ensure_ascii=False, default=str), flush=True)
 
 
-def event(kind: str, **fields: Any) -> None:
-    """Write one NDJSON event line to stdout (`build --json`)."""
-    emit({"event": kind, **fields})
+def event(ev: str, **fields: Any) -> None:
+    """Write one NDJSON event line to stdout (`build --json`).
+
+    The event name binds to `ev`, not `kind`, so a payload may carry its own `kind` field
+    (the engine's progress events do: stage / step / progress / stage_end).
+    """
+    emit({"event": ev, **fields})
 
 
 def log_line(line: str) -> None:

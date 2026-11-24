@@ -495,3 +495,24 @@ def test_cheats_work_before_the_game_is_built(isolated_paths: Path, monkeypatch:
     assert build["file"].endswith("0123456789ABCDEF.txt")
     assert [cheat["name"] for cheat in build["cheats"]] == ["Max gold"]
     assert (library / "nx2mac_game_lib" / "0100646009FBE000" / "mods" / "cheats").is_dir()
+
+
+def test_build_json_emits_progress_events(isolated_paths: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The engine's --progress json is translated: a log line and a progress event for the UI."""
+    tmp = isolated_paths
+    env = _make_env(tmp)
+    env.stream_lines = [
+        '{"ev": "stage", "k": 6, "n": 8, "name": "Mac shaders", "step": "compiling"}',
+        '{"ev": "progress", "k": 6, "name": "Mac shaders", "step": "compiling", "done": 721, '
+        '"total": 1262, "unit": "shaders"}',
+    ]
+    _prepare_checkout(tmp)
+    monkeypatch.setattr(cli_module, "_get_env", lambda: env)
+
+    result = runner.invoke(app, ["build", str(_game(tmp)), "--json"])
+    events = _ndjson(result)
+
+    progress = [event for event in events if event["event"] == "progress"]
+    assert progress and progress[0]["index"] == 6 and progress[0]["stages"] == 8
+    assert progress[-1]["done"] == 721 and progress[-1]["total"] == 1262 and progress[-1]["unit"] == "shaders"
+    assert any("721/1,262 shaders" in event["line"] for event in events if event["event"] == "log")

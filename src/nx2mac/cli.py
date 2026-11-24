@@ -27,6 +27,7 @@ from .doctor import DoctorContext, DoctorReport, run_checks
 from .engines import EngineError, EngineSource, all_sources, describe, ensure_checkout, source_by_id
 from .installer import InstallResult, install
 from .probe import probe as probe_path
+from .progress import Translator
 from .pyenv import PyEnvError, ensure_venv
 from .remedies import Remedy, installable_names, remedy_for
 from .runner import Env, RealEnv
@@ -890,6 +891,12 @@ def build(
     if allow_shader_regressions:
         allowed.append("--allow-shader-regressions")
 
+    translator = Translator(
+        on_log=emit.log_line if machine_readable else console.print,
+        on_event=(lambda kind, fields: emit.event(kind, **fields)) if machine_readable else None,
+    )
+    stream = translator.feed
+
     def attempt(extra: list[str]):
         return run_build(
             _get_env(),
@@ -898,7 +905,7 @@ def build(
             game_dir,
             prod_keys=keys,
             output=output,
-            on_line=emit.log_line if machine_readable else None,
+            on_line=stream,
             updates=update,
             dlcs=dlc,
             out_dir=out_dir,

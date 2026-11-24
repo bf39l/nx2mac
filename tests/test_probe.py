@@ -120,3 +120,58 @@ def test_probe_without_an_update_reports_none(tmp_path: Path) -> None:
     game = _folder(tmp_path, ("Game_0100646009FBE000.nsp",))
 
     assert probe(game).update is None
+
+
+# The engine's --progress json stream, as build_ipa_from_nsp.py prints it.
+STAGE = '{"ev": "stage", "k": 5, "n": 7, "name": "Mac shaders", "step": "compiling", "t": 1.0}'
+STEP = '{"ev": "step", "k": 5, "name": "Mac shaders", "step": "cache check"}'
+PROGRESS = ('{"ev": "progress", "k": 5, "name": "Mac shaders", "step": "compiling", "done": 1203, '
+            '"total": 19592, "unit": "shaders", "frac": 0.06, "eta": 42.0}')
+END = '{"ev": "stage_end", "k": 5, "name": "Mac shaders", "ok": true, "summary": "19,592 of 19,592 shaders ready", "elapsed": 300}'
+SAY = '{"ev": "say", "msg": "[RED] something worth reading"}'
+
+
+def test_translator_turns_engine_progress_into_lines_and_events() -> None:
+    from nx2mac.progress import Translator
+
+    lines: list[str] = []
+    events: list[dict[str, object]] = []
+    translator = Translator(lines.append, lambda kind, fields: events.append(fields), interval=0)
+
+    translator.feed(STAGE)
+    translator.feed(PROGRESS)
+    translator.feed(END)
+
+    assert lines[0] == "[5/7 Mac shaders] · compiling …"
+    assert "1,203/19,592 shaders" in lines[1]  # compiled out of total, in the log
+    assert lines[2].startswith("✓ [5/7 Mac shaders] (5:00): 19,592 of 19,592 shaders ready")
+    assert [event["kind"] for event in events] == ["stage", "progress", "stage_end"]
+    assert events[1]["done"] == 1203 and events[1]["total"] == 19592 and events[1]["index"] == 5
+
+
+def test_translator_throttles_the_log_but_not_the_events() -> None:
+    from nx2mac.progress import Translator
+
+    lines: list[str] = []
+    events: list[dict[str, object]] = []
+    translator = Translator(lines.append, lambda kind, fields: events.append(fields), interval=60)
+
+    translator.feed(STAGE)
+    for done in (10, 20, 30):
+        translator.feed(PROGRESS.replace("1203", str(done)))
+
+    # the stage line, then the first counter; the rest of the burst is throttled
+    assert len(lines) == 2 and "10/19,592" in lines[1]
+    assert len([event for event in events if event["kind"] == "progress"]) == 3
+
+
+def test_translator_shows_say_lines_and_plain_text() -> None:
+    from nx2mac.progress import Translator
+
+    lines: list[str] = []
+    translator = Translator(lines.append, None)
+
+    translator.feed(SAY)
+    translator.feed("plain engine output")
+
+    assert lines == ["[RED] something worth reading", "plain engine output"]

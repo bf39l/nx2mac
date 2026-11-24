@@ -739,6 +739,9 @@ final class BuildModel: ObservableObject {
         case .engine(let engine):
             pinned = engine
             appendLog("Engine: \(engine.source.label) — \(engine.summary)")
+        case .progress(let update):
+            // The engine's live counters: shaders compiled out of the total, files copied, …
+            if let label = Optional(update.label), !label.isEmpty { stage = label }
         case .log(let text):
             appendLog(text)
         case .error(let message):

@@ -101,6 +101,8 @@ def test_build_argv_shape(tmp_path: Path) -> None:
         "mac-app",
         "-o",
         str(tmp_path / "Out.app"),
+        "--progress",
+        "json",  # the engine's counters reach the UI live
         # extra engine flags pass through verbatim, last
         "--gpu",
         "g18p",

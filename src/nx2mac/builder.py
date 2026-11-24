@@ -129,6 +129,8 @@ def build_argv(
         args.extend(["--env-file", str(env_file)])
     if output is not None:
         args.extend(["-o", str(output)])
+    # One JSON object per line: counters (shaders compiled, files copied) reach the UI live.
+    args.extend(["--progress", "json"])
     args.extend(extra_args)
     return args
 

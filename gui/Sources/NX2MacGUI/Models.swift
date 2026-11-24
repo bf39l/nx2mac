@@ -135,9 +135,45 @@ struct BuildResult: Hashable {
     }
 }
 
+/// A live counter from the engine: which stage it is, and how far a step has got
+/// (`5/7 Mac shaders · compiling: 1,203/19,592 shaders`).
+struct ProgressUpdate: Decodable, Hashable {
+    let kind: String  // stage | step | progress | stage_end
+    let index: Int?
+    let stages: Int?
+    let stage: String?
+    let step: String?
+    let done: Double?
+    let total: Double?
+    let unit: String?
+    let note: String?
+
+    /// "5/7 Mac shaders · 1,203/19,592 shaders" — what the build button shows while it runs.
+    var label: String {
+        var head = ""
+        if let index, let stages, stages > 0 { head = "\(index)/\(stages) " }
+        head += stage ?? ""
+        var detail = step.map { $0.isEmpty ? "" : $0 } ?? ""
+        if let done {
+            let counter = total.map { "\(Self.number(done))/\(Self.number($0))" } ?? Self.number(done)
+            let counted = unit.map { "\(counter) \($0)" } ?? counter
+            detail = detail.isEmpty ? counted : "\(detail) \(counted)"
+        }
+        if !detail.isEmpty { head += " · " + detail }
+        return head.trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func number(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: value)) ?? String(Int(value))
+    }
+}
+
 /// One line of `build --json` (newline-delimited JSON).
 enum BuildEvent: Hashable {
     case engine(ResolvedEngine)
+    case progress(ProgressUpdate)
     case log(String)
     case result(BuildResult)
     case error(String)
@@ -150,6 +186,8 @@ enum BuildEvent: Hashable {
     private struct EngineEnvelope: Decodable { let engine: ResolvedEngine }
     private struct LogEnvelope: Decodable { let line: String }
     private struct ErrorEnvelope: Decodable { let message: String }
+    private struct ProgressEnvelope: Decodable { let progress: ProgressUpdate }
+    private struct FlatProgressEnvelope: Decodable {}  // unused: progress events are flat
 
     private struct ResultEnvelope: Decodable {
         let ok: Bool
@@ -178,6 +216,9 @@ enum BuildEvent: Hashable {
         case "log":
             guard let payload = try? decoder.decode(LogEnvelope.self, from: data) else { return .unknown(trimmed) }
             return .log(payload.line)
+        case "progress":
+            guard let payload = try? decoder.decode(ProgressUpdate.self, from: data) else { return .unknown(trimmed) }
+            return .progress(payload)
         case "error":
             guard let payload = try? decoder.decode(ErrorEnvelope.self, from: data) else { return .unknown(trimmed) }
             return .error(payload.message)

@@ -142,9 +142,9 @@ def _disable_unrunnable_switches(cheats_dir: Path) -> list[str]:
     """Turn off the switches the compile proved cannot apply, i.e. entries with `no anchors`.
 
     Only that: an unanchored address belongs to another build, so the write lands on unrelated code.
-    A `kind=patch` entry that anchored (`exact`) is left alone — Dead Cells' `無限血量` is one and
-    works on the port. An earlier version switched every patch off here, which silently dropped a
-    working toggle after the next build; that is the regression this note exists to prevent.
+    An anchored entry that still cannot run (a `udf` sentinel, or a write into a changed word) is
+    caught at listing/enable time by `cheat_blocked_reason`, not here — `.enabled` is the engine's
+    own file and those entries must not be silently dropped from it.
     """
     reports: list[str] = []
     for meta_file in sorted(cheats_dir.glob("*.meta.tsv")):
@@ -178,11 +178,11 @@ def _disable_unrunnable_switches(cheats_dir: Path) -> list[str]:
 
 
 def _code_patch_warning(cheats_dir: Path) -> list[str]:
-    """Say it once when every switchable cheat of a file patches instructions.
+    """Say it once when every switchable cheat of a file is an ASM patch.
 
-    The Mac port runs code its rewriter produced, so a cheat that puts the Switch's instructions back
-    cannot work — it either does nothing or takes the game down. Data cheats (values) are the ones
-    that survive a port.
+    Such packs write a patched word (often an `udf` sentinel) whose redirector lives in the master;
+    on the Mac the rewriter breaks that redirector, so the entries are listed as blocked. Data
+    cheats (values) are the ones that always survive a port.
     """
     for txt in sorted(cheats_dir.glob("*.txt")):
         meta_file = txt.with_suffix(".meta.tsv")
@@ -205,8 +205,8 @@ def _code_patch_warning(cheats_dir: Path) -> list[str]:
         if switchable and len(switchable) == len(body):
             return [
                 (
-                    f"{txt.name}: every cheat here patches code, and this port's rewriter owns that "
-                    "code — expect a crash; only data cheats (values) survive a port"
+                    f"{txt.name}: every cheat here is an ASM patch, and its redirector cannot anchor "
+                    "on the Mac — they are listed as blocked; only data cheats (values) survive a port"
                 )
             ]
     return []

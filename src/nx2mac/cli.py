@@ -566,9 +566,6 @@ def cheats(
     restore_safe: bool = typer.Option(
         False, "--restore-safe", help="drop the unclean-exit marker so the saved switches apply again."
     ),
-    forget_crashes: bool = typer.Option(
-        False, "--forget-crashes", help="forget which cheats were on when the game last died."
-    ),
 ) -> None:
     """List a game's cheat files and which switches are on (what the in-game Cheats menu writes)."""
     machine_readable = _enter(ctx, json_flag)
@@ -620,14 +617,9 @@ def cheats(
             library_mod.set_cheats_master(directory, entry.title_id, False)
         if restore_safe:
             library_mod.clear_safe_mode(directory, entry.title_id)
-        if forget_crashes:
-            library_mod.forget_crashes(directory, entry.title_id)
-        # Evidence from the last run: the engine starts every cheat off only after an unclean exit
-        # with switches on, and those switches are the ones that went down with it.
-        if not machine_readable:
-            for name in library_mod.note_crashes(directory, entry.title_id):
-                console.print(f"[yellow]the last run died with {name} on — switched off until "
-                              f"`--forget-crashes` clears it (or `--force` to try again)[/]")
+        for name in library_mod.clear_blocked_switches(directory, entry.title_id):
+            if not machine_readable:
+                console.print(f"[yellow]switched off {name} — it cannot run on this port[/]")
         builds = library_mod.cheat_builds(directory, entry.title_id)
         if enable or disable:
             for build in builds:

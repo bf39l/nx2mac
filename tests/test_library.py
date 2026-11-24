@@ -698,12 +698,13 @@ def test_only_a_switch_that_could_not_be_anchored_is_turned_off(tmp_path: Path) 
 
 
 
-def test_an_anchored_patch_stays_switchable_with_a_warning(tmp_path: Path) -> None:
-    """`kind=patch` + `resolved=exact` is allowed: the tool found the code it patches in this build.
+def test_a_patch_that_writes_udf_is_blocked(tmp_path: Path) -> None:
+    """`kind=patch` + `exact`, but the patched word is `udf #0x5431`.
 
-    Dead Cells' `無限血量` is such an entry and works on the port. Blocking every patch was wrong;
-    "0 of 13 writes into the code put back the word already there" is not a verdict — that count is
-    of *restore* writes, and a file of pure patches writes different words by design.
+    That sentinel only works while the master redirects execution around it, and the redirector
+    cannot anchor on the Mac, so the `udf` executes and kills the host (Dead Cells' `無限血量`
+    exited 132). Anchoring `exact` only proves the tool found the code — not that the write is
+    survivable.
     """
     library = _library(tmp_path)
     folder = cheats_dir(library, TID)
@@ -719,10 +720,11 @@ def test_an_anchored_patch_stays_switchable_with_a_warning(tmp_path: Path) -> No
     )
 
     listed = cheat_builds(library, TID)[0]["cheats"][0]  # type: ignore[index]
-    assert listed["blocked"] is None
-    assert "writes code" in str(listed["warning"])
+    assert "undefined instruction" in str(listed["blocked"])
 
-    set_cheat(library, TID, "0123456789ABCDEF", "無限血量", True)
+    with pytest.raises(LibraryError, match="undefined instruction"):
+        set_cheat(library, TID, "0123456789ABCDEF", "無限血量", True)
+    set_cheat(library, TID, "0123456789ABCDEF", "無限血量", True, force=True)
     assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "無限血量\n"
 
 
@@ -745,40 +747,31 @@ def test_a_code_patch_that_anchored_may_be_enabled_with_a_warning(tmp_path: Path
     assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "ZR health\n"
 
 
-def test_a_crash_blocks_the_cheat_that_was_on(tmp_path: Path) -> None:
-    """Anchored `exact` + the game died with it on = blocked, listed, and said why.
+def test_a_code_write_into_a_changed_word_is_blocked(tmp_path: Path) -> None:
+    """`kind=code` anchored `exact`, but the write lands in `main.changed.tsv`: the host refuses it.
 
-    The engine sets its safe-mode marker only after an unclean exit while cheats were on, so the
-    marker plus `.enabled` is evidence about those entries — and evidence is what overrides an
-    otherwise fine `exact` anchor.
+    The rewriter lists the text words it changed or moved there; a patch into one would undo a site
+    or never run (hle_cheats.c `dm_changed_hit`), so it is blocked before launch.
     """
-    from nx2mac.library import forget_crashes, note_crashes, safe_mode_marker
-
     library = _library(tmp_path)
     folder = cheats_dir(library, TID)
     folder.mkdir(parents=True)
-    (folder / "0123456789ABCDEF.txt").write_text("[HP]\n04000000 0013AA2C 00005431\n", encoding="utf-8")
+    (folder / "0123456789ABCDEF.txt").write_text("[HP]\n04000000 0013AA2C 4B140108\n", encoding="utf-8")
     (folder / "0123456789ABCDEF.meta.tsv").write_text(
         "name\tkind\tsection\ttype\taction\tvalue\task\tvalue_words\tonce\tpair\tresolved\tnote\taddress\n"
-        "HP\tpatch\t\t\t\t\t\t\t\t\texact\t\t\n",
+        "HP\tcode\t\t\t\t\t\t\t\t\texact\t\t\n",
         encoding="utf-8",
     )
-    (folder / "0123456789ABCDEF.enabled").write_text("HP\n", encoding="utf-8")
-    safe_mode_marker(library, TID).write_text("", encoding="utf-8")  # a crashed run left this
-
-    assert note_crashes(library, TID) == ["HP"]
-    # the switch is off now, so clearing the engine's safe mode cannot re-run it
-    assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == ""
-    # reading again does not count the same crash twice
-    assert note_crashes(library, TID) == []
+    patched = build_dir(library, TID) / "patched_v1"
+    patched.mkdir(parents=True)
+    (patched / "main.changed.tsv").write_text(
+        "# BUILD_ID\t0123456789abcdef\n0x13aa2c\t0x4\n", encoding="utf-8"
+    )
 
     listed = cheat_builds(library, TID)[0]["cheats"][0]  # type: ignore[index]
-    assert "uncleanly with this on once" in str(listed["blocked"])
-    with pytest.raises(LibraryError, match="uncleanly"):
+    assert "changed or moved" in str(listed["blocked"])
+
+    with pytest.raises(LibraryError, match="changed or moved"):
         set_cheat(library, TID, "0123456789ABCDEF", "HP", True)
     set_cheat(library, TID, "0123456789ABCDEF", "HP", True, force=True)
     assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "HP\n"
-
-    # forgetting the history makes it switchable again
-    assert forget_crashes(library, TID) is True
-    assert cheat_builds(library, TID)[0]["cheats"][0]["blocked"] is None  # type: ignore[index]

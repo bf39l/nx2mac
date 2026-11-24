@@ -451,6 +451,13 @@ def test_cheat_files_and_switches_round_trip(tmp_path: Path) -> None:
         "[Unlimited health]\n01000000 00000000\n[Max gold]\n02000000 00000000\n",
         encoding="utf-8",
     )
+    # Both are anchored data writes: the pipeline only allows switching on what it has checked.
+    (folder / "0123456789ABCDEF.meta.tsv").write_text(
+        "name\tkind\tsection\ttype\taction\tvalue\task\tvalue_words\tonce\tpair\tresolved\tnote\taddress\n"
+        "Unlimited health\tdata\t\t\t\t\t\t\t\t\t0x1000\t\t\n"
+        "Max gold\tdata\t\t\t\t\t\t\t\t\t0x2000\t\t\n",
+        encoding="utf-8",
+    )
 
     builds = cheat_builds(library, TID)
 
@@ -498,6 +505,12 @@ def test_enabling_a_duplicate_uses_its_hash_key(tmp_path: Path) -> None:
     folder.mkdir(parents=True)
     (folder / "0123456789ABCDEF.txt").write_text(
         "[Max HP]\n02000000 00000000\n[Max HP]\n02000000 00000000\n", encoding="utf-8"
+    )
+    (folder / "0123456789ABCDEF.meta.tsv").write_text(
+        "name\tkind\tsection\ttype\taction\tvalue\task\tvalue_words\tonce\tpair\tresolved\tnote\taddress\n"
+        "Max HP\tdata\t\t\t\t\t\t\t\t\t0x1000\t\t\n"
+        "Max HP\tdata\t\t\t\t\t\t\t\t\t0x1004\t\t\n",
+        encoding="utf-8",
     )
 
     set_cheat(library, TID, "0123456789ABCDEF", "Max HP #2", True)
@@ -659,3 +672,37 @@ def test_a_switch_the_compile_proved_unusable_is_turned_off(tmp_path: Path) -> N
 
     assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "Max gold\n"
     assert any("switched off" in report for report in reports)
+
+
+def test_an_unchecked_cheat_cannot_be_enabled(tmp_path: Path) -> None:
+    """A file that has not been anchored yet is listed but not switchable (it could crash the game)."""
+    library = _library(tmp_path)
+    folder = cheats_dir(library, TID)
+    folder.mkdir(parents=True)
+    (folder / "0123456789ABCDEF.txt").write_text("[ZR health]\n04000000 04800158 4B140108\n", encoding="utf-8")
+
+    build = cheat_builds(library, TID)[0]
+    listed = build["cheats"][0]  # type: ignore[index]
+    assert listed["name"] == "ZR health"  # still listed
+    assert listed["blocked"] and "build the game once" in listed["blocked"]
+
+    with pytest.raises(LibraryError, match="build the game once"):
+        set_cheat(library, TID, "0123456789ABCDEF", "ZR health", True)
+
+
+def test_a_code_patch_cannot_be_enabled_but_force_allows_it(tmp_path: Path) -> None:
+    library = _library(tmp_path)
+    folder = cheats_dir(library, TID)
+    folder.mkdir(parents=True)
+    (folder / "0123456789ABCDEF.txt").write_text("[ZR health]\n04000000 04800158 4B140108\n", encoding="utf-8")
+    (folder / "0123456789ABCDEF.meta.tsv").write_text(
+        "name\tkind\tsection\ttype\taction\tvalue\task\tvalue_words\tonce\tpair\tresolved\tnote\taddress\n"
+        "ZR health\tpatch\t\t\t\t\t\t\t\t\texact\t\t\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(LibraryError, match="code patch"):
+        set_cheat(library, TID, "0123456789ABCDEF", "ZR health", True)
+
+    set_cheat(library, TID, "0123456789ABCDEF", "ZR health", True, force=True)
+    assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "ZR health\n"

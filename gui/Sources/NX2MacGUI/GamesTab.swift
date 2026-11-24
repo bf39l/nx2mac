@@ -477,7 +477,7 @@ private struct CheatsSheet: View {
                                     .font(.caption.monospaced())
                                     .foregroundStyle(.secondary)
                                 ForEach(build.cheats) { cheat in
-                                    if cheat.switchable && !cheat.codePatch {
+                                    if cheat.switchable && cheat.blocked == nil {
                                         Toggle(isOn: Binding(
                                             get: { cheat.enabled },
                                             set: { value in Task { await toggle(cheat, build, value) } }
@@ -495,12 +495,15 @@ private struct CheatsSheet: View {
                                     } else if cheat.kind != "label" {
                                         HStack {
                                             Text(cheat.name).font(.callout)
+                                            if cheat.blocked != nil {
+                                                Image(systemName: "nosign").font(.caption2).foregroundStyle(.orange)
+                                            }
                                             Spacer()
-                                            Text(cheat.codePatch ? "code patch — cannot work here"
-                                                 : cheat.kind == "master" ? "always on"
-                                                 : cheat.broken ? "broken" : "one-pass")
+                                            Text(cheat.blocked
+                                                 ?? (cheat.kind == "master" ? "always on"
+                                                     : cheat.broken ? "broken" : "one-pass"))
                                                 .font(.caption2)
-                                                .foregroundStyle(cheat.codePatch ? Color.orange : Color.secondary)
+                                                .foregroundStyle(cheat.blocked == nil ? Color.secondary : Color.orange)
                                         }
                                     }
                                 }
@@ -547,7 +550,8 @@ private struct CheatsSheet: View {
             entry.key == cheat.key
                 ? CheatEntry(name: entry.name, key: entry.key, kind: entry.kind, section: entry.section,
                              broken: entry.broken, switchable: entry.switchable, enabled: enabled,
-                             resolved: entry.resolved, unanchored: entry.unanchored, codePatch: entry.codePatch)
+                             resolved: entry.resolved, unanchored: entry.unanchored,
+                             codePatch: entry.codePatch, blocked: entry.blocked)
                 : entry
         }
         builds[index] = CheatBuild(build: build.build, file: build.file, enabledFile: build.enabledFile, cheats: updated)

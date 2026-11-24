@@ -405,9 +405,11 @@ struct CheatEntry: Decodable, Identifiable, Hashable {
     let unanchored: Bool
     /// The entry writes instructions into code the port rebuilt: cannot work, crashes the game.
     let codePatch: Bool
+    /// Why this entry may not be switched on here (nil = it may).
+    let blocked: String?
 
     enum CodingKeys: String, CodingKey {
-        case name, key, kind, section, broken, switchable, enabled, resolved, unanchored
+        case name, key, kind, section, broken, switchable, enabled, resolved, unanchored, blocked
         case codePatch = "code_patch"
     }
 

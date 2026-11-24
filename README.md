@@ -271,6 +271,21 @@ and every write is refused. After rebasing, Dead Cells' v1.25.0 file anchored **
 (the master and the hold-a-key `激活修改` stayed build-bound), which is the normal outcome for a
 file whose instructions match the build.
 
+**The filter: listed, but not switchable.** Every entry of a cheat file is shown in the sheet, and
+one nx2mac cannot run is marked with the reason and has **no toggle** (`--enable` refuses it; only
+`--force` overrides, for experiments):
+
+| state | shown as |
+| --- | --- |
+| plain data cheat, anchored (`HP`) | toggle, enabled freely |
+| `code patch` (writes the Switch's instructions) | *"code patch — this port rewrote that code"*, no toggle |
+| `resolved = no anchors` (bound to another build) | *"could not be anchored to this build"*, no toggle |
+| file not compiled yet | *"not checked yet — build the game once…"*, no toggle |
+
+That is what keeps a click from crashing the game: nothing unverified can be switched on, and after
+each build anything the compile proved unusable is switched off automatically
+(`cheats: switched off for <build> (cannot run on this port): …`).
+
 **Unanchored entries are disabled by the compile.** `cheat_anchor.py` marks each entry it could not
 anchor (`resolved = no anchors`) in `<build>.meta.tsv`; nx2mac then removes that entry's code from
 the compiled file, keeping its name. Without that, a *master* (`{Name}`) — which runs on every

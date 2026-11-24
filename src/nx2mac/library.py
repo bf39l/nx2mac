@@ -922,6 +922,25 @@ def parse_cheat_file(text: str, meta: str | None = None) -> list[dict[str, objec
     return entries
 
 
+def cheat_blocked_reason(cheat: dict[str, object]) -> str | None:
+    """Why this entry must not be switched on here, or None when it is safe.
+
+    The three refusals, in the order a build discovers them:
+    * not compiled yet — nothing knows what the entry writes (build the game once);
+    * an instruction patch — the port runs code its rewriter produced;
+    * not anchored — its addresses belong to another build.
+    """
+    if cheat.get("meta_kind") in (None, "") and cheat.get("resolved") in (None, ""):
+        return "not checked yet — build the game once so the cheats can be anchored"
+    if cheat.get("meta_kind") == "patch":
+        return "code patch — this port rewrote that code"
+    if cheat.get("resolved") == "no anchors":
+        return "could not be anchored to this build"
+    if not cheat.get("switchable", True):
+        return "not a switchable cheat"
+    return None
+
+
 def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
     """The cheat files of one game, with their switches and which are on.
 
@@ -941,31 +960,30 @@ def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
         meta_file = folder / f"{build}.meta.tsv"
         meta = meta_file.read_text(encoding="utf-8", errors="replace") if meta_file.is_file() else None
         cheats = parse_cheat_file(txt.read_text(encoding="utf-8", errors="replace"), meta)
+        rows = [
+            {
+                "name": cheat["name"],
+                "key": cheat["key"],
+                "kind": cheat["kind"],
+                "section": cheat["section"],
+                "broken": cheat["broken"],
+                "switchable": cheat["switchable"],
+                "enabled": cheat["key"] in enabled,
+                "resolved": cheat["resolved"],
+                "unanchored": cheat["resolved"] == "no anchors",
+                "code_patch": cheat["meta_kind"] == "patch",
+                "meta_kind": cheat["meta_kind"],
+            }
+            for cheat in cheats
+        ]
+        for row in rows:
+            row["blocked"] = cheat_blocked_reason(row) if row["switchable"] else None
         builds.append(
             {
                 "build": build,
                 "file": str(txt),
                 "enabled_file": str(enabled_file),
-                "cheats": [
-                    {
-                        "name": cheat["name"],
-                        "key": cheat["key"],
-                        "kind": cheat["kind"],
-                        "section": cheat["section"],
-                        "broken": cheat["broken"],
-                        "switchable": cheat["switchable"],
-                        "enabled": cheat["key"] in enabled,
-                        # A cheat_anchor.py compile that could not anchor an address bound it to the
-                        # build it was written for: on this port the write lands nowhere (or on the
-                        # wrong instruction), so the UI marks it as not to be enabled.
-                        "resolved": cheat["resolved"],
-                        "unanchored": cheat["resolved"] == "no anchors",
-                        # "patch"/"code" entries write instructions, and this port's rewriter owns
-                        # that code: they cannot work here even when the address anchors exactly.
-                        "code_patch": cheat["meta_kind"] == "patch",
-                    }
-                    for cheat in cheats
-                ],
+                "cheats": rows,
             }
         )
     return builds
@@ -1199,15 +1217,16 @@ def set_cheat(library: Path, title_id: str, build: str, name: str, enabled: bool
         for cheat in cheats
         if str(cheat["key"]).casefold() == wanted.casefold() or str(cheat["name"]).casefold() == wanted.casefold()
     ]
-    # A code patch writes the Switch's instructions into code this port rebuilt: it does not work and
-    # it takes the game down. Refuse it unless the player insists.
+    # Never switch on something the pipeline knows cannot run (it crashes the game): code patches,
+    # entries a compile could not anchor, or a file that has not been checked yet.
     if enabled and not force:
-        patches = [cheat for cheat in matched if cheat.get("meta_kind") == "patch"]
-        if patches:
-            raise LibraryError(
-                f"{patches[0]['name']} patches the game's code, and this port runs code its rewriter "
-                "produced — it cannot work here and crashes the game. Pass --force to enable it anyway."
-            )
+        for cheat in matched:
+            reason = cheat_blocked_reason({**cheat, "switchable": cheat.get("switchable", True)})
+            if reason is not None:
+                raise LibraryError(
+                    f"{cheat['name']}: {reason} — it would crash the game. "
+                    "Build the game once (that anchors the file), or pass --force to try it anyway."
+                )
     keys = {str(cheat["key"]) for cheat in matched}
     if not keys:
         keys = {wanted}  # no file to read (a hand-written toggle): keep the name as given

@@ -450,9 +450,7 @@ private struct CheatsSheet: View {
                     }
                 )) {
                     Text("Safe mode").font(.callout)
-                    Text(state.safeMode
-                         ? "the last run ended uncleanly with cheats on — every cheat starts off"
-                         : "off: the saved switches apply at launch")
+                    Text(safeModeNote)
                         .font(.caption2)
                         .foregroundStyle(state.safeMode ? Color.orange : Color.secondary)
                 }
@@ -556,9 +554,25 @@ private struct CheatsSheet: View {
     }
 
     /// Flip one switch: the CLI writes `.enabled`, and the local row is updated in place — the
+    /// What "Safe mode" means for the switches below: on, they are ignored this launch.
+    private var safeModeNote: String {
+        let on = builds.flatMap(\.cheats).filter(\.enabled).map(\.name)
+        guard state.safeMode else { return "off: the saved switches apply at launch" }
+        if on.isEmpty {
+            return "on: a run ended uncleanly with cheats on, so every cheat starts off"
+        }
+        return "on: a run ended uncleanly — \(on.joined(separator: ", ")) will NOT run until this is off"
+    }
+
     /// whole list is not re-read for one toggle.
     private func toggle(_ cheat: CheatEntry, _ build: CheatBuild, _ enabled: Bool) async {
         await model.setCheat(cheat, build: build, for: game, enabled: enabled)
+        // Safe mode would ignore that switch at launch, which is not what "on" means to someone
+        // looking at the toggle: turning a cheat on clears the crashed run's marker.
+        if enabled && state.safeMode {
+            await model.restoreCheatSwitches(for: game)
+            await load()
+        }
         guard let index = builds.firstIndex(where: { $0.build == build.build }) else { return }
         let updated = builds[index].cheats.map { entry in
             entry.key == cheat.key

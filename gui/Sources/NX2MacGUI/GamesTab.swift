@@ -9,22 +9,22 @@ struct GamesTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // The library folders stay at the top, whether or not one is chosen yet.
             libraryList
+            Divider()
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Games").font(.title2.weight(.semibold))
-                }
+                Text("Games").font(.title2.weight(.semibold))
                 Spacer()
                 if !model.libraryDirs.isEmpty {
                     cloudMenu
                     playerPicker
-                    Button {
-                        Task { await model.refreshLibrary() }
-                    } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                    .disabled(model.libraryBusy)
                 }
+                Button {
+                    Task { await model.refreshLibrary() }
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .disabled(model.libraryBusy)
             }
 
             content
@@ -82,6 +82,8 @@ struct GamesTab: View {
                 Text(model.libraryError).font(.caption2).foregroundStyle(.orange)
             }
         }
+        .padding(9)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
     }
 
     /// Forgetting a library never deletes anything: say so before it happens.
@@ -202,7 +204,7 @@ struct GamesTab: View {
     @ViewBuilder
     private var content: some View {
         if model.libraryDirs.isEmpty {
-            EmptyView()  // nothing to list, and no library folder to talk about
+            placeholder("No library folder yet.\nAdd one above and its built games appear here.")
         } else if model.games.isEmpty {
             placeholder("No games built into this library yet.\nGo to the Build tab and build one.")
         } else {

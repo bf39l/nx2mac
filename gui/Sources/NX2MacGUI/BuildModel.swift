@@ -353,14 +353,27 @@ final class BuildModel: ObservableObject {
         struct Removed: Decodable { let game: String; let path: String }
     }
 
-    /// Read a game's cheat files and their switches (empty when it has none).
-    func cheats(for game: LibraryGame) async -> [CheatBuild] {
-        guard let cli else { return [] }
+    /// Read a game's cheat files, their switches and the engine's master/safe flags.
+    func cheats(for game: LibraryGame) async -> (builds: [CheatBuild], state: CheatsState) {
+        guard let cli else { return ([], .unknown) }
         guard let result = try? await Self.run(cli, ["cheats", "--game", game.path, "--json"]),
               let data = result.stdout.data(using: .utf8),
-              let payload = try? JSONDecoder().decode(CheatsPayload.self, from: data)
-        else { return [] }
-        return payload.games.first?.builds ?? []
+              let payload = try? JSONDecoder().decode(CheatsPayload.self, from: data),
+              let entry = payload.games.first
+        else { return ([], .unknown) }
+        return (entry.builds, entry.state)
+    }
+
+    /// Turn every cheat off (or back on) with the engine's master switch.
+    func setCheatsMaster(for game: LibraryGame, off: Bool) async {
+        guard let cli else { return }
+        _ = try? await Self.run(cli, ["cheats", "--game", game.path, off ? "--off" : "--on", "--json"])
+    }
+
+    /// Drop the unclean-exit marker so the saved switches apply again.
+    func restoreCheatSwitches(for game: LibraryGame) async {
+        guard let cli else { return }
+        _ = try? await Self.run(cli, ["cheats", "--game", game.path, "--restore-safe", "--json"])
     }
 
     /// Switch one cheat on/off (the same file the in-game Cheats menu writes).

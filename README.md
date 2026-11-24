@@ -204,6 +204,24 @@ nx2mac_game_lib/<TITLEID>/mods/cheats/
 - Cheats run once per presented frame, so an "infinite health" style cheat can still let you die for
   a frame; that is the engine's semantics, documented in its `docs/reference/cheats.md`.
 
+**If the game crashes or quits after switching cheats on**
+
+That is the cheat code writing into the game, not nx2mac (the engine logs `the host exited with 139`
+and a `cheat_tick_thread` backtrace). Two safety nets, both exposed by nx2mac:
+
+```bash
+nx2mac cheats --game "Dead Cells"              # shows "master switch off" / "safe mode" banners
+nx2mac cheats --game "Dead Cells" --off        # master switch: no cheat runs at all
+nx2mac cheats --game "Dead Cells" --on         # remove it again
+nx2mac cheats --game "Dead Cells" --restore-safe
+```
+
+After a run that ends uncleanly with cheats on, the engine writes
+`.cheats-running-<title id>` in the cheats folder and starts the **next** launch with every cheat
+off (**safe mode**); `--restore-safe` drops that marker so the saved switches apply again. Turning
+cheats on one at a time tells you which one the game cannot survive — cheats that write to code the
+rewriter moved are refused (log: `code writes into them are refused`) and simply do nothing.
+
 ### Cloud saves (optional)
 
 Everything nx2mac writes lives in `<chosen folder>/nx2mac_game_lib/` — no dot-files in your folder:

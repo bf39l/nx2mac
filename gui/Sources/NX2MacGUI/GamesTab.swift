@@ -353,6 +353,7 @@ private struct CheatsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var builds: [CheatBuild] = []
+    @State private var state: CheatsState = .unknown
     @State private var loading = true
 
     var body: some View {
@@ -366,6 +367,34 @@ private struct CheatsSheet: View {
                 }
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+
+            if state.safeMode || state.masterOff {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 1) {
+                        if state.masterOff {
+                            Text("Master switch off — no cheat runs.").font(.caption)
+                        }
+                        if state.safeMode {
+                            Text("Safe mode: the last run ended uncleanly with cheats on, so every cheat starts off.")
+                                .font(.caption)
+                        }
+                    }
+                    Spacer()
+                    if state.masterOff {
+                        Button("Turn cheats on") { Task { await model.setCheatsMaster(for: game, off: false); await load() } }
+                    } else {
+                        Button("Turn all off") { Task { await model.setCheatsMaster(for: game, off: true); await load() } }
+                    }
+                    if state.safeMode {
+                        Button("Restore switches") {
+                            Task { await model.restoreCheatSwitches(for: game); await load() }
+                        }
+                    }
+                }
+                .padding(8)
+                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
             }
 
             if loading {
@@ -427,7 +456,9 @@ private struct CheatsSheet: View {
 
     private func load() async {
         loading = true
-        builds = await model.cheats(for: game)
+        let result = await model.cheats(for: game)
+        builds = result.builds
+        state = result.state
         loading = false
     }
 

@@ -387,11 +387,28 @@ struct CheatsPayload: Decodable {
         let game: String
         let titleID: String?
         let folder: String
+        let state: CheatsState
         let builds: [CheatBuild]
 
         enum CodingKeys: String, CodingKey {
-            case game, folder, builds
+            case game, folder, builds, state
             case titleID = "title_id"
         }
     }
+}
+
+
+/// The engine's own cheat switches for one game.
+struct CheatsState: Decodable, Hashable {
+    /// A run ended uncleanly with cheats on: the engine starts every cheat off.
+    let safeMode: Bool
+    /// The master switch file: no cheat runs at all.
+    let masterOff: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case safeMode = "safe_mode"
+        case masterOff = "master_off"
+    }
+
+    static let unknown = CheatsState(safeMode: false, masterOff: false)
 }

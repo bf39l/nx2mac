@@ -799,6 +799,43 @@ def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
     return builds
 
 
+def safe_mode_marker(library: Path, title_id: str) -> Path:
+    """Left behind by a run that ended uncleanly with cheats on (the engine starts them off)."""
+    return cheats_dir(library, title_id) / f".cheats-running-{title_id}"
+
+
+def master_off_marker(library: Path, title_id: str) -> Path:
+    """The engine's master switch: while it exists, no cheat runs at all."""
+    return cheats_dir(library, title_id) / f".cheats-off-{title_id}"
+
+
+def cheats_state(library: Path, title_id: str) -> dict[str, object]:
+    """Whether the engine is in safe mode and whether the master switch is off."""
+    return {
+        "safe_mode": safe_mode_marker(library, title_id).exists(),
+        "master_off": master_off_marker(library, title_id).exists(),
+    }
+
+
+def set_cheats_master(library: Path, title_id: str, off: bool) -> Path:
+    """Turn every cheat off (the engine's master switch file) or back on."""
+    marker = master_off_marker(library, title_id)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    if off:
+        marker.write_text("", encoding="utf-8")
+    else:
+        marker.unlink(missing_ok=True)
+    return marker
+
+
+def clear_safe_mode(library: Path, title_id: str) -> bool:
+    """Forget the unclean-exit marker so the saved switches apply again."""
+    marker = safe_mode_marker(library, title_id)
+    existed = marker.exists()
+    marker.unlink(missing_ok=True)
+    return existed
+
+
 def set_cheat(library: Path, title_id: str, build: str, name: str, enabled: bool) -> Path:
     """Switch one cheat on/off in the build's `.enabled` file (what the in-game menu writes)."""
     folder = cheats_dir(library, title_id)

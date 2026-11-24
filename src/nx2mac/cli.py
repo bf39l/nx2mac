@@ -465,6 +465,11 @@ def cheats(
     game: str | None = typer.Option(None, "--game", metavar="GAME", help="the game (default: every game)."),
     enable: list[str] = typer.Option([], "--enable", metavar="NAME", help="switch a cheat on."),
     disable: list[str] = typer.Option([], "--disable", metavar="NAME", help="switch a cheat off."),
+    off: bool = typer.Option(False, "--off", help="master switch: no cheat runs at all."),
+    on: bool = typer.Option(False, "--on", help="clear the master switch again."),
+    restore_safe: bool = typer.Option(
+        False, "--restore-safe", help="drop the unclean-exit marker so the saved switches apply again."
+    ),
 ) -> None:
     """List a game's cheat files and which switches are on (what the in-game Cheats menu writes)."""
     machine_readable = _enter(ctx, json_flag)
@@ -489,6 +494,12 @@ def cheats(
     for directory, entry in games:
         if not entry.title_id:
             continue
+        if off:
+            library_mod.set_cheats_master(directory, entry.title_id, True)
+        if on:
+            library_mod.set_cheats_master(directory, entry.title_id, False)
+        if restore_safe:
+            library_mod.clear_safe_mode(directory, entry.title_id)
         builds = library_mod.cheat_builds(directory, entry.title_id)
         if enable or disable:
             for build in builds:
@@ -504,6 +515,7 @@ def cheats(
                 "title_id": entry.title_id,
                 "library": str(directory),
                 "folder": str(library_mod.cheats_dir(directory, entry.title_id)),
+                "state": library_mod.cheats_state(directory, entry.title_id),
                 "builds": builds,
             }
         )
@@ -520,6 +532,12 @@ def cheats(
         if not entry["builds"]:
             continue
         console.print(f"[bold]{entry['game']}[/] [dim]{entry['title_id']}[/]")
+        state = entry["state"]  # type: ignore[assignment]
+        if state["master_off"]:  # type: ignore[index]
+            console.print("  [yellow]master switch off[/]: no cheat runs (nx2mac cheats --on)")
+        if state["safe_mode"]:  # type: ignore[index]
+            console.print("  [yellow]safe mode[/]: the last run ended uncleanly with cheats on "
+                          "(nx2mac cheats --restore-safe)")
         for build in entry["builds"]:  # type: ignore[union-attr]
             console.print(f"  build [dim]{build['build']}[/]")
             for cheat in build["cheats"]:  # type: ignore[union-attr]

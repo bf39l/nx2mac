@@ -124,3 +124,44 @@ def test_prepare_staging_accepts_a_single_package_file(tmp_path: Path) -> None:
     assert (directory / package.name).is_symlink()
     assert (directory / "update.nsp").is_symlink()
     assert "Game" in directory.name and directory.parent == cache / "staging"
+
+
+def test_the_engines_own_folders_are_not_staged(tmp_path: Path) -> None:
+    """`<title id>_build` and `<title id>_survey` sit next to a dump after a build: never input."""
+    from nx2mac.staging import prepare_staging
+
+    game = tmp_path / "Game [0100000000000000]"
+    game.mkdir()
+    (game / "base.nsp").write_bytes(b"nsp")
+    (game / "0100000000000000").mkdir()
+    (game / "0100000000000000" / "content.nca").write_bytes(b"nca")
+    (game / "0100000000000000_build").mkdir()
+    (game / "0100000000000000_build" / "huge.bin").write_bytes(b"x")
+    (game / "0100000000000000_survey").mkdir()
+
+    staging = prepare_staging(tmp_path / "cache", game, ())
+
+    names = {entry.name for entry in staging.iterdir() if not entry.name.startswith(".")}
+    assert names == {"base.nsp", "0100000000000000"}
+
+
+def test_a_directory_in_the_way_gets_a_free_name_instead_of_being_deleted(tmp_path: Path) -> None:
+    """The refresh must never delete a directory it did not create (that was an EPERM crash)."""
+    from nx2mac.staging import prepare_staging
+
+    game = tmp_path / "Game [0100000000000000]"
+    game.mkdir()
+    (game / "base.nsp").write_bytes(b"nsp")
+    (game / "0100000000000000").mkdir()
+
+    staging = prepare_staging(tmp_path / "cache", game, ())
+    # a previous run left a real directory where our link wants to go
+    blocking = staging / "0100000000000000"
+    blocking.unlink()
+    blocking.mkdir()
+    (blocking / "keep.bin").write_bytes(b"keep")
+
+    prepare_staging(tmp_path / "cache", game, ())
+
+    assert (blocking / "keep.bin").read_bytes() == b"keep"          # untouched
+    assert (staging / "0100000000000000-2").is_symlink()            # our link took another name

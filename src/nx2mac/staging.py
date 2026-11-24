@@ -25,6 +25,11 @@ from .inputs import GAME_EXTENSIONS
 #: and leaves the engine's `<title id>_build` directory (and its caches) alone.
 MANIFEST_NAME: str = ".nx2mac-links.json"
 
+#: Folders the engine writes next to a game (its build folder and the survey it runs when a game has
+#: no profile). They are not game input: staging them would copy a multi-GB cache, and staging one
+#: that already sits in the staging folder crashed the refresh (unlink on a directory, EPERM).
+ENGINE_FOLDERS: tuple[str, ...] = ("_build", "_survey")
+
 
 def _slug(text: str) -> str:
     cleaned = "".join(char if char.isalnum() or char in "._-" else "-" for char in text)
@@ -47,8 +52,16 @@ def _link(source: Path, directory: Path, taken: set[str]) -> str:
             index += 1
         name = f"{source.stem}-{index}{source.suffix}"
     destination = directory / name
-    if destination.is_symlink() or destination.exists():
+    if destination.is_symlink() or (destination.exists() and not destination.is_dir()):
         destination.unlink()
+    elif destination.is_dir():
+        # A real directory we did not create (the engine's own, or a previous run's): never delete
+        # it, just take a free name for our link.
+        index = 2
+        while (directory / f"{source.stem}-{index}{source.suffix}").exists():
+            index += 1
+        name = f"{source.stem}-{index}{source.suffix}"
+        destination = directory / name
     destination.symlink_to(source.resolve())
     taken.add(name)
     return name
@@ -65,7 +78,7 @@ def _game_entries(game: Path) -> list[Path]:
         return [game]
     entries: list[Path] = []
     for entry in sorted(game.iterdir()):
-        if entry.name.startswith(".") or entry.name.endswith("_build"):
+        if entry.name.startswith(".") or entry.name.endswith(ENGINE_FOLDERS):
             continue
         if entry.is_dir() or entry.suffix.lower() in GAME_EXTENSIONS:
             entries.append(entry)

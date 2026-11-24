@@ -150,6 +150,11 @@ nx2mac player --select Ada            # choose who plays (updates every built ga
 nx2mac player                         # list them; * marks the active one
 ```
 
+In a game, the engine may still show its own account picker on a first launch of a new save store:
+pick the user listed there (it carries your player's name) and press **Select**. There is nothing to
+create — each player already has their own user 1 — and a cancelled picker makes most games quit, so
+press Select rather than Cancel.
+
 `<library>/players.json` holds the list; each player's store is
 `<library>/save/<TITLEID>/profiles/<player>`, and selecting a player rewrites every game's
 `support/<TITLEID>/env.txt` (`DM_SAVE`, `DM_NICK`). Each player gets their own save store and their

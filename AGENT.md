@@ -135,6 +135,15 @@ Games tab, and `nx2mac player` rewrites *every* built game's env. `nx2mac player
 reads after the baked file and lets win. That is the only way to give every player a custom name:
 the engine reads `DM_NICK` for user 1 only and hard-codes "Player 2"..8.
 
+## In-game account picker
+
+The engine's Mac front end shows a native "Choose a user" alert (`dm/host/user_select_mac.h`): a
+drop-down of the local users plus **Select** / **Cancel**. Pressing Cancel returns
+`RES_ACC_CANCELED` and most games **quit** on it; that is engine behaviour, not a crash. Since every
+nx2mac player is user 1 in their own store, there is never a user to add in-game — pick the listed
+user and press Select. `patches/0003-account-add-user-button.patch` turns "Add user" into its own
+button so the intent cannot be confused with Cancel.
+
 ## Engine patches (`patches/`)
 
 `patches/NNNN-*.patch` (git format, applied in filename order) are applied with

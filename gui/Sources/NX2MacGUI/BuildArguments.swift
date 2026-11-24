@@ -34,3 +34,22 @@ struct BuildRequest: Equatable {
         return parts.isEmpty ? "game folder only" : parts.joined(separator: " + ")
     }
 }
+
+/// argv for the `nx2mac engine` subcommand.
+///
+/// The ref is a *positional* argument, so it must sit right after the
+/// subcommand — putting options first and the positional last is fine for click,
+/// but keeping this pure and tested avoids the "ref swallowed by --source" bug.
+enum EngineCommand {
+    /// `nx2mac engine [REF] --source <id> --json`
+    static func pin(source: String, ref: String) -> [String] {
+        var arguments = ["engine"]
+        let trimmed = ref.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty { arguments.append(trimmed) }
+        arguments += ["--source", source, "--json"]
+        return arguments
+    }
+
+    /// `nx2mac engine --show --json` — read the saved selection, no network.
+    static func show() -> [String] { ["engine", "--show", "--json"] }
+}

@@ -221,6 +221,27 @@ private final class LockedLines {
     }
 }
 
+final class EngineCommandTests: XCTestCase {
+    func testPinKeepsRefOutOfTheSourceOption() {
+        let arguments = EngineCommand.pin(source: "fork", ref: " fork-customizations ")
+
+        XCTAssertEqual(arguments, ["engine", "fork-customizations", "--source", "fork", "--json"])
+        // regression: the ref used to land between --source and its value
+        if let sourceIndex = arguments.firstIndex(of: "--source") {
+            XCTAssertEqual(arguments[sourceIndex + 1], "fork")
+        }
+    }
+
+    func testPinOmitsEmptyRef() {
+        XCTAssertEqual(EngineCommand.pin(source: "upstream", ref: "   "),
+                       ["engine", "--source", "upstream", "--json"])
+    }
+
+    func testShowDoesNotTouchTheNetwork() {
+        XCTAssertEqual(EngineCommand.show(), ["engine", "--show", "--json"])
+    }
+}
+
 final class BuildRequestTests: XCTestCase {
     func testArgumentsIncludeKeysOutDirAndExtras() {
         let request = BuildRequest(

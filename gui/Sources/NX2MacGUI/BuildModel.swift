@@ -121,7 +121,7 @@ final class BuildModel: ObservableObject {
         engineBusy = true
         defer { engineBusy = false }
         do {
-            let result = try await Self.run(cli, ["engine", "--show", "--json"])
+            let result = try await Self.run(cli, EngineCommand.show())
             guard let data = result.stdout.data(using: .utf8),
                   let status = try? JSONDecoder().decode(EngineStatus.self, from: data)
             else { return }
@@ -214,10 +214,7 @@ final class BuildModel: ObservableObject {
         engineBusy = true
         state = .idle
         defer { engineBusy = false }
-        var arguments = ["engine", "--source", engineChoice, "--json"]
-        if !engineRef.trimmingCharacters(in: .whitespaces).isEmpty {
-            arguments.insert(engineRef.trimmingCharacters(in: .whitespaces), at: 2)
-        }
+        let arguments = EngineCommand.pin(source: engineChoice, ref: engineRef)
         do {
             let result = try await Self.run(cli, arguments)
             guard let data = result.stdout.data(using: .utf8) else { return }

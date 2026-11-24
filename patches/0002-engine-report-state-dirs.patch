@@ -1,0 +1,13 @@
+diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
+index 2295f204..221d290c 100755
+--- a/scripts/build_ipa_from_nsp.py
++++ b/scripts/build_ipa_from_nsp.py
+@@ -3737,4 +3737,7 @@ def main(args=None):
+         rmtree(work / 'tmp')
++        switches = env_file_pairs(env_file) if env_file else {}   # a wrapper may keep this app's state elsewhere
++        state = switches.get('DM_SUPPORT_DIR') or os.path.expanduser(f'~/Library/Application Support/nxnative/{app:016X}')
++        log_dir = switches.get('DM_LOG_DIR') or os.path.expanduser('~/Library/Logs/nxnative')
+         say(f'done: {out_ipa} ({tree_size(out_ipa)[1] / 2**30:.1f} GB); '
+-            f'open it from Finder. Its save is in ~/Library/Application Support/nxnative/{app:016X}/, its log in ~/Library/Logs/nxnative/{app:016X}.log')
++            f'open it from Finder. Its data is in {state}, its log in {os.path.join(log_dir, f"{app:016X}.log")}')
+         if seen_shaders: say('a partial shader library: where a shader is missing, the log says so in red and the draw goes without it. Run this script again with --seen-shaders to add what the log names, or without it for the whole map')

@@ -8,7 +8,7 @@ check/build logic never depends on typer.
 """
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import typer
@@ -332,7 +332,8 @@ def engine(
         return
 
     resolved = _checkout(ctx, source, selected_ref)
-    save_config(Config(engine_id=source.id, engine_ref=resolved.ref))
+    # Keep the rest of the config (the game library, for one): save the whole thing.
+    save_config(replace(load_config(), engine_id=source.id, engine_ref=resolved.ref))
 
     if _state(ctx).json:
         emit.emit({"engine": resolved.to_dict(), "saved": {"engine_id": source.id, "engine_ref": resolved.ref}})
@@ -374,7 +375,7 @@ def library(
             chosen = library_mod.require_library(set_dir)
         except library_mod.LibraryError as error:
             _fail(ctx, str(error))
-        save_config(Config(engine_id=cfg.engine_id, engine_ref=cfg.engine_ref, library_dir=str(chosen)))
+        save_config(replace(cfg, library_dir=str(chosen)))
         payload = library_mod.describe_library(chosen)
         if machine_readable:
             emit.emit(payload)
@@ -467,16 +468,19 @@ def player(
     if not games:
         _fail(ctx, f"no games in {library_dir}; build one first")
     chosen = library_mod.find_game(library_dir, game) if game else games[0]
+    if not chosen.title_id:
+        _fail(ctx, f"{chosen.name} has no title ID yet; build it once so nx2mac can key its folders")
+    key = str(chosen.title_id)
 
     try:
         if create is not None:
-            library_mod.create_player(chosen.path, create)
+            library_mod.create_player(library_dir, key, create)
         elif select is not None:
-            library_mod.select_player(chosen.path, select)
+            library_mod.select_player(library_dir, key, select)
         elif delete is not None:
-            library_mod.delete_player(chosen.path, delete)
-        players, active = library_mod.load_players(chosen.path)
-        env_path = library_mod.write_player_env(chosen.path)  # DM_SAVE/DM_NICK for the active player
+            library_mod.delete_player(library_dir, key, delete)
+        players, active = library_mod.load_players(library_dir, key)
+        env_path = library_mod.write_player_env(library_dir, key)  # DM_SAVE/DM_NICK for the active player
     except library_mod.LibraryError as error:
         _fail(ctx, str(error))
 
@@ -496,7 +500,7 @@ def player(
     console.print(f"[bold]{chosen.name}[/] players:")
     for entry in players:
         marker = "[green]*[/]" if entry.id == active else " "
-        console.print(f" {marker} {entry.name} [dim]({library_mod.player_save_dir(chosen.path, entry.id)})[/]")
+        console.print(f" {marker} {entry.name} [dim]({library_mod.player_save_dir(library_dir, key, entry.id)})[/]")
 
 
 @app.command()

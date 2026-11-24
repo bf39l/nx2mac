@@ -7,6 +7,7 @@ output streaming straight to the console.
 """
 
 import os
+import shutil
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,7 @@ from . import library as library_mod
 from .doctor import BUILD_PREFLIGHT_EXCLUDE, DoctorContext, run_checks
 from .engines import ResolvedEngine
 from .inputs import GAME_EXTENSIONS, KEYS_FILENAMES, NSO_EXTENSION, SWITCH1_EXTENSIONS
+from .probe import probe as probe_path
 from .pyenv import ensure_venv
 from .runner import Env
 from .staging import prepare_staging
@@ -136,8 +138,27 @@ def _safe_name(text: str) -> str:
     return cleaned.strip("-._")[:60] or "game"
 
 
-def work_dir_for(out_dir: Path, game: GameInput) -> Path:
-    """The engine's build folder inside the user's output directory."""
+def title_id_of(game: GameInput) -> str | None:
+    """The game's 16-hex title ID, when a filename or the folder name carries one."""
+    scan = probe_path(game.path)
+    if scan.game_file is not None:
+        for package in scan.packages:
+            if package.path == scan.game_file and package.title_id is not None:
+                return package.title_id
+    for package in scan.packages:
+        if package.title_id is not None:
+            return package.title_id
+    return None
+
+
+def work_dir_for(out_dir: Path, game: GameInput, title_id: str | None = None) -> Path:
+    """The engine's build folder inside the output directory.
+
+    Named after the title ID like NX2Apple's (`<TITLEID>_build`): stable whatever
+    the dump folder is called, and short enough to stay readable.
+    """
+    if title_id:
+        return out_dir / f"{_safe_name(title_id)}_build"
     base = game.path.stem if game.path.is_file() else game.path.name
     return out_dir / f"{_safe_name(base)}_build"
 
@@ -166,29 +187,55 @@ def validate_extras(paths: Sequence[Path], flag: str) -> list[Path]:
     return resolved
 
 
+def _file_app(library: Path, key: str, produced: Path | None) -> Path | None:
+    """Rename the finished app to the game's display name, like NX2Apple's output.
+
+    Tried in order: `<name>.app`, `<name> [<title id>].app`, `<key>.app`. An app of
+    the same game that is already there is replaced, so a rebuild does not leave two.
+    """
+    if produced is None or not produced.is_dir():
+        return produced
+    metadata = library_mod.app_metadata(produced)
+    name = str(metadata.get("name") or "").strip()
+    wanted = [library_mod.safe_name(name)] if name else []
+    if metadata.get("title_id"):
+        wanted.append(f"{library_mod.safe_name(name)} [{metadata['title_id']}]" if name else str(metadata["title_id"]))
+    wanted.append(key)
+
+    for candidate in wanted:
+        target = library / f"{candidate}.app"
+        if target == produced:
+            return produced
+        if target.exists():
+            if str(library_mod.app_metadata(target).get("title_id") or "") != str(metadata.get("title_id") or "?"):
+                continue  # another game with the same display name
+            shutil.rmtree(target)  # the same game built again: replace it
+        produced.rename(target)
+        return target
+    return produced
+
+
 def _record_in_library(
+    library: Path,
+    key: str,
     engine: ResolvedEngine,
     game: GameInput,
-    game_directory: Path,
     app_path: Path | None,
 ) -> tuple[Path | None, Path | None]:
-    """Write the game's manifest and its player env (both inside the game folder)."""
-    directory = game_directory
-    for sub in library_mod.GAME_SUBDIRS:
-        (directory / sub).mkdir(parents=True, exist_ok=True)
+    """Write the app's manifest sidecar and the env the launcher reads per player."""
+    metadata = library_mod.app_metadata(app_path) if app_path is not None else {}
+    title_id = str(metadata.get("title_id") or key)
 
-    metadata: dict[str, str | None] = {"name": game.path.stem, "title_id": None, "version": None}
+    env_file = library_mod.write_player_env(library, key)
     if app_path is not None:
-        metadata = library_mod.app_metadata(app_path)
-
-    env_file = library_mod.write_player_env(directory)
+        library_mod.bake_env(app_path, library_mod.write_build_env(library, key))
 
     manifest = library_mod.write_manifest(
-        directory,
-        name=str(metadata["name"] or directory.name),
-        app_path=app_path or directory,
-        title_id=metadata["title_id"],
-        version=metadata["version"],
+        app_path.with_suffix(".nx2mac.json") if app_path is not None else library / f"{key}.nx2mac.json",
+        name=str(metadata.get("name") or key),
+        app_path=app_path or library,
+        title_id=title_id,
+        version=metadata.get("version"),
         engine_source=engine.source.id,
         engine_ref=engine.ref,
         engine_commit=engine.commit,
@@ -268,9 +315,6 @@ def run_build(
 
     game = classify_game(game_path)
     library = library_mod.require_library(library_dir) if library_dir is not None else None
-    if library is not None and out_dir is None:
-        # One folder per game inside the library: app + saves/logs/mods/cheats.
-        out_dir = library_mod.prepare_game_dir(library, game.path.stem if game.path.is_file() else game.path.name)
     out_dir = out_dir.expanduser().resolve() if out_dir is not None else None
     # The game's own directory: where the engine puts things by default, and the
     # default output folder when we have to stage inputs elsewhere.
@@ -301,14 +345,20 @@ def run_build(
     if out_dir is None and staging:
         out_dir = keys_dir
 
+    title_id = title_id_of(game) if (library is not None or out_dir is not None) else None
+    key = title_id or library_mod.safe_name(game.path.stem if game.path.is_file() else game.path.name)
     work_dir: Path | None = None
     env_file: Path | None = None
-    if out_dir is not None:
+    if library is not None:
+        # keeps the engine's support dir, logs, saves, cheats and screenshots here
+        env_file = library_mod.write_build_env(library, key)
+        work_dir = library_mod.build_dir(library, key)
+        out_dir = library
+        if output is None:
+            output = library / f"{key}.app"  # renamed to the game's name once it exists
+    elif out_dir is not None:
         out_dir.mkdir(parents=True, exist_ok=True)
-        work_dir = work_dir_for(out_dir, game)
-        if library is not None:
-            # keeps the engine's support dir, logs, saves, cheats and screenshots here
-            env_file = library_mod.write_build_env(out_dir)
+        work_dir = work_dir_for(out_dir, game, title_id)
 
     venv = ensure_venv(cache_root, env=env)
     argv = build_argv(
@@ -325,15 +375,17 @@ def run_build(
 
     app_path: Path | None = None
     if returncode == 0:
-        if output is not None:
+        if library is not None:
+            app_path = _file_app(library, key, output.expanduser().resolve() if output is not None else None)
+        elif output is not None:
             app_path = output.expanduser().resolve()
         elif out_dir is not None:
             app_path = discover_app(out_dir)  # the engine names it and writes it here
 
     manifest: Path | None = None
     player_env: Path | None = None
-    if library is not None and out_dir is not None and returncode == 0:
-        manifest, player_env = _record_in_library(engine, game, out_dir, app_path)
+    if library is not None and returncode == 0:
+        manifest, player_env = _record_in_library(library, key, engine, game, app_path)
 
     return BuildResult(
         argv=tuple(argv),

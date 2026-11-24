@@ -364,20 +364,22 @@ def test_out_dir_never_copies_the_key_set(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_run_build_files_the_game_into_the_library(tmp_path: Path, monkeypatch) -> None:
+    """One build fills the library layout, keyed by the title ID."""
     import plistlib
 
     cache = tmp_path / "cache"
     monkeypatch.setenv("NX2MAC_CACHE_ROOT", str(cache))
     env = _good_env(tmp_path)
-    game = _game_dir(tmp_path)
-    (game / "prod.keys").write_text("keys\n", encoding="utf-8")
+    package = tmp_path / "Dead_Cells_0100646009FBE000_v1.0.0.nsp"
+    package.write_bytes(b"\x00")
+    keys = tmp_path / "prod.keys"
+    keys.write_text("keys\n", encoding="utf-8")
     library = tmp_path / "Games"
     library.mkdir()
 
-    def fake_build(argv: list[str]) -> int:  # the engine writes the app next to its work dir
-        work = Path(argv[argv.index("--work-dir") + 1])
-        app = work.parent / "Dead Cells.app"
-        (app / "Contents").mkdir(parents=True)
+    def fake_build(argv: list[str]) -> int:  # the engine writes the app where -o says
+        app = Path(argv[argv.index("-o") + 1])
+        (app / "Contents" / "Resources" / "dm").mkdir(parents=True)
         info = {
             "CFBundleName": "Dead Cells",
             "CFBundleShortVersionString": "1.25.0",
@@ -387,30 +389,62 @@ def test_run_build_files_the_game_into_the_library(tmp_path: Path, monkeypatch) 
         return 0
 
     env.stream_effects.append((r"build_ipa_from_nsp\.py", fake_build))
-    result = run_build(env, cache, _engine(tmp_path), game, library_dir=library)
+    result = run_build(env, cache, _engine(tmp_path), package, prod_keys=keys, library_dir=library)
 
-    game_dir = library / "MyGame"  # folder named after the input
-    assert result.out_dir == game_dir.resolve() and result.library_dir == library.resolve()
-    for sub in ("saves", "logs", "mods", "cheats", "screenshots"):
-        assert (game_dir / sub).is_dir()
-    assert result.app_path == game_dir / "Dead Cells.app"
-    manifest = json.loads((game_dir / "nx2mac.json").read_text(encoding="utf-8"))
-    assert manifest["name"] == "Dead Cells" and manifest["title_id"] == "0100646009FBE000"
+    tid = "0100646009FBE000"
+    assert result.library_dir == library.resolve() and result.out_dir == library.resolve()
+    # the app is renamed to the game's own name and carries a sidecar manifest
+    assert result.app_path == library / "Dead Cells.app"
+    manifest = json.loads((library / "Dead Cells.nx2mac.json").read_text(encoding="utf-8"))
+    assert manifest["name"] == "Dead Cells" and manifest["title_id"] == tid
     assert manifest["engine"]["commit"] == SHA
-    env_text = (game_dir / "support" / "env.txt").read_text(encoding="utf-8")
-    build_env = (game_dir / "support" / "build-env.txt").read_text(encoding="utf-8")
-    assert f"DM_LOG_DIR={game_dir / 'logs'}" in env_text or f"DM_LOG_DIR={game_dir / 'logs'}" in build_env
-    assert f"DM_SUPPORT_DIR={game_dir / 'support'}" in build_env
-    # nothing is written under the user's Library any more
-    assert not (tmp_path / "home").exists()
-    assert "--env-file" in env.stream_calls[0][0]
-    assert result.manifest == game_dir / "nx2mac.json"
-
-    # and the library scan sees it
+    # everything the game writes is in the library, keyed by the title ID
+    assert result.work_dir == library / "build" / f"{tid}_build"
+    argv = env.stream_calls[0][0]
+    assert argv[argv.index("--work-dir") + 1] == str(library / "build" / f"{tid}_build")
+    build_env = (library / "support" / tid / "build-env.txt").read_text(encoding="utf-8")
+    assert f"DM_SUPPORT_DIR={library / 'support' / tid}" in build_env
+    assert f"DM_LOG_DIR={library / 'logs'}" in build_env
+    assert f"DM_SAVE={library / 'save' / tid}" in build_env
+    for directory in ("logs", "cheats", "screenshots", "mods", "save", "support", "build"):
+        assert (library / directory).is_dir()
+    # and the scan sees it
     from nx2mac.library import list_games
 
     entries = list_games(library)
     assert [entry.name for entry in entries] == ["Dead Cells"] and entries[0].version == "1.25.0"
+    assert str(entries[0].to_dict()["saves"]) == str(library / "save" / tid)
+
+
+def test_rebuilding_replaces_the_app_in_place(tmp_path: Path, monkeypatch) -> None:
+    import plistlib
+
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("NX2MAC_CACHE_ROOT", str(cache))
+    env = _good_env(tmp_path)
+    package = tmp_path / "Dead_Cells_0100646009FBE000_v1.0.0.nsp"
+    package.write_bytes(b"\x00")
+    keys = tmp_path / "prod.keys"
+    keys.write_text("keys\n", encoding="utf-8")
+    library = tmp_path / "Games"
+    library.mkdir()
+    (library / "keep.me").write_text("x", encoding="utf-8")
+
+    def fake_build(argv: list[str]) -> int:
+        app = Path(argv[argv.index("-o") + 1])
+        (app / "Contents" / "Resources" / "dm").mkdir(parents=True)
+        info = {"CFBundleName": "Dead Cells", "CFBundleShortVersionString": "1.0.0",
+                "CFBundleIdentifier": "org.nxnative.0100646009fbe000"}
+        (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps(info))
+        return 0
+
+    env.stream_effects.append((r"build_ipa_from_nsp\.py", fake_build))
+    run_build(env, cache, _engine(tmp_path), package, prod_keys=keys, library_dir=library)
+    second = run_build(env, cache, _engine(tmp_path), package, prod_keys=keys, library_dir=library)
+
+    assert second.app_path == library / "Dead Cells.app"
+    assert (library / "keep.me").is_file()  # nothing else clobbered
+    assert [p.name for p in library.glob("*.app")] == ["Dead Cells.app"]  # no duplicate
 
 
 def test_run_build_rejects_a_missing_library(tmp_path: Path, monkeypatch) -> None:
@@ -422,3 +456,5 @@ def test_run_build_rejects_a_missing_library(tmp_path: Path, monkeypatch) -> Non
 
     with pytest.raises(Exception, match="does not exist"):
         run_build(env, cache, _engine(tmp_path), game, library_dir=tmp_path / "nope")
+
+

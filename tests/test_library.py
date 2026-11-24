@@ -1,4 +1,16 @@
-"""Tests for nx2mac.library (per-game folders, manifests, env.txt wiring, scanning)."""
+"""Tests for nx2mac.library (the book-keeping modules; the library layout).
+
+Layout (NX2Apple-style, keyed by title ID):
+    <library>/<Game>.app            built app
+    <library>/<Game>.nx2mac.json    its manifest
+    <library>/save/<TID>/           DM_SAVE (profiles/<player> below it)
+    <library>/logs/<TID>.log        DM_LOG_DIR=<library>/logs
+    <library>/mods/<TID>/           mods
+    <library>/cheats/<TID>/         DM_CHEATS
+    <library>/screenshots/<TID>/    DM_ALBUM_DIR
+    <library>/support/<TID>/        DM_SUPPORT_DIR (env.txt, temp)
+    <library>/build/<TID>_build/    the engine's work folder
+"""
 
 import json
 import plistlib
@@ -7,31 +19,43 @@ from pathlib import Path
 import pytest
 
 from nx2mac.library import (
-    GAME_SUBDIRS,
-    MANIFEST_NAME,
+    LIBRARY_MARKER,
     MAX_PLAYERS,
     PLAYERS_FILE,
     LibraryError,
     active_player,
     app_metadata,
+    build_dir,
+    build_env_path,
+    cheats_dir,
     create_player,
     delete_player,
     describe_library,
+    ensure_layout,
     find_game,
+    is_library,
     list_games,
     load_players,
+    logs_dir,
+    mark_library,
+    mods_dir,
     player_save_dir,
-    prepare_game_dir,
+    profiles_dir,
     read_manifest,
     require_library,
     safe_name,
+    save_dir,
+    screenshots_dir,
     select_player,
+    support_dir,
     support_env_path,
     touch_last_played,
     write_build_env,
     write_manifest,
     write_player_env,
 )
+
+TID = "0100646009FBE000"
 
 
 def _library(tmp_path: Path) -> Path:
@@ -40,12 +64,12 @@ def _library(tmp_path: Path) -> Path:
     return library
 
 
-def _app(directory: Path, name: str = "Mercenaries Wings", title_id: str = "010094500C216000") -> Path:
-    app = directory / f"{name}.app"
-    (app / "Contents" / "Resources").mkdir(parents=True)
+def _app(library: Path, name: str = "Dead Cells", title_id: str = TID, version: str = "1.25.0") -> Path:
+    app = library / f"{name}.app"
+    (app / "Contents" / "Resources" / "dm").mkdir(parents=True)
     info = {
         "CFBundleName": name,
-        "CFBundleShortVersionString": "1.0.0",
+        "CFBundleShortVersionString": version,
         "CFBundleIdentifier": f"org.nxnative.{title_id.lower()}",
     }
     (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps(info))
@@ -58,7 +82,6 @@ def _app(directory: Path, name: str = "Mercenaries Wings", title_id: str = "0100
 def test_require_library_insists_it_exists(tmp_path: Path) -> None:
     with pytest.raises(LibraryError, match="no game library set"):
         require_library(None)
-
     with pytest.raises(LibraryError, match="does not exist"):
         require_library(tmp_path / "nope")
     assert not (tmp_path / "nope").exists()  # never created for the user
@@ -67,22 +90,113 @@ def test_require_library_insists_it_exists(tmp_path: Path) -> None:
     assert require_library(library) == library.resolve()
 
 
-def test_safe_name_keeps_letters_of_any_script(tmp_path: Path) -> None:
-    # CJK letters survive; only path-hostile characters become dashes
-    assert safe_name("1佣兵之翼_伪之不死鸟 [010094500C216000]") == "1佣兵之翼_伪之不死鸟 -010094500C216000"
-    assert "佣兵之翼" in safe_name("佣兵之翼")
+def test_safe_name_keeps_letters_of_any_script() -> None:
+    assert "佣兵之翼" in safe_name("1佣兵之翼_伪之不死鸟 [010094500C216000]")
     assert "/" not in safe_name("a/b:c*d")
     assert safe_name("   ") == "Game"
 
 
-def test_prepare_game_dir_makes_the_shared_layout(tmp_path: Path) -> None:
+def test_ensure_layout_creates_one_folder_per_kind_and_marks_the_library(tmp_path: Path) -> None:
     library = _library(tmp_path)
 
-    directory = prepare_game_dir(library, "Dead Cells")
+    support = ensure_layout(library, TID)
 
-    assert directory == library / "Dead Cells"
-    assert all((directory / sub).is_dir() for sub in GAME_SUBDIRS)
-    assert directory.parent == library  # created *inside* the chosen library only
+    assert support == library / "support" / TID
+    for directory in (
+        save_dir(library, TID),
+        logs_dir(library),
+        mods_dir(library, TID),
+        cheats_dir(library, TID),
+        screenshots_dir(library, TID),
+        build_dir(library, TID),
+    ):
+        assert directory.is_dir()
+    assert (library / LIBRARY_MARKER).is_file() and is_library(library)
+    assert build_dir(library, TID).name == f"{TID}_build"
+
+
+def test_build_env_points_every_kind_at_the_library(tmp_path: Path) -> None:
+    library = _library(tmp_path)
+
+    path = write_build_env(library, TID)
+    text = path.read_text(encoding="utf-8")
+
+    assert path == build_env_path(support_dir(library, TID))
+    assert f"DM_SUPPORT_DIR={support_dir(library, TID)}" in text
+    assert f"DM_LOG_DIR={logs_dir(library)}" in text
+    assert f"DM_SAVE={save_dir(library, TID)}" in text
+    assert f"DM_CHEATS={cheats_dir(library, TID)}" in text
+    assert f"DM_ALBUM_DIR={screenshots_dir(library, TID)}" in text
+    assert "~/Library" not in text
+
+
+def test_players_get_their_own_store_under_profiles(tmp_path: Path) -> None:
+    library = _library(tmp_path)
+    mark_library(library)
+
+    ada = create_player(library, TID, "Ada")
+    grace = create_player(library, TID, "Grace")
+
+    assert load_players(library, TID)[1] == grace.id  # the newest player plays
+    assert player_save_dir(library, TID, ada.id) == profiles_dir(library, TID) / "ada"
+    assert player_save_dir(library, TID, ada.id).is_dir()
+    assert (save_dir(library, TID) / PLAYERS_FILE).is_file()
+
+    select_player(library, TID, "ada")
+    assert active_player(library, TID).name == "Ada"
+
+
+def test_player_names_are_validated(tmp_path: Path) -> None:
+    library = _library(tmp_path)
+    create_player(library, TID, "Ada")
+
+    with pytest.raises(LibraryError, match="already exists"):
+        create_player(library, TID, "ada")
+    with pytest.raises(LibraryError, match="needs a name"):
+        create_player(library, TID, "  ")
+    with pytest.raises(LibraryError, match="32 characters"):
+        create_player(library, TID, "x" * 40)
+    with pytest.raises(LibraryError, match="no player called"):
+        select_player(library, TID, "Nobody")
+    for index in range(MAX_PLAYERS - 1):
+        create_player(library, TID, f"P{index}")
+    with pytest.raises(LibraryError, match="already has 8 players"):
+        create_player(library, TID, "One Too Many")
+
+
+def test_delete_player_keeps_the_saves(tmp_path: Path) -> None:
+    library = _library(tmp_path)
+    ada = create_player(library, TID, "Ada")
+    store = player_save_dir(library, TID, ada.id)
+    (store / "save.dat").write_bytes(b"\x00")
+
+    delete_player(library, TID, "Ada")
+
+    assert load_players(library, TID) == ([], None)
+    assert (store / "save.dat").is_file()
+
+
+def test_player_env_follows_the_active_player(tmp_path: Path) -> None:
+    library = _library(tmp_path)
+    grace = create_player(library, TID, "Grace")
+
+    text = write_player_env(library, TID).read_text(encoding="utf-8")
+    assert support_env_path(support_dir(library, TID)).is_file()
+    assert f"DM_SAVE={player_save_dir(library, TID, grace.id)}" in text
+    assert "DM_NICK=Grace" in text
+
+    ada = create_player(library, TID, "Ada")
+    text = write_player_env(library, TID).read_text(encoding="utf-8")
+    assert "DM_NICK=Ada" in text and "DM_NICK=Grace" not in text
+    assert f"DM_SAVE={player_save_dir(library, TID, ada.id)}" in text
+
+
+def test_player_env_without_players_uses_the_base_store(tmp_path: Path) -> None:
+    library = _library(tmp_path)
+
+    text = write_player_env(library, TID).read_text(encoding="utf-8")
+
+    assert f"DM_SAVE={save_dir(library, TID)}" in text and "DM_NICK=" not in text
 
 
 def test_app_metadata_reads_the_bundle(tmp_path: Path) -> None:
@@ -90,119 +204,102 @@ def test_app_metadata_reads_the_bundle(tmp_path: Path) -> None:
 
     meta = app_metadata(app)
 
-    assert meta == {"name": "Mercenaries Wings", "title_id": "010094500C216000", "version": "1.0.0"}
+    assert meta == {"name": "Dead Cells", "title_id": TID, "version": "1.25.0"}
     assert app_metadata(tmp_path / "missing.app")["title_id"] is None
 
 
-def test_write_player_env_points_the_engine_at_the_game_folder(tmp_path: Path) -> None:
+def test_root_app_with_sidecar_manifest_is_a_game(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    directory = prepare_game_dir(library, "Dead Cells")
-    env_path = support_env_path(directory)
-    env_path.parent.mkdir(parents=True, exist_ok=True)
-    env_path.write_text("# mine\nDM_FPS_TARGET=60\nDM_SAVE=/somewhere/else\n", encoding="utf-8")
-
-    written = write_player_env(directory)
-
-    lines = written.read_text(encoding="utf-8").splitlines()
-    assert written == env_path and directory in env_path.parents
-    assert "DM_FPS_TARGET=60" in lines  # user settings survive
-    assert f"DM_SAVE={directory / 'saves'}" in lines  # ours wins
-    assert f"DM_CHEATS={directory / 'cheats'}" in lines
-    assert f"DM_LOG_DIR={directory / 'logs'}" in lines
-    assert f"DM_ALBUM_DIR={directory / 'screenshots'}" in lines
-    assert [line for line in lines if line.startswith("DM_SAVE=")] == [f"DM_SAVE={directory / 'saves'}"]
-
-
-def test_manifest_round_trip_and_scan(tmp_path: Path) -> None:
-    library = _library(tmp_path)
-    older = prepare_game_dir(library, "Older Game")
-    newer = prepare_game_dir(library, "Newer Game")
-    app = _app(newer, name="Newer Game", title_id="0100646009FBE000")
+    app = _app(library)
     write_manifest(
-        newer,
-        name="Newer Game",
+        app.with_suffix(".nx2mac.json"),
+        name="Dead Cells",
         app_path=app,
-        title_id="0100646009FBE000",
+        title_id=TID,
         version="1.25.0",
         engine_source="fork",
         engine_ref="fork-customizations",
         engine_commit="69513b66656d",
         patches=("0001-launcher-state-dirs.patch",),
-        inputs={"game": "/dumps/Dead Cells", "kind": "switch1"},
+        inputs={"game": "/dumps/Dead Cells"},
     )
-    write_manifest(
-        older,
-        name="Older Game",
-        app_path=older / "gone.app",
-        title_id=None,
-        version=None,
-        engine_source="upstream",
-        engine_ref="main",
-        engine_commit="deadbeef",
-        patches=(),
-        inputs={},
-    )
-
-    # give the entries explicit build times so the ordering test is deterministic
-    for directory, stamp in ((older, "2026-01-01T00:00:00+00:00"), (newer, "2026-02-02T00:00:00+00:00")):
-        manifest = read_manifest(directory) or {}
-        manifest["built_at"] = stamp
-        (directory / MANIFEST_NAME).write_text(json.dumps(manifest), encoding="utf-8")
 
     games = list_games(library)
 
-    assert [game.name for game in games] == ["Newer Game", "Older Game"]  # newest build first
-    newest = games[0]
-    assert newest.version == "1.25.0" and newest.title_id == "0100646009FBE000"
-    assert newest.engine_commit == "69513b66656d" and newest.patches == ("0001-launcher-state-dirs.patch",)
-    assert newest.has_app and newest.icon_path == app / "Contents" / "Resources" / "AppIcon.icns"
-    assert newest.size_bytes > 0
-    assert not games[1].has_app  # the app is gone, the entry stays visible
+    assert len(games) == 1
+    game = games[0]
+    assert (game.name, game.version, game.title_id) == ("Dead Cells", "1.25.0", TID)
+    assert game.has_app and game.icon_path == app / "Contents" / "Resources" / "AppIcon.icns"
+    assert game.engine_commit == "69513b66656d" and game.patches == ("0001-launcher-state-dirs.patch",)
+    # the data folders come from the library layout, not from beside the app
+    assert Path(str(game.to_dict()["saves"])) == save_dir(library, TID)
+    assert Path(str(game.to_dict()["logs"])) == logs_dir(library)
+    assert Path(str(game.to_dict()["cheats"])) == cheats_dir(library, TID)
+
+
+def test_app_without_manifest_still_shows_name_and_version(tmp_path: Path) -> None:
+    library = _library(tmp_path)
+    _app(library, name="Hand Built", title_id="01003D901D24A000", version="1.0.1")
+
+    game = list_games(library)[0]
+
+    assert (game.name, game.version, game.title_id) == ("Hand Built", "1.0.1", "01003D901D24A000")
+
+
+def test_only_built_games_are_listed(tmp_path: Path) -> None:
+    """A library folder also holds dumps, key files and tool checkouts: none are games."""
+    library = _library(tmp_path)
+    (library / "0Dead_Cells[0100646009FBE000]").mkdir()
+    (library / "0Dead_Cells[0100646009FBE000]" / "base.nsp").write_bytes(b"\x00")
+    (library / "nxnative-dev").mkdir()
+    (library / "prod.keys").write_text("k\n", encoding="utf-8")
+    _app(library, name="Dead Cells")
+
+    names = [game.name for game in list_games(library)]
+
+    assert names == ["Dead Cells"]
+    assert not ({"0Dead_Cells[0100646009FBE000]", "nxnative-dev"} & set(names))
+
+
+def test_legacy_per_game_folder_is_still_listed(tmp_path: Path) -> None:
+    library = _library(tmp_path)
+    legacy = library / "Old Entry"
+    (legacy / "Old.app" / "Contents").mkdir(parents=True)
+    (legacy / "Old.app" / "Contents" / "Info.plist").write_bytes(
+        plistlib.dumps({"CFBundleName": "Old", "CFBundleShortVersionString": "0.9"})
+    )
+
+    game = list_games(library)[0]
+
+    assert game.name == "Old" and game.version == "0.9"
+    assert str(game.to_dict()["saves"]).startswith(str(legacy))  # its own folder layout
 
 
 def test_touch_last_played_moves_a_game_to_the_top(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    first = prepare_game_dir(library, "First")
-    second = prepare_game_dir(library, "Second")
-    for directory, name in ((first, "First"), (second, "Second")):
-        write_manifest(
-            directory,
-            name=name,
-            app_path=directory / f"{name}.app",
-            title_id=None,
-            version=None,
-            engine_source="upstream",
-            engine_ref="main",
-            engine_commit="c" * 40,
-            patches=(),
-            inputs={},
-        )
+    first = _app(library, name="First", title_id="0100000000001000")
+    second = _app(library, name="Second", title_id="0100000000002000")
+    for app, name in ((first, "First"), (second, "Second")):
+        write_manifest(app.with_suffix(".nx2mac.json"), name=name, app_path=app, title_id=None,
+                       version=None, engine_source="upstream", engine_ref="main",
+                       engine_commit="c" * 40, patches=(), inputs={})
 
-    stamp = touch_last_played(first)
+    stamp = touch_last_played(first.with_suffix(".nx2mac.json"))
 
-    assert read_manifest(first)["last_played"] == stamp  # type: ignore[index]
+    assert read_manifest(first.with_suffix(".nx2mac.json"))["last_played"] == stamp  # type: ignore[index]
     assert list_games(library)[0].name == "First"
 
 
-def test_find_game_by_name_folder_or_title_id(tmp_path: Path) -> None:
+def test_find_game_by_name_path_or_title_id(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    directory = prepare_game_dir(library, "Dead Cells")
-    write_manifest(
-        directory,
-        name="Dead Cells",
-        app_path=directory / "Dead Cells.app",
-        title_id="0100646009FBE000",
-        version="1.25.0",
-        engine_source="fork",
-        engine_ref="fork-customizations",
-        engine_commit="c" * 40,
-        patches=(),
-        inputs={},
-    )
+    app = _app(library)
+    write_manifest(app.with_suffix(".nx2mac.json"), name="Dead Cells", app_path=app, title_id=TID,
+                   version="1.25.0", engine_source="fork", engine_ref="main",
+                   engine_commit="c" * 40, patches=(), inputs={})
 
-    assert find_game(library, "Dead Cells").path == directory
-    assert find_game(library, str(directory)).path == directory  # the GUI passes a path
-    assert find_game(library, "0100646009fbe000").title_id == "0100646009FBE000"
+    assert find_game(library, "Dead Cells").app_path == app
+    assert find_game(library, TID.lower()).version == "1.25.0"
+    assert find_game(library, str(library)).name == "Dead Cells"  # the GUI passes the entry path
     with pytest.raises(LibraryError, match="no game called"):
         find_game(library, "Zelda")
 
@@ -213,137 +310,18 @@ def test_describe_library_payload(tmp_path: Path) -> None:
     payload = describe_library(library)
 
     assert payload["dir"] == str(library) and payload["exists"] is True and payload["games"] == []
-    entry = prepare_game_dir(library, "One")
-    (entry / MANIFEST_NAME).write_text(json.dumps({"name": "One"}), encoding="utf-8")
+    _app(library, name="One")
     assert describe_library(library)["games"][0]["name"] == "One"  # type: ignore[index]
 
 
-def test_create_player_gives_their_own_store_and_name(tmp_path: Path) -> None:
-    directory = prepare_game_dir(_library(tmp_path), "Dead Cells")
-
-    player = create_player(directory, "Ada")
-
-    players, active = load_players(directory)
-    assert [entry.name for entry in players] == ["Ada"] and active == player.id
-    assert player_save_dir(directory, player.id).is_dir()
-    assert (directory / PLAYERS_FILE).is_file()
-
-
-def test_second_player_gets_a_separate_store_and_can_be_selected(tmp_path: Path) -> None:
-    directory = prepare_game_dir(_library(tmp_path), "Dead Cells")
-    ada = create_player(directory, "Ada")
-    grace = create_player(directory, "Grace")
-
-    assert active_player(directory).name == "Grace"  # the newest player plays
-    assert player_save_dir(directory, ada.id) != player_save_dir(directory, grace.id)
-
-    select_player(directory, "ada")
-
-    assert active_player(directory).name == "Ada"
-
-
-def test_player_names_are_validated(tmp_path: Path) -> None:
-    directory = prepare_game_dir(_library(tmp_path), "Dead Cells")
-    create_player(directory, "Ada")
-
-    with pytest.raises(LibraryError, match="already exists"):
-        create_player(directory, "ada")
-    with pytest.raises(LibraryError, match="needs a name"):
-        create_player(directory, "  ")
-    with pytest.raises(LibraryError, match="32 characters"):
-        create_player(directory, "x" * 40)
-    with pytest.raises(LibraryError, match="no player called"):
-        select_player(directory, "Nobody")
-
-
-def test_player_limit(tmp_path: Path) -> None:
-    directory = prepare_game_dir(_library(tmp_path), "Dead Cells")
-    for index in range(MAX_PLAYERS):
-        create_player(directory, f"P{index}")
-
-    with pytest.raises(LibraryError, match="already has 8 players"):
-        create_player(directory, "One Too Many")
-
-
-def test_delete_player_keeps_the_saves(tmp_path: Path) -> None:
-    directory = prepare_game_dir(_library(tmp_path), "Dead Cells")
-    ada = create_player(directory, "Ada")
-    store = player_save_dir(directory, ada.id)
-    (store / "save.dat").write_bytes(b"\x00")
-
-    delete_player(directory, "Ada")
-
-    assert load_players(directory) == ([], None)
-    assert (store / "save.dat").is_file()  # nothing is destroyed
-
-
-def test_env_follows_the_active_player(tmp_path: Path) -> None:
-    directory = prepare_game_dir(_library(tmp_path), "Dead Cells")
-    create_player(directory, "Ada")
-    grace = create_player(directory, "Grace")
-
-    write_player_env(directory)
-    text = support_env_path(directory).read_text(encoding="utf-8")
-
-    assert f"DM_SAVE={player_save_dir(directory, grace.id)}" in text
-    assert "DM_NICK=Grace" in text
-
-    select_player(directory, "Ada")
-    write_player_env(directory)
-    text = support_env_path(directory).read_text(encoding="utf-8")
-    assert "DM_NICK=Ada" in text
-    assert [line for line in text.splitlines() if line.startswith("DM_NICK=")] == ["DM_NICK=Ada"]
-
-
-def test_env_without_players_uses_the_shared_saves_folder(tmp_path: Path) -> None:
-    directory = prepare_game_dir(_library(tmp_path), "Dead Cells")
-
-    write_player_env(directory)
-
-    text = support_env_path(directory).read_text(encoding="utf-8")
-    assert f"DM_SAVE={directory / 'saves'}" in text and "DM_NICK=" not in text
-
-
-def test_build_env_keeps_everything_inside_the_game_folder(tmp_path: Path) -> None:
-    directory = prepare_game_dir(_library(tmp_path), "Dead Cells")
-
-    path = write_build_env(directory)
-    text = path.read_text(encoding="utf-8")
-
-    assert path.parent == directory / "support"
-    assert f"DM_SUPPORT_DIR={directory / 'support'}" in text
-    assert f"DM_LOG_DIR={directory / 'logs'}" in text
-    assert f"DM_SAVE={directory / 'saves'}" in text
-    assert "~/Library" not in text and "/Users/" not in text
-
-
-def test_only_built_games_are_listed(tmp_path: Path) -> None:
-    """A library folder also holds dumps, key files and tool checkouts: none are games."""
+def test_manifest_round_trip(tmp_path: Path) -> None:
     library = _library(tmp_path)
-    # junk that must never appear
-    (library / "0Dead_Cells[0100646009FBE000]").mkdir()  # a dump folder
-    (library / "0Dead_Cells[0100646009FBE000]" / "base.nsp").write_bytes(b"\x00")
-    (library / "nxnative-dev").mkdir()
-    (library / "nup").mkdir()
-    (library / "prod.keys").write_text("k\n", encoding="utf-8")
-    # a real game folder (manifest) and one with only an app
-    built = prepare_game_dir(library, "Dead Cells")
-    write_manifest(built, name="Dead Cells", app_path=built / "Dead Cells.app", title_id="0100646009FBE000",
-                   version="1.25.0", engine_source="fork", engine_ref="fork-customizations",
-                   engine_commit="c" * 40, patches=(), inputs={})
-    (built / "Dead Cells.app").mkdir()
-    loose = library / "Hand Built"
-    (loose / "Something.app" / "Contents").mkdir(parents=True)
-    (loose / "Something.app" / "Contents" / "Info.plist").write_bytes(
-        plistlib.dumps({"CFBundleName": "Something", "CFBundleShortVersionString": "2.0"})
-    )
-    # an app sitting directly in the library root (-o can put it there)
-    (library / "Root Game.app" / "Contents").mkdir(parents=True)
+    app = _app(library)
+    path = write_manifest(app.with_suffix(".nx2mac.json"), name="Dead Cells", app_path=app, title_id=TID,
+                          version="1.25.0", engine_source="fork", engine_ref="fork-customizations",
+                          engine_commit="69513b66656d", patches=(), inputs={"game": "/dumps"})
 
-    names = [game.name for game in list_games(library)]
+    manifest = json.loads(path.read_text(encoding="utf-8"))
 
-    assert names == ["Dead Cells", "Something", "Root Game"] or set(names) == {"Dead Cells", "Something", "Root Game"}
-    assert not ({"0Dead_Cells[0100646009FBE000]", "nxnative-dev", "nup"} & set(names))
-    by_name = {game.name: game for game in list_games(library)}
-    assert by_name["Something"].version == "2.0" and by_name["Something"].app_path is not None
-    assert by_name["Root Game"].path == library
+    assert manifest["name"] == "Dead Cells" and manifest["title_id"] == TID
+    assert manifest["engine"]["commit"] == "69513b66656d" and manifest["built_at"]

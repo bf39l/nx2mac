@@ -19,15 +19,28 @@ screenshots and logs at the library without touching the signed app.
 
 import json
 import plistlib
-from dataclasses import dataclass
+import shutil
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 #: Manifest written into every library game folder.
 MANIFEST_NAME: str = "nx2mac.json"
 
-#: Sub-directories every library game gets. `support` is the engine's own state dir
-#: (DM_SUPPORT_DIR): its env.txt, its temp and its per-user registry live there.
+#: The library's own layout, keyed by title ID (NX2Apple keeps saves the same way):
+#:   save/<TID>/            DM_SAVE - the base store; profiles/<player>/ below it
+#:   logs/<TID>.log         DM_LOG_DIR=<library>/logs (the launcher names the file)
+#:   mods/<TID>/            where this game's mods live
+#:   cheats/<TID>/          DM_CHEATS
+#:   screenshots/<TID>/     DM_ALBUM_DIR
+#:   support/<TID>/         DM_SUPPORT_DIR - the engine's state, env.txt, temp
+#:   build/<TID>_build/     the engine's work folder
+LIBRARY_DIRS: tuple[str, ...] = ("save", "logs", "mods", "cheats", "screenshots", "support", "build")
+
+#: Marks a folder as an nx2mac library (NX2Apple uses the same idea).
+LIBRARY_MARKER: str = ".nx2mac-library"
+
+#: Sub-directories a per-game folder keeps (older layout, still read).
 GAME_SUBDIRS: tuple[str, ...] = ("saves", "logs", "mods", "cheats", "screenshots", "support")
 
 #: The file the build bakes into the app (`--env-file`) to point the engine here.
@@ -101,6 +114,28 @@ class GameEntry:
                 continue
         return total
 
+    #: The library this entry was found in (the scan fills it in).
+    library: Path | None = None
+
+    def data_dir(self, kind: str) -> Path:
+        """Where this game's saves/logs/mods/cheats/screenshots/support live."""
+        if self.library is not None and self.title_id:
+            tid = self.title_id
+            folders = {
+                "saves": save_dir(self.library, tid),
+                "logs": logs_dir(self.library),
+                "mods": mods_dir(self.library, tid),
+                "cheats": cheats_dir(self.library, tid),
+                "screenshots": screenshots_dir(self.library, tid),
+                "support": support_dir(self.library, tid),
+            }
+            if kind in folders:
+                return folders[kind]
+        # older per-game folder layout
+        legacy = {"saves": "saves", "logs": "logs", "mods": "mods", "cheats": "cheats",
+                  "screenshots": "screenshots", "support": "support"}
+        return self.path / legacy.get(kind, kind)
+
     def to_dict(self) -> dict[str, object]:
         return {
             "name": self.name,
@@ -116,11 +151,12 @@ class GameEntry:
             "last_played": self.last_played,
             "size_bytes": self.size_bytes,
             "patches": list(self.patches),
-            "saves": str(self.path / "saves"),
-            "logs": str(self.path / "logs"),
-            "mods": str(self.path / "mods"),
-            "cheats": str(self.path / "cheats"),
-            "screenshots": str(self.path / "screenshots"),
+            "saves": str(self.data_dir("saves")),
+            "logs": str(self.data_dir("logs")),
+            "mods": str(self.data_dir("mods")),
+            "cheats": str(self.data_dir("cheats")),
+            "screenshots": str(self.data_dir("screenshots")),
+            "support": str(self.data_dir("support")),
         }
 
 
@@ -146,9 +182,9 @@ def _slug(text: str, taken: set[str]) -> str:
     return slug
 
 
-def load_players(game_directory: Path) -> tuple[list[Player], str | None]:
+def load_players(library: Path, title_id: str) -> tuple[list[Player], str | None]:
     """The game's players and the active one's id (empty list when none exist yet)."""
-    path = game_directory / PLAYERS_FILE
+    path = save_dir(library, title_id) / PLAYERS_FILE
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -162,64 +198,65 @@ def load_players(game_directory: Path) -> tuple[list[Player], str | None]:
     return players, active if any(player.id == active for player in players) else (players[0].id if players else None)
 
 
-def save_players(game_directory: Path, players: list[Player], active: str | None) -> Path:
-    """Write the player list (and which one plays) into the game folder."""
-    path = game_directory / PLAYERS_FILE
+def save_players(library: Path, title_id: str, players: list[Player], active: str | None) -> Path:
+    """Write the player list (and which one plays) into the game's save folder."""
+    save_dir(library, title_id).mkdir(parents=True, exist_ok=True)
+    path = save_dir(library, title_id) / PLAYERS_FILE
     payload = {"active": active, "players": [player.to_dict() for player in players]}
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return path
 
 
-def player_save_dir(game_directory: Path, player_id: str) -> Path:
-    """A player's own save store (what DM_SAVE points at)."""
-    return game_directory / "players" / player_id / "saves"
+def player_save_dir(library: Path, title_id: str, player_id: str) -> Path:
+    """A player's own save store (what DM_SAVE points at), like NX2Apple's profiles."""
+    return profiles_dir(library, title_id) / player_id
 
 
-def active_player(game_directory: Path) -> Player | None:
-    players, active = load_players(game_directory)
+def active_player(library: Path, title_id: str) -> Player | None:
+    players, active = load_players(library, title_id)
     return next((player for player in players if player.id == active), None)
 
 
-def create_player(game_directory: Path, name: str) -> Player:
+def create_player(library: Path, title_id: str, name: str) -> Player:
     """Add a player with a preferred name and make them the active one."""
     wanted = name.strip()
     if not wanted:
         raise LibraryError("a player needs a name")
     if len(wanted) > 32:
         raise LibraryError("a player name can be at most 32 characters (the engine's limit)")
-    players, _ = load_players(game_directory)
+    players, _ = load_players(library, title_id)
     if len(players) >= MAX_PLAYERS:
         raise LibraryError(f"this game already has {MAX_PLAYERS} players")
     if any(player.name.casefold() == wanted.casefold() for player in players):
         raise LibraryError(f"a player called {wanted!r} already exists")
     player = Player(id=_slug(wanted, {entry.id for entry in players}), name=wanted, created=_now())
-    player_save_dir(game_directory, player.id).mkdir(parents=True, exist_ok=True)
+    player_save_dir(library, title_id, player.id).mkdir(parents=True, exist_ok=True)
     players.append(player)
-    save_players(game_directory, players, player.id)
+    save_players(library, title_id, players, player.id)
     return player
 
 
-def select_player(game_directory: Path, name: str) -> Player:
+def select_player(library: Path, title_id: str, name: str) -> Player:
     """Make an existing player (by name or id) the one who plays."""
-    players, _ = load_players(game_directory)
+    players, _ = load_players(library, title_id)
     wanted = name.strip().casefold()
     player = next((entry for entry in players if entry.id.casefold() == wanted or entry.name.casefold() == wanted), None)
     if player is None:
         raise LibraryError(f"no player called {name!r} in this game")
-    player_save_dir(game_directory, player.id).mkdir(parents=True, exist_ok=True)
-    save_players(game_directory, players, player.id)
+    player_save_dir(library, title_id, player.id).mkdir(parents=True, exist_ok=True)
+    save_players(library, title_id, players, player.id)
     return player
 
 
-def delete_player(game_directory: Path, name: str) -> Player:
+def delete_player(library: Path, title_id: str, name: str) -> Player:
     """Forget a player (their save folder is left on disk, so nothing is lost by accident)."""
-    players, active = load_players(game_directory)
+    players, active = load_players(library, title_id)
     wanted = name.strip().casefold()
     player = next((entry for entry in players if entry.id.casefold() == wanted or entry.name.casefold() == wanted), None)
     if player is None:
         raise LibraryError(f"no player called {name!r} in this game")
     remaining = [entry for entry in players if entry.id != player.id]
-    save_players(game_directory, remaining, None if active == player.id else active)
+    save_players(library, title_id, remaining, None if active == player.id else active)
     return player
 
 
@@ -272,66 +309,135 @@ def app_metadata(app: Path) -> dict[str, str | None]:
     return {"name": name, "title_id": title_id, "version": str(info.get("CFBundleShortVersionString") or "") or None}
 
 
-def support_dir(game_directory: Path) -> Path:
-    """The engine's state folder for this game: kept inside the game's library folder."""
-    return game_directory / "support"
+def is_library(folder: Path) -> bool:
+    """Whether *folder* is an nx2mac library (marker file, or games filed into it)."""
+    return (folder / LIBRARY_MARKER).is_file() or any(folder.glob("*.app"))
 
 
-def support_env_path(game_directory: Path) -> Path:
+def mark_library(folder: Path) -> Path:
+    """Mark the folder as a library so later setups recognise it."""
+    marker = folder / LIBRARY_MARKER
+    if not marker.exists():
+        marker.write_text("", encoding="utf-8")
+    return marker
+
+
+def save_dir(library: Path, title_id: str) -> Path:
+    """The game's save store (DM_SAVE when no player is chosen)."""
+    return library / "save" / title_id
+
+
+def profiles_dir(library: Path, title_id: str) -> Path:
+    """Where the players of one game keep their own stores."""
+    return save_dir(library, title_id) / "profiles"
+
+
+def logs_dir(library: Path) -> Path:
+    """One shared log folder: the launcher names each file <TITLEID>.log."""
+    return library / "logs"
+
+
+def mods_dir(library: Path, title_id: str) -> Path:
+    return library / "mods" / title_id
+
+
+def cheats_dir(library: Path, title_id: str) -> Path:
+    return library / "cheats" / title_id
+
+
+def screenshots_dir(library: Path, title_id: str) -> Path:
+    return library / "screenshots" / title_id
+
+
+def support_dir(library: Path, title_id: str) -> Path:
+    """The engine's state folder for this game (DM_SUPPORT_DIR)."""
+    return library / "support" / title_id
+
+
+def build_dir(library: Path, title_id: str) -> Path:
+    """The engine's work folder for this game."""
+    return library / "build" / f"{title_id}_build"
+
+
+def support_env_path(support: Path) -> Path:
     """The env.txt the engine's launcher reads for this game (after the baked one)."""
-    return support_dir(game_directory) / "env.txt"
+    return support / "env.txt"
 
 
-def build_env_path(game_directory: Path) -> Path:
+def build_env_path(support: Path) -> Path:
     """Where the env file handed to the engine at build time is written."""
-    return support_dir(game_directory) / BUILD_ENV_NAME
+    return support / BUILD_ENV_NAME
 
 
-def write_build_env(game_directory: Path) -> Path:
-    """The env file baked into the app: it points the engine's state at this folder.
+def ensure_layout(library: Path, title_id: str) -> Path:
+    """Create every folder this game uses in the library, and mark the library."""
+    mark_library(library)
+    for directory in (
+        save_dir(library, title_id),
+        logs_dir(library),
+        mods_dir(library, title_id),
+        cheats_dir(library, title_id),
+        screenshots_dir(library, title_id),
+        support_dir(library, title_id),
+        build_dir(library, title_id),
+    ):
+        directory.mkdir(parents=True, exist_ok=True)
+    return support_dir(library, title_id)
+
+
+def write_build_env(library: Path, title_id: str) -> Path:
+    """The env file baked into the app: it points the engine's data at the library.
 
     The launcher reads this file before it decides where its support dir and log go,
     so `DM_SUPPORT_DIR` and `DM_LOG_DIR` here keep saves, logs, cheats, screenshots
-    and its own state inside the game's library folder instead of ~/Library.
+    and its own state inside the library (one folder per title ID) instead of ~/Library.
     """
-    directory = support_dir(game_directory)
-    directory.mkdir(parents=True, exist_ok=True)
-    for sub in GAME_SUBDIRS:
-        (game_directory / sub).mkdir(parents=True, exist_ok=True)
-
+    support = ensure_layout(library, title_id)
     managed = {
-        "DM_SUPPORT_DIR": str(directory),
-        "DM_LOG_DIR": str(game_directory / "logs"),
-        "DM_SAVE": str(game_directory / "saves"),
-        "DM_TEMP": str(game_directory / "temp"),
-        "DM_ALBUM_DIR": str(game_directory / "screenshots"),
-        "DM_CHEATS": str(game_directory / "cheats"),
+        "DM_SUPPORT_DIR": str(support),
+        "DM_LOG_DIR": str(logs_dir(library)),
+        "DM_SAVE": str(save_dir(library, title_id)),
+        "DM_TEMP": str(support / "temp"),
+        "DM_ALBUM_DIR": str(screenshots_dir(library, title_id)),
+        "DM_CHEATS": str(cheats_dir(library, title_id)),
     }
-    path = build_env_path(game_directory)
+    path = build_env_path(support)
     lines = [ENV_HEADER.rstrip(), *[f"{key}={value}" for key, value in managed.items()]]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 
 
-def write_player_env(game_directory: Path) -> Path:
+def baked_env_path(app: Path) -> Path:
+    """The env file inside a built app (the engine copies our --env-file there)."""
+    return app / "Contents" / "Resources" / "dm" / "env.txt"
+
+
+def bake_env(app: Path, env_file: Path) -> Path | None:
+    """Refresh the app's baked env (after the game's folder moved), or None."""
+    target = baked_env_path(app)
+    if not target.parent.is_dir():
+        return None
+    shutil.copyfile(env_file, target)
+    return target
+
+
+def write_player_env(library: Path, title_id: str) -> Path:
     """Point the engine's saves at the *active player's* store, and name them.
 
-    Each player is user 1 in their own store, which is the only way to give every
-    player their own name (the engine hard-codes "Player 2".. and reads DM_NICK for
-    user 1 only). This file is read after the baked one, so it wins. Keys nx2mac
-    does not manage are preserved, so hand-written settings survive.
+    Each player is user 1 in their own store under `save/<TID>/profiles/`, which is
+    the only way to give every player their own name (the engine hard-codes
+    "Player 2".. and reads DM_NICK for user 1 only). This file is read after the
+    baked one, so it wins. Keys nx2mac does not manage are preserved.
     """
-    path = support_env_path(game_directory)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    support = ensure_layout(library, title_id)
+    path = support_env_path(support)
 
-    managed: dict[str, str] = {}
-    for variable, sub in MANAGED_ENV.items():
-        managed[variable] = str(game_directory / sub)
-        (game_directory / sub).mkdir(parents=True, exist_ok=True)
-
-    player = active_player(game_directory)
+    managed: dict[str, str] = {
+        "DM_SAVE": str(save_dir(library, title_id)),
+    }
+    player = active_player(library, title_id)
     if player is not None:
-        store = player_save_dir(game_directory, player.id)
+        store = player_save_dir(library, title_id, player.id)
         store.mkdir(parents=True, exist_ok=True)
         managed["DM_SAVE"] = str(store)
         managed[PLAYER_NICK_ENV] = player.name
@@ -353,7 +459,7 @@ def write_player_env(game_directory: Path) -> Path:
 
 
 def write_manifest(
-    game_directory: Path,
+    manifest_file: Path,
     *,
     name: str,
     app_path: Path,
@@ -365,7 +471,11 @@ def write_manifest(
     patches: tuple[str, ...],
     inputs: dict[str, object],
 ) -> Path:
-    """Record what was built (and from which engine) next to the app."""
+    """Record what was built (and from which engine) next to the app.
+
+    `manifest_file` is either an app's sidecar (`<Game>.nx2mac.json`) or a game
+    folder (where it becomes `nx2mac.json`).
+    """
     payload: dict[str, object] = {
         "name": name,
         "app": str(app_path),
@@ -379,16 +489,19 @@ def write_manifest(
         },
         "built_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
         "inputs": inputs,
-        "paths": {sub: str(game_directory / sub) for sub in GAME_SUBDIRS},
     }
-    path = game_directory / MANIFEST_NAME
+    path = manifest_file if manifest_file.suffix == ".json" else manifest_file / MANIFEST_NAME
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return path
 
 
-def read_manifest(game_directory: Path) -> dict[str, object] | None:
-    """The manifest of one game folder, or None when there is none/invalid."""
-    path = game_directory / MANIFEST_NAME
+def read_manifest(path: Path) -> dict[str, object] | None:
+    """A manifest (a game folder's `nx2mac.json` or an app's sidecar), or None."""
+    if path.suffix == ".json":
+        manifest_path = path
+    else:
+        manifest_path = path / MANIFEST_NAME
+    path = manifest_path
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -396,9 +509,14 @@ def read_manifest(game_directory: Path) -> dict[str, object] | None:
     return data if isinstance(data, dict) else None
 
 
-def _entry(directory: Path, app: Path | None) -> GameEntry:
+def manifest_path_for(app: Path) -> Path:
+    """The manifest that belongs to an app filed directly in the library root."""
+    return app.with_suffix(".nx2mac.json")
+
+
+def _entry(directory: Path, app: Path | None, manifest_path: Path | None = None) -> GameEntry:
     """One library entry, from its manifest when present, else from the app itself."""
-    manifest = read_manifest(directory) or {}
+    manifest = read_manifest(manifest_path or directory) or {}
     app_str = manifest.get("app")
     if isinstance(app_str, str) and Path(app_str).is_dir():
         app = Path(app_str)
@@ -449,14 +567,27 @@ def list_games(library: Path) -> list[GameEntry]:
             continue
         if not _is_game_folder(directory):
             continue
-        entries.append(_entry(directory, next(iter(sorted(directory.glob("*.app"))), None)))
+        entry = _entry(directory, next(iter(sorted(directory.glob("*.app"))), None))
+        entries.append(replace(entry, library=library))
 
     for app in sorted(library.glob("*.app")):
-        entries.append(_entry(library, app))
+        entry = _entry(library, app, manifest_path=app.with_suffix(".nx2mac.json"))
+        entries.append(replace(entry, library=library))
 
     # "Recently played" first (like NX2Apple), then newest build, then name.
     entries.sort(key=lambda entry: (entry.last_played or "", entry.built_at or "", entry.name), reverse=True)
     return entries
+
+
+def find_entry_for_input(library: Path, game_path: Path) -> Path | None:
+    """The library folder a previous build of this same input was filed into."""
+    wanted = str(game_path)
+    for entry in list_games(library):
+        manifest = read_manifest(entry.path) or {}
+        inputs = manifest.get("inputs")
+        if isinstance(inputs, dict) and str(inputs.get("game") or "") == wanted:
+            return entry.path
+    return None
 
 
 def find_game(library: Path, needle: str) -> GameEntry:
@@ -476,10 +607,10 @@ def find_game(library: Path, needle: str) -> GameEntry:
     raise LibraryError(f"no game called {needle!r} in {library}")
 
 
-def touch_last_played(game_directory: Path) -> str:
+def touch_last_played(manifest_file: Path) -> str:
     """Record that the game was launched (keeps "recently played" ordering honest)."""
-    path = game_directory / MANIFEST_NAME
-    manifest = read_manifest(game_directory) or {}
+    path = manifest_file if manifest_file.suffix == ".json" else manifest_file / MANIFEST_NAME
+    manifest = read_manifest(manifest_file) or {}
     stamp = datetime.now(UTC).replace(microsecond=0).isoformat()
     manifest["last_played"] = stamp
     path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

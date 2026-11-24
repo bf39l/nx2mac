@@ -74,8 +74,8 @@ final class BuildModel: ObservableObject {
     @Published private(set) var outDirURL: URL?
     /// True while `outDirURL` is the default rather than something the user chose.
     @Published private(set) var outDirIsAuto = true
-    /// Optional update package(s) picked outside the game folder (staged by the CLI).
-    @Published var updateURLs: [URL] = []
+    /// The update package to build with (one, like the game file). Empty = none.
+    @Published private(set) var updateURL: URL?
     /// True while the update row is just the newest update found beside the game.
     @Published private(set) var updateIsAuto = false
     /// Optional DLC packages/folders picked outside the game folder (staged by the CLI).
@@ -106,7 +106,7 @@ final class BuildModel: ObservableObject {
             keys: keysURL,
             library: chosenOutDir == nil ? libraryURL : nil,
             outDir: chosenOutDir,
-            updates: updateURLs,
+            updates: updateURL.map { [$0] } ?? [],
             dlcs: dlcURLs,
             source: engineChoice,
             ref: engineRef
@@ -134,9 +134,9 @@ final class BuildModel: ObservableObject {
         await scanGameDir(url)
     }
 
-    /// The user took over the update choice (or cleared it).
-    func chooseUpdate(_ urls: [URL]) {
-        updateURLs = urls
+    /// Choose the update yourself (nil clears it): this wins over the folder scan.
+    func setUpdate(_ url: URL?) {
+        updateURL = url
         updateIsAuto = false
     }
 
@@ -166,12 +166,12 @@ final class BuildModel: ObservableObject {
             gameFileIsAuto = false
         }
         // The newest update beside the game is chosen for you; clear or add your own to change it.
-        if updateIsAuto || updateURLs.isEmpty {
+        if updateIsAuto || updateURL == nil {
             if let newest = payload.update {
-                updateURLs = [URL(fileURLWithPath: newest)]
+                updateURL = URL(fileURLWithPath: newest)
                 updateIsAuto = true
             } else {
-                updateURLs = []
+                updateURL = nil
                 updateIsAuto = false
             }
         }

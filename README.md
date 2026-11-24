@@ -73,8 +73,8 @@ open ~/Applications/nx2mac.app
   (installing Xcode, updating macOS, Homebrew itself) show a command to copy and a link.
 - **Build tab** — pick the **engine** (source + ref, Save & Pin) first, then `prod.keys` (optional), a **Game dir** (the package it holds is picked for
   you and shown; use **Game → Choose…** to build a different file) and/or the **Game** file itself,
-  an update (the **newest** update beside the game is pre-selected — badge *newest*; add or clear to
-  change it) and any number of DLC packages (auto-sized vertical list, five rows then scrolls),
+  one **Update** file (the newest update beside the game is pre-selected — badge *newest*; choose or
+  clear to change it) and any number of DLC packages (auto-sized vertical list, five rows then scrolls),
   and an **output folder** (defaults to the game library, so builds are filed into
 `<library>/nx2mac_game_lib/<TID>/`; pick a folder to override).
   The engine's progress streams into the log; when it finishes you can reveal or open the app.

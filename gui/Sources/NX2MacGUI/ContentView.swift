@@ -69,29 +69,7 @@ struct BuildTab: View {
             gameFileRow
             packageList
 
-            row(title: "Update") {
-                Text(model.updateURLs.isEmpty
-                     ? "optional — pick an update .nsp/.nsz from anywhere"
-                     : "\(model.updateURLs.count) selected")
-                    .font(.callout)
-                    .foregroundStyle(model.updateURLs.isEmpty ? .tertiary : .primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if model.updateIsAuto {
-                    Text("newest")
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.12), in: Capsule())
-                        .help("The newest update found beside the game; add or clear to change it")
-                }
-                Button("Add…") { chooseUpdate() }
-                if !model.updateURLs.isEmpty {
-                    Button("Clear") { model.chooseUpdate([]) }
-                }
-            }
-            selectionList(model.updateURLs) { index in model.updateURLs.remove(at: index) }
-
+            updateRow
             row(title: "DLC") {
                 Text(model.dlcURLs.isEmpty
                      ? "optional — pick one or more DLC .nsp/.nsz (or a folder)"
@@ -148,6 +126,29 @@ struct BuildTab: View {
             .truncationMode(.middle)
             .foregroundStyle(empty ? .tertiary : .primary)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The update package: one file, exactly like the game row (auto-filled from the folder).
+    private var updateRow: some View {
+        row(title: "Update") {
+            HStack(spacing: 6) {
+                pathLabel(model.updateURL?.path ?? "optional — the newest update beside the game is picked",
+                          empty: model.updateURL == nil)
+                if model.updateURL != nil, model.updateIsAuto {
+                    Text("newest")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.12), in: Capsule())
+                        .help("Found beside the game; choose a file to override it")
+                }
+            }
+            Button("Choose…") { chooseUpdate() }
+            if model.updateURL != nil {
+                Button("Clear") { model.setUpdate(nil) }
+            }
+        }
     }
 
     /// The dump folder (optional): picking it auto-selects the package inside.
@@ -396,17 +397,15 @@ extension BuildTab {
         if panel.runModal() == .OK, let url = panel.url { model.keysURL = url }
     }
 
-    /// Pick one or more update packages (multi-select: a folder may hold several).
+    /// The update package (one file; a folder picks the newest update inside it).
     func chooseUpdate() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = true
-        panel.allowsMultipleSelection = true
-        panel.message = "Pick the update package(s) for this game — they are staged with the base game."
-        panel.prompt = "Add update"
-        if panel.runModal() == .OK {
-            model.chooseUpdate(model.updateURLs + unique(panel.urls, into: model.updateURLs))
-        }
+        panel.allowsMultipleSelection = false
+        panel.message = "Pick the update package for this game — it is staged with the base game."
+        panel.prompt = "Use this update"
+        if panel.runModal() == .OK, let url = panel.url { model.setUpdate(url) }
     }
 
     /// Pick any number of DLC packages, or whole folders of them.

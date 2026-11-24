@@ -318,7 +318,9 @@ struct LibraryGame: Decodable, Identifiable, Hashable {
     /// The library folder this game was found in (more than one library is allowed).
     let library: String?
 
-    var id: String { path }
+    /// Apps sit directly in the library root, so `path` is the same folder for every game there;
+    /// the app's own path is what is unique (and falls back to `path` for an app-less entry).
+    var id: String { appPath ?? path }
     var appURL: URL? { appPath.map { URL(fileURLWithPath: $0) } }
 
     enum CodingKeys: String, CodingKey {

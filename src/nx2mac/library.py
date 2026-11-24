@@ -731,8 +731,7 @@ def list_games(library: Path) -> list[GameEntry]:
         entry = _entry(base, app, manifest_path=app.with_suffix(".nx2mac.json"))
         entries.append(replace(entry, library=library))
 
-    # "Recently played" first (like NX2Apple), then newest build, then name.
-    entries.sort(key=lambda entry: (entry.last_played or "", entry.built_at or "", entry.name), reverse=True)
+    entries.sort(key=lambda entry: entry.name.casefold())
     return entries
 
 
@@ -1539,7 +1538,7 @@ def describe_libraries(libraries: Iterable[Path]) -> dict[str, object]:
             payload = entry.to_dict()
             payload["library"] = str(directory)
             games.append(payload)
-    games.sort(key=lambda game: (str(game.get("last_played") or ""), str(game.get("built_at") or "")), reverse=True)
+    games.sort(key=lambda game: str(game.get("name") or "").casefold())
     return {
         "dirs": [str(directory) for directory in dirs],
         "missing": [str(directory) for directory in dirs if not directory.is_dir()],

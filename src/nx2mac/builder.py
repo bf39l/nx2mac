@@ -12,10 +12,11 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import icons
 from . import library as library_mod
 from .cheats import CheatToolError, anchor_build_cheats
 from .doctor import BUILD_PREFLIGHT_EXCLUDE, DoctorContext, run_checks
-from .engines import ResolvedEngine
+from .engines import ResolvedEngine, fallback_icon_path
 from .inputs import GAME_EXTENSIONS, KEYS_FILENAMES, NSO_EXTENSION, SWITCH1_EXTENSIONS
 from .probe import probe as probe_path
 from .pyenv import ensure_venv
@@ -111,6 +112,7 @@ def build_argv(
     extra_args: Sequence[str],
     work_dir: Path | None = None,
     env_file: Path | None = None,
+    fallback_icon: Path | None = None,
 ) -> list[str]:
     """Assemble the argv for the engine's build script (macOS app target).
 
@@ -129,6 +131,8 @@ def build_argv(
         args.extend(["--env-file", str(env_file)])
     if output is not None:
         args.extend(["-o", str(output)])
+    if fallback_icon is not None:
+        args.extend(["--fallback-icon", str(fallback_icon)])
     # One JSON object per line: counters (shaders compiled, files copied) reach the UI live.
     args.extend(["--progress", "json"])
     args.extend(extra_args)
@@ -474,11 +478,15 @@ def run_build(
 
     title_id = title_id_of(game) if (library is not None or out_dir is not None) else None
     key = title_id or library_mod.safe_name(game.path.stem if game.path.is_file() else game.path.name)
+    game_folder: Path | None = library_mod.game_root(library, key) if library is not None else None
     work_dir: Path | None = None
     env_file: Path | None = None
     if library is not None:
         # keeps the engine's support dir, logs, saves, cheats and screenshots here
-        env_file = library_mod.write_build_env(library, key)
+        env_file = library_mod.write_build_env(library, key)  # also creates the game folder
+        # The app icon lives beside the game's data; fetch the known art once the folder exists, so
+        # a game that carries none (a Switch 2 NUP, a dump) still gets its real icon.
+        icons.ensure_game_icon(game_folder, title_id, env)
         work_dir = library_mod.build_dir(library, key)
         out_dir = library_mod.app_root(library)
         if output is None:
@@ -528,6 +536,7 @@ def run_build(
         extra_args,
         work_dir=work_dir,
         env_file=env_file,
+        fallback_icon=fallback_icon_path(title_id, game_folder=game_folder),
     )
     returncode = env.run_stream(argv, cwd=engine.path, on_line=watch)
 

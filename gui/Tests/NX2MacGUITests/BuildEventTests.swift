@@ -169,6 +169,30 @@ final class DoctorReportTests: XCTestCase {
     }
 }
 
+final class LibraryGameIDTests: XCTestCase {
+    /// Apps sit directly in the library root, so every game shares `path`; the id must come from
+    /// the app's own path, or `ForEach` sees duplicate ids and renders only some rows.
+    func testRootLevelAppsGetUniqueIDs() throws {
+        let json = """
+        {"dirs": ["/Users/me/switch"], "missing": [],
+         "games": [
+           {"name": "Dead Cells", "path": "/Users/me/switch", "app_path": "/Users/me/switch/Dead Cells.app",
+            "has_app": true, "icon_path": null, "title_id": "0100646009FBE000", "version": "1.25.0",
+            "engine_commit": null, "engine_ref": null, "built_at": null, "last_played": null,
+            "size_bytes": 1, "saves": "/s", "logs": "/l", "mods": "/m", "cheats": "/c", "screenshots": "/sh", "library": "/Users/me/switch"},
+           {"name": "Fire Emblem", "path": "/Users/me/switch", "app_path": "/Users/me/switch/Fire Emblem.app",
+            "has_app": true, "icon_path": null, "title_id": "04007EF01F8AE000", "version": "1.0",
+            "engine_commit": null, "engine_ref": null, "built_at": null, "last_played": null,
+            "size_bytes": 1, "saves": "/s", "logs": "/l", "mods": "/m", "cheats": "/c", "screenshots": "/sh", "library": "/Users/me/switch"}
+         ]}
+        """
+        let payload = try JSONDecoder().decode(LibraryPayload.self, from: Data(json.utf8))
+        XCTAssertEqual(payload.games.count, 2)
+        XCTAssertEqual(payload.games.map(\.path), ["/Users/me/switch", "/Users/me/switch"])  // same folder
+        XCTAssertEqual(Set(payload.games.map(\.id)).count, 2)  // but unique ids
+    }
+}
+
 final class CheatFileTests: XCTestCase {
     /// The Build tab must show the copy the library keeps, not the file the user imported.
     func testTheRowShowsTheLibraryCopy() throws {
@@ -381,32 +405,60 @@ final class OutputFolderDefaultTests: XCTestCase {
         return (root, folder, file)
     }
 
+    @MainActor
+    func testBuildQueueAddsAndRemovesSetups() throws {
+        let model = BuildModel()
+        XCTAssertEqual(model.setups.count, 1)  // one setup to start
+
+        model.addSetup()
+        XCTAssertEqual(model.setups.count, 2)
+
+        model.removeSetup(model.setups[1])
+        XCTAssertEqual(model.setups.count, 1)
+
+        model.removeSetup(model.setups[0])  // never remove the last one
+        XCTAssertEqual(model.setups.count, 1)
+    }
+
+    @MainActor
+    func testNewSetupInheritsTheSelectedProdKeys() throws {
+        let model = BuildModel()
+        let keys = URL(fileURLWithPath: "/keys/prod.keys")
+        model.setups[0].keysURL = keys
+
+        model.addSetup()
+
+        XCTAssertEqual(model.setups[1].keysURL, keys)  // one console's key set carries over
+    }
+
     func testOutputFolderFollowsTheGame() throws {
         let (root, folder, file) = try fixture()
         let model = BuildModel()
+        let setup = model.setups[0]
 
-        model.setGameFile(folder)
-        XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, folder.standardizedFileURL.path)
+        model.setGameFile(setup, folder)
+        XCTAssertEqual(setup.outDirURL?.standardizedFileURL.path, folder.standardizedFileURL.path)
 
         // a package file defaults to the directory holding it
-        model.setGameFile(file)
-        XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, folder.standardizedFileURL.path)
+        model.setGameFile(setup, file)
+        XCTAssertEqual(setup.outDirURL?.standardizedFileURL.path, folder.standardizedFileURL.path)
 
-        model.setGameFile(nil)
-        XCTAssertNil(model.gameURL)
+        model.setGameFile(setup, nil)
+        XCTAssertNil(setup.gameURL)
     }
 
     func testAChosenOutputFolderStopsFollowingTheGame() throws {
         let (root, folder, file) = try fixture()
         let chosen = root.appendingPathComponent("Project")
         let model = BuildModel()
+        let setup = model.setups[0]
 
-        model.setGameFile(folder)
-        model.chooseOutDir(chosen)
-        model.setGameFile(file)  // switching games must not clobber the choice
+        model.setGameFile(setup, folder)
+        model.chooseOutDir(setup, chosen)
+        model.setGameFile(setup, file)  // switching games must not clobber the choice
 
-        XCTAssertFalse(model.outDirIsAuto)
-        XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, chosen.standardizedFileURL.path)
+        XCTAssertFalse(setup.outDirIsAuto)
+        XCTAssertEqual(setup.outDirURL?.standardizedFileURL.path, chosen.standardizedFileURL.path)
     }
 
     /// The library from Setup is the output folder, whatever game folder is picked.
@@ -415,37 +467,39 @@ final class OutputFolderDefaultTests: XCTestCase {
         let (root, folder, file) = try fixture()
         let library = root.appendingPathComponent("Games")
         let model = BuildModel()
+        let setup = model.setups[0]
 
         model.applyLibraries([library.path])
-        XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, library.standardizedFileURL.path)
+        XCTAssertEqual(setup.outDirURL?.standardizedFileURL.path, library.standardizedFileURL.path)
 
-        model.setGameFile(file)
-        XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, library.standardizedFileURL.path)
+        model.setGameFile(setup, file)
+        XCTAssertEqual(setup.outDirURL?.standardizedFileURL.path, library.standardizedFileURL.path)
 
-        model.setGameFile(nil)
-        XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, library.standardizedFileURL.path)
-        XCTAssertTrue(model.outDirIsAuto)
+        model.setGameFile(setup, nil)
+        XCTAssertEqual(setup.outDirURL?.standardizedFileURL.path, library.standardizedFileURL.path)
+        XCTAssertTrue(setup.outDirIsAuto)
 
         // and a chosen folder still wins until the user resets it
         let project = root.appendingPathComponent("Project")
-        model.chooseOutDir(project)
-        model.setGameFile(file)
-        XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, project.standardizedFileURL.path)
+        model.chooseOutDir(setup, project)
+        model.setGameFile(setup, file)
+        XCTAssertEqual(setup.outDirURL?.standardizedFileURL.path, project.standardizedFileURL.path)
 
-        model.resetOutDir()
-        XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, library.standardizedFileURL.path)
+        model.resetOutDir(setup)
+        XCTAssertEqual(setup.outDirURL?.standardizedFileURL.path, library.standardizedFileURL.path)
     }
 
     func testResetReturnsToTheGameDirectory() throws {
         let (root, folder, file) = try fixture()
         let model = BuildModel()
-        model.setGameFile(file)
-        model.chooseOutDir(root.appendingPathComponent("Project"))
+        let setup = model.setups[0]
+        model.setGameFile(setup, file)
+        model.chooseOutDir(setup, root.appendingPathComponent("Project"))
 
-        model.resetOutDir()
+        model.resetOutDir(setup)
 
-        XCTAssertTrue(model.outDirIsAuto)
-        XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, folder.standardizedFileURL.path)
+        XCTAssertTrue(setup.outDirIsAuto)
+        XCTAssertEqual(setup.outDirURL?.standardizedFileURL.path, folder.standardizedFileURL.path)
     }
 }
 

@@ -36,6 +36,7 @@ if [ "${NX2MAC_SKIP_CLI_BUNDLE:-0}" != "1" ]; then
     --specpath "$HERE/.build" \
     --paths "$ROOT/src" \
     --add-data "$ROOT/patches:nx2mac/patches" \
+    --add-data "$ROOT/src/nx2mac/resources:nx2mac/resources" \
     --collect-data rich --collect-submodules click \
     "$ROOT/packaging/cli_entry.py" >/dev/null
 fi

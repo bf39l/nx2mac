@@ -137,6 +137,42 @@ def default_patches_dir() -> Path | None:
     return None
 
 
+def default_icon_path() -> Path | None:
+    """nx2mac's own app icon, shipped with the package, for games that carry none (a NUP without
+    one, a dump folder). The engine's `--fallback-icon` only fills in when the game has no icon, so
+    a game that has its own keeps it."""
+    here = Path(__file__).resolve().parent
+    for candidate in (here / "resources" / "app-icon.png", here.parents[1] / "src" / "nx2mac" / "resources" / "app-icon.png"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _shipped_icons_dir() -> Path | None:
+    """nx2mac's shipped per-game icon folder (`resources/icons`), or None."""
+    here = Path(__file__).resolve().parent
+    for candidate in (here / "resources" / "icons", here.parents[1] / "src" / "nx2mac" / "resources" / "icons"):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def fallback_icon_path(title_id: str | None, *, game_folder: Path | None = None) -> Path | None:
+    """The app icon for a game that carries none: a `<title id>.png`/`.jpg` (case-insensitive) the
+    user dropped beside the game's data (its library folder), or that nx2mac ships in
+    `resources/icons`, when the title matches; else nx2mac's own `app-icon.png`."""
+    directories: list[Path | None] = [game_folder, _shipped_icons_dir()]
+    for directory in directories:
+        if directory is None or title_id is None:
+            continue
+        for suffix in (".png", ".jpg", ".jpeg"):
+            for name in (title_id, title_id.lower()):
+                candidate = directory / f"{name}{suffix}"
+                if candidate.is_file():
+                    return candidate
+    return default_icon_path()
+
+
 def apply_patches(env: Env, checkout: Path, patches_dir: Path | None = None) -> tuple[str, ...]:
     """Apply nx2mac's patch series to a pristine engine *checkout*.
 

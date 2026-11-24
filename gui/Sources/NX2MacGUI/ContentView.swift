@@ -406,6 +406,12 @@ struct BuildTab: View {
                           + "the .app.key and the .nx2mac.json — the app and its saves keep working")
                 }
             case .failed(let message):
+                if let anyway = model.buildAnyway, let flag = anyway.override {
+                    Button("Build anyway") {
+                        Task { await model.retryBuildAnyway(flag) }
+                    }
+                    .help(anyway.note)
+                }
                 Label(message, systemImage: "xmark.octagon.fill")
                     .foregroundStyle(.red)
                     .font(.callout)

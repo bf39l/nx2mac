@@ -847,6 +847,13 @@ def build(
     ),
     source_id: str | None = typer.Option(None, "--source", help="engine id override (upstream|fork)."),
     ref: str | None = typer.Option(None, "--ref", help="pin a branch/tag/commit for this build."),
+    allow_damaged: bool = typer.Option(False, "--allow-damaged", help="pack damaged game files as they are."),
+    allow_other_metal: bool = typer.Option(
+        False, "--allow-other-metal", help="build shaders with this Mac's Metal compiler."
+    ),
+    allow_shader_regressions: bool = typer.Option(
+        False, "--allow-shader-regressions", help="pack without the shaders that stopped translating."
+    ),
 ) -> None:
     """Build a game into a native macOS .app with the pinned nxnative engine."""
     machine_readable = _enter(ctx, json_flag)
@@ -875,8 +882,16 @@ def build(
         if library_dir is not None:
             console.print(f"[dim]Game library:[/] {library_dir}")
 
-    try:
-        result = run_build(
+    allowed: list[str] = []
+    if allow_damaged:
+        allowed.append("--allow-damaged")
+    if allow_other_metal:
+        allowed.append("--allow-other-metal")
+    if allow_shader_regressions:
+        allowed.append("--allow-shader-regressions")
+
+    def attempt(extra: list[str]):
+        return run_build(
             _get_env(),
             cache_root().expanduser(),
             resolved,
@@ -888,9 +903,29 @@ def build(
             dlcs=dlc,
             out_dir=out_dir,
             library_dir=library_dir,
+            extra_args=extra,
         )
+
+    try:
+        result = attempt(allowed)
     except (BuildError, PyEnvError) as error:
         _fail(ctx, str(error))
+
+    # The engine's stops that have a flag: offer to build anyway, like NX2Apple's card does.
+    if result.returncode != 0 and result.failure is not None and result.failure.override is not None:
+        flag = result.failure.override
+        if machine_readable:
+            emit.event("result", **result.to_dict())
+            raise typer.Exit(code=result.returncode)
+        if flag in allowed:
+            console.print(f"[yellow]Still stopped with {flag}.[/]")
+        elif _interactive() and typer.confirm(
+            f"The build stopped: {result.failure.note}. Build anyway ({flag})?", default=False
+        ):
+            result = attempt([*allowed, flag])
+        else:
+            console.print(f"[yellow]Build stopped:[/] {result.failure.message}")
+            console.print(f"Build anyway with [bold]{flag}[/] if you accept it.")
 
     if machine_readable:
         emit.event("result", **result.to_dict())

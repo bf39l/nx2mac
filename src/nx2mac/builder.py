@@ -287,6 +287,40 @@ def _record_in_library(
     return manifest, env_file
 
 
+#: The engine stops that have an override flag — the ones a "build anyway" can get past
+#: (NX2Apple offers exactly these three, BuildFailureKind.overrideFlag).
+OVERRIDABLE: tuple[tuple[str, str, str], ...] = (
+    ("--allow-damaged", "so the game files are damaged", "pack the damaged game files as they are"),
+    ("--allow-other-metal", "ALLOW_OTHER_METAL", "build the shaders with this Mac's Metal compiler"),
+    ("--allow-shader-regressions", "a change to the translation chain broke them",
+     "pack the app without the shaders that stopped translating"),
+)
+
+
+@dataclass(frozen=True)
+class BuildFailure:
+    """Why a build stopped, and the flag that would get past it (when there is one)."""
+
+    message: str  # the engine's own last words
+    override: str | None = None  # e.g. "--allow-damaged"; None = nothing can be built around it
+    note: str = ""  # what the override means, for the user
+
+    def to_dict(self) -> dict[str, object]:
+        return {"message": self.message, "override": self.override, "note": self.note}
+
+
+def classify_failure(lines: Sequence[str]) -> BuildFailure | None:
+    """Read the engine's output for a stop that has an override, else the last red line."""
+    text = "\n".join(lines[-200:])
+    for flag, needle, note in OVERRIDABLE:
+        if needle in text:
+            return BuildFailure(message=needle, override=flag, note=note)
+    red = [line for line in lines if "[RED]" in line]
+    if red:
+        return BuildFailure(message=red[-1].strip()[:400])
+    return None
+
+
 @dataclass(frozen=True)
 class BuildResult:
     """Outcome of one build attempt."""
@@ -298,6 +332,7 @@ class BuildResult:
     out_dir: Path | None = None  # where the app, build folder and keys were collected
     work_dir: Path | None = None  # the engine's build folder (extracted files, shader caches)
     keys_path: Path | None = None  # prod.keys the build actually used
+    failure: BuildFailure | None = None  # why it stopped, when the engine said
     library_dir: Path | None = None  # the game library the build was filed into
     manifest: Path | None = None  # <library>/<Game>/nx2mac.json
     env_file: Path | None = None  # the engine's per-game env.txt we pointed at the folder
@@ -316,6 +351,7 @@ class BuildResult:
             "out_dir": str(self.out_dir) if self.out_dir is not None else None,
             "work_dir": str(self.work_dir) if self.work_dir is not None else None,
             "keys_path": str(self.keys_path) if self.keys_path is not None else None,
+            "failure": self.failure.to_dict() if self.failure is not None else None,
             "library_dir": str(self.library_dir) if self.library_dir is not None else None,
             "manifest": str(self.manifest) if self.manifest is not None else None,
             "env_file": str(self.env_file) if self.env_file is not None else None,
@@ -402,6 +438,14 @@ def run_build(
         out_dir.mkdir(parents=True, exist_ok=True)
         work_dir = work_dir_for(out_dir, game, title_id)
 
+    tail: list[str] = []
+
+    def watch(line: str) -> None:
+        tail.append(line)
+        del tail[:-200]
+        if on_line is not None:
+            on_line(line)
+
     venv = ensure_venv(cache_root, env=env)
     argv = build_argv(
         venv.python,
@@ -413,7 +457,7 @@ def run_build(
         work_dir=work_dir,
         env_file=env_file,
     )
-    returncode = env.run_stream(argv, cwd=engine.path, on_line=on_line)
+    returncode = env.run_stream(argv, cwd=engine.path, on_line=watch)
 
     app_path: Path | None = None
     if returncode == 0:
@@ -438,6 +482,7 @@ def run_build(
         out_dir=out_dir,
         work_dir=work_dir,
         keys_path=keys,
+        failure=classify_failure(tail) if returncode != 0 else None,
         library_dir=library_mod.app_root(library) if library is not None else None,
         manifest=manifest,
         env_file=player_env,

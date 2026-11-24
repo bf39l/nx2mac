@@ -87,6 +87,8 @@ final class BuildModel: ObservableObject {
     @Published private(set) var log: [String] = []
     @Published private(set) var stage: String = ""
     @Published private(set) var appURL: URL?
+    /// A stop the engine can be told to ignore (`--allow-damaged`, `--allow-other-metal`, …).
+    @Published private(set) var buildAnyway: BuildResult.BuildFailure?
 
     private var process: Process?
     /// Lines waiting for the next UI tick: a build prints in bursts, and one published
@@ -672,9 +674,10 @@ final class BuildModel: ObservableObject {
 
     // MARK: - Build
 
-    func startBuild() {
+    func startBuild(extra: [String] = []) {
         guard let cli, let request, !isRunning else { return }
         pendingLog.removeAll()
+        buildAnyway = nil
         log = []
         stage = ""
         appURL = nil
@@ -684,7 +687,7 @@ final class BuildModel: ObservableObject {
         do {
             process = try CLIRunner.stream(
                 cli,
-                request.arguments,
+                request.arguments + extra,
                 onLine: { [weak self] line in
                     Task { @MainActor in self?.handle(line: line) }
                 },
@@ -695,6 +698,12 @@ final class BuildModel: ObservableObject {
         } catch {
             state = .failed(error.localizedDescription)
         }
+    }
+
+    /// Re-run the build with the engine flag that gets past the last stop ("Build anyway").
+    func retryBuildAnyway(_ flag: String) async {
+        buildAnyway = nil
+        startBuild(extra: [flag])
     }
 
     func cancelBuild() {
@@ -738,6 +747,7 @@ final class BuildModel: ObservableObject {
             state = .failed(message)
         case .result(let result):
             flushLog()
+            buildAnyway = (result.ok ? nil : result.failure).flatMap { $0.override == nil ? nil : $0 }
             appURL = result.appPath
             if result.ok {
                 state = .succeeded

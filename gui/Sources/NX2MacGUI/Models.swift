@@ -125,6 +125,14 @@ struct BuildResult: Hashable {
     let returncode: Int32
     let appPath: URL?
     let argv: [String]
+    let failure: BuildFailure?
+
+    struct BuildFailure: Decodable, Hashable {
+        let message: String
+        /// The engine flag that gets past this stop, when there is one (`--allow-damaged`, …).
+        let override: String?
+        let note: String
+    }
 }
 
 /// One line of `build --json` (newline-delimited JSON).
@@ -148,9 +156,10 @@ enum BuildEvent: Hashable {
         let returncode: Int32
         let appPath: String?
         let argv: [String]?
+        let failure: BuildResult.BuildFailure?
 
         enum CodingKeys: String, CodingKey {
-            case ok, returncode, argv
+            case ok, returncode, argv, failure
             case appPath = "app_path"
         }
     }
@@ -175,7 +184,10 @@ enum BuildEvent: Hashable {
         case "result":
             guard let payload = try? decoder.decode(ResultEnvelope.self, from: data) else { return .unknown(trimmed) }
             let url = payload.appPath.map { URL(fileURLWithPath: $0) }
-            return .result(BuildResult(ok: payload.ok, returncode: payload.returncode, appPath: url, argv: payload.argv ?? []))
+            return .result(
+                BuildResult(ok: payload.ok, returncode: payload.returncode, appPath: url,
+                            argv: payload.argv ?? [], failure: payload.failure)
+            )
         default:
             return .unknown(trimmed)
         }

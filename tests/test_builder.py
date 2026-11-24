@@ -10,6 +10,7 @@ from test_doctor import _good_env
 from nx2mac.builder import (
     BuildError,
     build_argv,
+    classify_failure,
     classify_game,
     discover_app,
     find_prod_keys,
@@ -493,3 +494,24 @@ def test_build_reports_the_cheat_reanchor_in_its_log(tmp_path: Path, monkeypatch
 
     # no extraction in this fake build → the build says so instead of failing
     assert any(line.startswith("cheats:") for line in lines)
+
+
+def test_classify_failure_offers_the_engine_override() -> None:
+    """The three stops the engine can be told to ignore carry their flag (NX2Apple's "Build anyway")."""
+    damaged = [
+        "[1/6] extract …",
+        "[RED] 1.0.0: 1 file(s) whose bytes do not start as their names promise, so the game files are damaged:",
+        "Pack again from a good copy",
+    ]
+    metal = ["[RED] own_compilers.py --check-metal: set DM_ALLOW_OTHER_METAL=1 (the NSP script's --allow-other-metal)"]
+    shaders = [
+        "[RED] 3 shaders that translated in the previous build fail in b-4dc2596: a change to the "
+        "translation chain broke them"
+    ]
+    fatal = ["[RED] no prod.keys found"]
+
+    assert classify_failure(damaged).override == "--allow-damaged"  # type: ignore[union-attr]
+    assert classify_failure(metal).override == "--allow-other-metal"  # type: ignore[union-attr]
+    assert classify_failure(shaders).override == "--allow-shader-regressions"  # type: ignore[union-attr]
+    assert classify_failure(fatal).override is None  # nothing to build around
+    assert classify_failure(["all good"]) is None

@@ -11,12 +11,12 @@ struct GamesTab: View {
         VStack(alignment: .leading, spacing: 12) {
             // The library folders stay at the top, whether or not one is chosen yet.
             libraryList
+            cloudList
             Divider()
             HStack(alignment: .top) {
                 Text("Games").font(.title2.weight(.semibold))
                 Spacer()
                 if !model.libraryDirs.isEmpty {
-                    cloudMenu
                     playerPicker
                 }
                 Button {
@@ -122,25 +122,56 @@ struct GamesTab: View {
         }
     }
 
-    /// Where the engine copies each game's save (iCloud Drive, Dropbox, …); local first.
-    private var cloudMenu: some View {
-        Menu {
-            if model.cloudDir.isEmpty {
-                Text("Saves stay in the library only")
-            } else {
-                Text(model.cloudDir)
-                Divider()
+    /// The cloud-saves folder, shaped like the library list — but only one is allowed.
+    @ViewBuilder
+    private var cloudList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text("Cloud saves").font(.callout.weight(.medium))
+                Text(model.cloudDir.isEmpty ? "off — saves stay in the library" : "1 folder")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if model.cloudDir.isEmpty {
+                    Button("Choose folder…") { chooseCloud() }
+                }
             }
-            Button("Choose folder…") { chooseCloud() }
             if !model.cloudDir.isEmpty {
-                Button("Off (local only)") { Task { await model.clearCloud() } }
+                VStack(spacing: 2) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.triangle.2.circlepath.icloud")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text(model.cloudDir)
+                            .font(.caption.monospaced())
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(model.cloudDir)
+                        Spacer(minLength: 4)
+                        Button {
+                            Task { await model.clearCloud() }
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .help("Stop syncing saves (the local saves stay)")
+                    }
+                    .padding(.vertical, 1)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, SelectionList.padding / 2)
+                .frame(height: SelectionList.height(for: 1))
+                .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
             }
-        } label: {
-            Label(model.cloudDir.isEmpty ? "Cloud: off" : "Cloud saves", systemImage: "arrow.triangle.2.circlepath.icloud")
+            Text("One folder: the game keeps playing from its local save and copies it to "
+                 + "<folder>/<title id>/save.dmsync (per player below it).")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
-        .menuStyle(.borderlessButton)
-        .frame(width: 130)
-        .help("Keep saves local and copy them into a synced folder")
+        .padding(9)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func chooseCloud() {

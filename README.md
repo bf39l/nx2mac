@@ -259,7 +259,8 @@ Saves always stay in the library (the game plays from them); the engine addition
 game's save into that synced folder as `<folder>/<TITLEID>/save.dmsync` (per player:
 `<folder>/players/<player>/<TITLEID>/save.dmsync`), and pulls it back when it is newer. The engine
 keeps 10 backups per side and refuses to overwrite a save that changed on both sides — it plays the
-newer one and keeps the other in the backups. GUI: the **Games** tab, next to the player picker (*Cloud: off* / *Cloud saves*).
+newer one and keeps the other in the backups. GUI: the **Games** tab, a *Cloud saves* section under the libraries — one folder at a time
+(*Choose folder…*, `⊖` to stop syncing).
 
 ### Players (library-wide, like NX2Apple)
 

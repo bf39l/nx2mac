@@ -229,7 +229,10 @@ def run_build(
         )
 
     game = classify_game(game_path)
+    explicit_out_dir = out_dir is not None
     out_dir = out_dir.expanduser().resolve() if out_dir is not None else None
+    # The game's own directory: where the engine puts things by default, and the
+    # default output folder when we have to stage inputs elsewhere.
     keys_dir = game.path if game.path.is_dir() else game.path.parent
     keys = find_prod_keys(prod_keys, keys_dir, out_dir)
     if game.needs_prod_keys and keys is None:
@@ -241,8 +244,9 @@ def run_build(
     updates = validate_extras(updates, "--update")
     dlcs = validate_extras(dlcs, "--dlc")
     # The engine wants a folder: stage a lone Switch 1 package (and any extras) for it.
+    staging = bool(updates or dlcs) or (game.kind == "switch1" and game.path.is_file())
     input_dir = game.path
-    if updates or dlcs or (game.kind == "switch1" and game.path.is_file()):
+    if staging:
         if game.kind == "nso":
             raise BuildError(
                 "a .nup already carries its own updates and DLC; pick them inside the container "
@@ -250,11 +254,19 @@ def run_build(
             )
         input_dir = prepare_staging(cache_root, game.path, updates, dlcs)
 
+    # Default the output folder to the game's directory. That matches what the
+    # engine does on its own, and matters a lot when we staged the inputs: the
+    # engine would otherwise drop the app inside our cache staging folder.
+    if out_dir is None and staging:
+        out_dir = keys_dir
+
     work_dir: Path | None = None
     if out_dir is not None:
         out_dir.mkdir(parents=True, exist_ok=True)
         work_dir = work_dir_for(out_dir, game)
-        if keys is not None:
+        # Only a *chosen* output folder gets the keys copied in; never write into
+        # the user's game folder unless they asked for it.
+        if explicit_out_dir and keys is not None:
             keys = keep_keys(keys, out_dir)
 
     venv = ensure_venv(cache_root, env=env)

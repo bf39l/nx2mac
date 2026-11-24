@@ -221,6 +221,59 @@ private final class LockedLines {
     }
 }
 
+@MainActor
+final class OutputFolderDefaultTests: XCTestCase {
+    /// A temp folder with a fake dump folder and a package file inside it.
+    private func fixture() throws -> (root: URL, folder: URL, file: URL) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nx2mac-gui-\(UUID().uuidString)")
+        let folder = root.appendingPathComponent("My Game [0100]")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent("Game_0100.nsp")
+        try Data([0]).write(to: file)
+        return (root, folder, file)
+    }
+
+    func testOutputFolderFollowsTheGame() throws {
+        let (root, folder, file) = try fixture()
+        let model = BuildModel()
+
+        model.setGame(folder)
+        XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, folder.standardizedFileURL.path)
+
+        // a package file defaults to the directory holding it (same folder here)
+        model.setGame(file)
+        XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, folder.standardizedFileURL.path)
+
+        model.setGame(nil)
+        XCTAssertNil(model.outDirURL)
+    }
+
+    func testAChosenOutputFolderStopsFollowingTheGame() throws {
+        let (root, folder, file) = try fixture()
+        let chosen = root.appendingPathComponent("Project")
+        let model = BuildModel()
+
+        model.setGame(folder)
+        model.chooseOutDir(chosen)
+        model.setGame(file)  // switching games must not clobber the choice
+
+        XCTAssertFalse(model.outDirIsAuto)
+        XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, chosen.standardizedFileURL.path)
+    }
+
+    func testResetReturnsToTheGameDirectory() throws {
+        let (root, folder, file) = try fixture()
+        let model = BuildModel()
+        model.setGame(file)
+        model.chooseOutDir(root.appendingPathComponent("Project"))
+
+        model.resetOutDir()
+
+        XCTAssertTrue(model.outDirIsAuto)
+        XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, folder.standardizedFileURL.path)
+    }
+}
+
 final class SelectionListTests: XCTestCase {
     func testHeightGrowsOneRowPerItem() {
         XCTAssertEqual(SelectionList.height(for: 0), 0)

@@ -42,7 +42,10 @@ final class BuildModel: ObservableObject {
     @Published var gameURL: URL?
     @Published var keysURL: URL?
     /// Where the .app, the engine build folder and prod.keys should all live.
-    @Published var outDirURL: URL?
+    /// Follows the game's directory until the user picks one themselves.
+    @Published private(set) var outDirURL: URL?
+    /// True while `outDirURL` is just "the game's directory" (not user-chosen).
+    @Published private(set) var outDirIsAuto = true
     /// Optional update package(s) picked outside the game folder (staged by the CLI).
     @Published var updateURLs: [URL] = []
     /// Optional DLC packages/folders picked outside the game folder (staged by the CLI).
@@ -83,6 +86,34 @@ final class BuildModel: ObservableObject {
     }
 
     var firstFailure: DoctorCheck? { doctor?.failedChecks.first }
+
+    /// Choose the game (a dump folder, a package file, or a .nup). The output
+    /// folder follows it while the user has not picked one explicitly.
+    func setGame(_ url: URL?) {
+        gameURL = url
+        if outDirIsAuto { outDirURL = url.map(Self.directory(of:)) }
+    }
+
+    /// The user picked an output folder: stop following the game.
+    func chooseOutDir(_ url: URL) {
+        outDirURL = url
+        outDirIsAuto = false
+    }
+
+    /// Drop back to the default (the game's own directory).
+    func resetOutDir() {
+        outDirIsAuto = true
+        outDirURL = gameURL.map(Self.directory(of:))
+    }
+
+    /// The directory holding *url*: itself for a folder, the parent for a file.
+    static func directory(of url: URL) -> URL {
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+            return url
+        }
+        return url.deletingLastPathComponent()
+    }
 
     // MARK: - CLI discovery
 

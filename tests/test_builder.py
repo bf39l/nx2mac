@@ -327,3 +327,36 @@ def test_run_build_passes_a_nup_file_through(tmp_path: Path, monkeypatch) -> Non
 
     assert result.input_path == nup.resolve()  # the engine accepts a .nup file itself
     assert env.stream_calls[0][0][2] == str(nup.resolve())
+
+
+def test_staged_build_defaults_output_folder_to_the_game_directory(tmp_path: Path, monkeypatch) -> None:
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("NX2MAC_CACHE_ROOT", str(cache))
+    env = _good_env(tmp_path)
+    package = tmp_path / "Game_0100.nsp"
+    package.write_bytes(b"\x00")
+    keys = tmp_path / "prod.keys"
+    keys.write_text("keys\n", encoding="utf-8")
+
+    # No out_dir given: the app must NOT end up in the cache staging folder.
+    result = run_build(env, cache, _engine(tmp_path), package, prod_keys=keys)
+
+    assert result.out_dir == tmp_path.resolve() and result.work_dir == tmp_path.resolve() / "Game_0100_build"
+    # keys are used where they are (no copy into the user's folder)
+    assert not (tmp_path / "prod.keys").read_text(encoding="utf-8").startswith("out")
+    assert result.keys_path == keys.resolve()
+
+
+def test_explicit_out_dir_still_copies_keys(tmp_path: Path, monkeypatch) -> None:
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("NX2MAC_CACHE_ROOT", str(cache))
+    env = _good_env(tmp_path)
+    package = tmp_path / "Game_0100.nsp"
+    package.write_bytes(b"\x00")
+    keys = tmp_path / "prod.keys"
+    keys.write_text("keys\n", encoding="utf-8")
+    out = tmp_path / "Project"
+
+    result = run_build(env, cache, _engine(tmp_path), package, prod_keys=keys, out_dir=out)
+
+    assert result.keys_path == (out / "prod.keys").resolve() and (out / "prod.keys").is_file()

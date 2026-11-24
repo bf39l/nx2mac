@@ -96,11 +96,22 @@ struct BuildTab: View {
             selectionList(model.dlcURLs) { index in model.dlcURLs.remove(at: index) }
 
             row(title: "Output folder") {
-                pathLabel(model.outDirURL?.path ?? "optional — keeps the .app, build folder and prod.keys together",
-                          empty: model.outDirURL == nil)
-                Button("Choose…") { chooseOutDir() }
-                if model.outDirURL != nil {
-                    Button("Clear") { model.outDirURL = nil }
+                HStack(spacing: 6) {
+                    pathLabel(model.outDirURL?.path ?? "choose a game first",
+                              empty: model.outDirURL == nil)
+                    if model.outDirIsAuto {
+                        Text("default")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.12), in: Capsule())
+                            .help("Defaults to the game's own directory")
+                    }
+                }
+                Button("Change…") { chooseOutDir() }
+                if !model.outDirIsAuto {
+                    Button("Default") { model.resetOutDir() }
                 }
             }
         }
@@ -271,7 +282,7 @@ extension BuildTab {
         panel.prompt = "Use this game"
         panel.message = "Pick the dump folder holding the game's .nsp/.nsz/.xci files, "
             + "a single package file, or a .nup container."
-        if panel.runModal() == .OK, let url = panel.url { model.gameURL = url }
+        if panel.runModal() == .OK, let url = panel.url { model.setGame(url) }
     }
 
     func chooseKeys() {
@@ -321,6 +332,6 @@ extension BuildTab {
         panel.allowsMultipleSelection = false
         panel.prompt = "Use this folder"
         panel.message = "The app, the engine build folder (kept for fast rebuilds) and prod.keys go here."
-        if panel.runModal() == .OK, let url = panel.url { model.outDirURL = url }
+        if panel.runModal() == .OK, let url = panel.url { model.chooseOutDir(url) }
     }
 }

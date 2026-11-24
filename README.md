@@ -36,7 +36,8 @@ real CLI.
 
 ### One folder per game
 
-`--out-dir DIR` (GUI: *Output folder*) keeps a build self-contained:
+`--out-dir DIR` (GUI: *Output folder*, which defaults to the game's own directory) keeps a build
+self-contained:
 
 ```bash
 nx2mac build "/path/to/Game [0100...]" --out-dir ~/Downloads/MyGame \

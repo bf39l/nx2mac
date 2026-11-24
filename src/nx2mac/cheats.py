@@ -133,4 +133,40 @@ def neutralise(cheats_dir: Path) -> list[str]:
         if dropped:
             txt.write_text(text, encoding="utf-8")
             reports.append("disabled (could not be anchored): " + ", ".join(dropped))
+    reports.extend(_code_patch_warning(cheats_dir))
     return reports
+
+
+def _code_patch_warning(cheats_dir: Path) -> list[str]:
+    """Say it once when every switchable cheat of a file patches instructions.
+
+    The Mac port runs code its rewriter produced, so a cheat that puts the Switch's instructions back
+    cannot work — it either does nothing or takes the game down. Data cheats (values) are the ones
+    that survive a port.
+    """
+    for txt in sorted(cheats_dir.glob("*.txt")):
+        meta_file = txt.with_suffix(".meta.tsv")
+        if not meta_file.is_file():
+            continue
+        rows = [line.split("\t") for line in meta_file.read_text(encoding="utf-8", errors="replace").splitlines()
+                if line and not line.startswith("#")]
+        if len(rows) < 2:
+            continue
+        head, body = rows[0], rows[1:]
+        try:
+            name_at, kind_at, resolved_at = head.index("name"), head.index("kind"), head.index("resolved")
+        except ValueError:
+            continue
+        switchable = [row for row in body
+                      if len(row) > max(name_at, kind_at, resolved_at)
+                      and row[resolved_at] != "no anchors"
+                      and row[kind_at] in ("patch", "code")
+                      and not row[name_at].startswith("--Section")]
+        if switchable and len(switchable) == len(body):
+            return [
+                (
+                    f"{txt.name}: every cheat here patches code, and this port's rewriter owns that "
+                    "code — expect a crash; only data cheats (values) survive a port"
+                )
+            ]
+    return []

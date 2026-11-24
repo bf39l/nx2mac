@@ -906,6 +906,7 @@ def parse_cheat_file(text: str, meta: str | None = None) -> list[dict[str, objec
             if not row:
                 continue
             entry["resolved"] = row.get("resolved", "")
+            entry["meta_kind"] = row.get("kind", "")
             if row.get("once", "").lower() in ("1", "true"):
                 entry["once"] = True
             if row.get("pair", ""):
@@ -913,6 +914,7 @@ def parse_cheat_file(text: str, meta: str | None = None) -> list[dict[str, objec
 
     for entry in entries:
         entry.setdefault("resolved", "")
+        entry.setdefault("meta_kind", "")
         entry["switchable"] = (
             entry["kind"] == "cheat" and not entry["broken"] and not entry["once"] and not entry["pair_off"]
         )
@@ -958,6 +960,9 @@ def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
                         # wrong instruction), so the UI marks it as not to be enabled.
                         "resolved": cheat["resolved"],
                         "unanchored": cheat["resolved"] == "no anchors",
+                        # "patch"/"code" entries write instructions, and this port's rewriter owns
+                        # that code: they cannot work here even when the address anchors exactly.
+                        "code_patch": cheat["meta_kind"] in ("patch", "code"),
                     }
                     for cheat in cheats
                 ],

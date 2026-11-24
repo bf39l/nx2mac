@@ -638,8 +638,10 @@ def cheats(
                 else:
                     marker = "[green]on [/]" if cheat["enabled"] else "[dim]off[/]"
                 note = ""
-                if cheat.get("unanchored") and cheat["switchable"]:
-                    note = "  [red]not working on this port — do not enable[/]"
+                if cheat["switchable"] and cheat.get("unanchored"):
+                    note = "  [red]not anchored — do not enable[/]"
+                elif cheat["switchable"] and cheat.get("code_patch"):
+                    note = "  [yellow]code patch — this port rewrote that code, expect a crash[/]"
                 console.print(f"    {marker} {cheat['name']}{note}")
 
 

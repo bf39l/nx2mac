@@ -82,14 +82,16 @@ nx2mac build DIR   # full pipeline; -k <prod.keys>, -o <out.app>, --update F, --
 ```
 
 `--out-dir DIR` is the recommended workflow: the engine gets `--work-dir DIR/<game>_build`, which
-makes it write the `.app` into DIR as well; the key set is copied to `DIR/prod.keys` and used from
-there, so a rebuild only needs the dump folder and `--out-dir`. `-o` still overrides the app path.
+makes it write the `.app` into DIR as well, so the folder holds the app, the build folder and
+`prod.keys` only if the user keeps it there (nx2mac never copies keys). `-o` still overrides the
+app path.
 
 **Default**: the output folder is the game's own directory (the folder itself for a dump, its
 parent for a package file). Without `--out-dir` the engine already writes app + `_build` beside the
 game; when nx2mac must stage inputs (lone package file, update/DLC elsewhere) it points
-`--work-dir` at that same directory so the result never lands inside the cache. Keys are only
-*copied* into a folder the user explicitly chose.
+`--work-dir` at that same directory so the result never lands inside the cache. The key set is
+always read where it is (explicit `--keys`, game folder/parent, then the output folder) and is
+never copied.
 
 `build --update`/`--dlc` **stage** a folder of symlinks (game + chosen extras) because the engine
 takes exactly one input folder; the staging dir lives in the cache keyed by the selection, so the

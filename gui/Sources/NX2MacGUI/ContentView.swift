@@ -53,10 +53,6 @@ struct BuildTab: View {
 
     private var inputs: some View {
         VStack(alignment: .leading, spacing: 10) {
-            row(title: "Game") {
-                pathLabel(model.gameURL?.path ?? "choose a dump folder, a package file, or a .nup", empty: model.gameURL == nil)
-                Button("Choose…") { chooseGame() }
-            }
             row(title: "prod.keys") {
                 pathLabel(model.keysURL?.path ?? "optional — auto-detected in/next to the game",
                           empty: model.keysURL == nil)
@@ -64,6 +60,10 @@ struct BuildTab: View {
                 if model.keysURL != nil {
                     Button("Clear") { model.keysURL = nil }
                 }
+            }
+            row(title: "Game") {
+                pathLabel(model.gameURL?.path ?? "choose a dump folder, a package file, or a .nup", empty: model.gameURL == nil)
+                Button("Choose…") { chooseGame() }
             }
             row(title: "Update") {
                 Text(model.updateURLs.isEmpty

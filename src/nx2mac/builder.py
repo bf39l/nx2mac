@@ -137,15 +137,6 @@ def work_dir_for(out_dir: Path, game: GameInput) -> Path:
     return out_dir / f"{_safe_name(base)}_build"
 
 
-def keep_keys(keys: Path, out_dir: Path) -> Path:
-    """Copy prod.keys into *out_dir* so app, build folder and keys live together."""
-    destination = out_dir / "prod.keys"
-    if destination.resolve() == keys.resolve():
-        return destination
-    destination.write_bytes(keys.read_bytes())
-    return destination
-
-
 def discover_app(out_dir: Path) -> Path | None:
     """Newest `.app` directly inside *out_dir* (the engine names the app itself)."""
     apps = [entry for entry in out_dir.glob("*.app") if entry.is_dir()]
@@ -229,7 +220,6 @@ def run_build(
         )
 
     game = classify_game(game_path)
-    explicit_out_dir = out_dir is not None
     out_dir = out_dir.expanduser().resolve() if out_dir is not None else None
     # The game's own directory: where the engine puts things by default, and the
     # default output folder when we have to stage inputs elsewhere.
@@ -264,10 +254,6 @@ def run_build(
     if out_dir is not None:
         out_dir.mkdir(parents=True, exist_ok=True)
         work_dir = work_dir_for(out_dir, game)
-        # Only a *chosen* output folder gets the keys copied in; never write into
-        # the user's game folder unless they asked for it.
-        if explicit_out_dir and keys is not None:
-            keys = keep_keys(keys, out_dir)
 
     venv = ensure_venv(cache_root, env=env)
     argv = build_argv(

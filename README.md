@@ -23,7 +23,7 @@ A native SwiftUI app that wraps the CLI (it never imports the Python code, it ru
 open gui/.build/NX2Mac.app
 ```
 
-- **Build tab** — pick the dump folder (or a `.nup`), optionally `prod.keys`, an update and any
+- **Build tab** — pick `prod.keys` (optional), the dump folder (or a `.nup`), an update and any
   number of DLC packages (listed vertically, remove one by one), an optional **output folder**,
   and which engine/ref to pin. The engine's progress streams into the log; when it finishes you
   can reveal or open the app.
@@ -48,4 +48,4 @@ nx2mac build "/path/to/Game [0100...]" --out-dir ~/Downloads/MyGame \
 | --- | --- |
 | `DIR/<Game>.app` | the finished app (the engine names it) |
 | `DIR/<game>_build/` | the engine's build folder — extracted files + shader caches, reused on rebuild |
-| `DIR/prod.keys` | the key set, copied in so a rebuild needs only the dump and `--out-dir` |
+| `DIR/prod.keys` | only if you keep it there — nx2mac reads your key set in place and never copies it |

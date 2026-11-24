@@ -408,7 +408,7 @@ def test_build_out_dir_keeps_everything_together(isolated_paths: Path, monkeypat
     argv = env.stream_calls[0][0]
     assert result.exit_code == 0 and final["event"] == "result"
     assert final["out_dir"] == str(out.resolve()) and final["work_dir"].endswith("_build")
-    assert final["keys_path"] == str((out / "prod.keys").resolve())
-    assert (out / "prod.keys").is_file()
+    assert final["keys_path"] == str((game / "prod.keys").resolve())  # used in place, not copied
+    assert not (out / "prod.keys").exists()
     assert final["app_path"] == str(out / "My Game.app")
     assert argv[argv.index("--work-dir") + 1] == final["work_dir"]

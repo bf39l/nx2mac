@@ -263,10 +263,10 @@ def test_run_build_out_dir_collects_app_build_and_keys(tmp_path: Path, monkeypat
     work_dir = out / f"{game.name}_build"
     assert argv[argv.index("--work-dir") + 1] == str(work_dir)
     assert result.work_dir == work_dir and result.out_dir == out.resolve()
-    # keys are copied in and used from there
-    assert (out / "prod.keys").read_text(encoding="utf-8") == "keys\n"
-    assert argv[argv.index("-k") + 1] == str((out / "prod.keys").resolve())
-    assert result.keys_path == (out / "prod.keys").resolve()
+    # the key set is used where it lives - nothing is copied into the output folder
+    assert not (out / "prod.keys").exists()
+    assert argv[argv.index("-k") + 1] == str(keys.resolve())
+    assert result.keys_path == keys.resolve()
     # no -o given: the app is discovered in the output folder
     assert "-o" not in argv and result.app_path == out / "Mercenaries Wings.app"
 
@@ -347,7 +347,7 @@ def test_staged_build_defaults_output_folder_to_the_game_directory(tmp_path: Pat
     assert result.keys_path == keys.resolve()
 
 
-def test_explicit_out_dir_still_copies_keys(tmp_path: Path, monkeypatch) -> None:
+def test_out_dir_never_copies_the_key_set(tmp_path: Path, monkeypatch) -> None:
     cache = tmp_path / "cache"
     monkeypatch.setenv("NX2MAC_CACHE_ROOT", str(cache))
     env = _good_env(tmp_path)
@@ -359,4 +359,4 @@ def test_explicit_out_dir_still_copies_keys(tmp_path: Path, monkeypatch) -> None
 
     result = run_build(env, cache, _engine(tmp_path), package, prod_keys=keys, out_dir=out)
 
-    assert result.keys_path == (out / "prod.keys").resolve() and (out / "prod.keys").is_file()
+    assert result.keys_path == keys.resolve() and not (out / "prod.keys").exists()

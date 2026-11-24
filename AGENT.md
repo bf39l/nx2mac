@@ -163,7 +163,13 @@ Build it with `./gui/build.sh release [dest]` (SwiftPM + a script that wraps the
 `Contents/Resources/cli/nx2mac` (≈31 MB, `patches/` included as `nx2mac/patches`), so users never
 have to install the CLI; `NX2MAC_SKIP_CLI_BUNDLE=1` skips that step while iterating on Swift.
 CLI resolution order in `CLILocator`: Settings override → `NX2MAC_BIN` → bundled copy → `PATH` →
-well-known dirs → dev checkout (`.venv/bin/python -m nx2mac`). The icon is committed at `gui/Resources/AppIcon.icns` and
+well-known dirs → dev checkout (`.venv/bin/python -m nx2mac`).
+
+**PATH gotcha:** a Finder-launched app inherits launchd's `/usr/bin:/bin:/usr/sbin:/sbin`, so
+Homebrew's `brew`/`zstd`/`glslangValidator` look missing and builds fail. `ToolPath.augmented()` +
+`CLIRunner.childEnvironment()` prepend the Homebrew/`~/.local/bin` directories for every CLI
+subprocess — keep using that helper for new launches, and test the real case with
+`env -i /usr/bin/open ~/Applications/nx2mac.app`. The icon is committed at `gui/Resources/AppIcon.icns` and
 regenerated with `swift gui/tools/make_icon.swift gui/Resources/AppIcon.icns`; `build.sh` copies
 it into the bundle and ad-hoc signs it. Settings shows the app version next to
 `nx2mac version --json`, so a GUI/CLI mismatch is visible. It finds the CLI via `NX2MAC_BIN`, the `cliPath` setting, PATH,

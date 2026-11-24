@@ -126,17 +126,57 @@ enum CLILocator {
     }
 }
 
+/// PATH handling for the CLI subprocesses.
+///
+/// An app started from Finder inherits launchd's minimal `PATH`
+/// (`/usr/bin:/bin:/usr/sbin:/sbin`), which hides Homebrew — so `doctor` would
+/// report brew/zstd/glslangValidator missing and engine builds would fail, even
+/// though the same checks pass in a terminal. We hand the CLI a PATH that
+/// includes the usual package-manager locations.
+enum ToolPath {
+    /// Added in this order, ahead of whatever the app inherited.
+    static let extraDirectories = [
+        "/opt/homebrew/bin",  // Apple silicon Homebrew
+        "/opt/homebrew/sbin",
+        "/usr/local/bin",  // Intel Homebrew, manual installs
+        "/usr/local/sbin",
+        "~/.local/bin",  // uv tool / pip --user
+    ]
+
+    /// A PATH with the tool directories added (existing entries kept, no duplicates).
+    static func augmented(_ inherited: String?, home: String = NSHomeDirectory()) -> String {
+        let preferred = extraDirectories.map { directory in
+            directory.hasPrefix("~/") ? home + String(directory.dropFirst(1)) : directory
+        }
+        let current = (inherited ?? "").split(separator: ":").map(String.init)
+        var seen = Set<String>()
+        var parts: [String] = []
+        for directory in preferred + current {
+            let trimmed = directory.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, seen.insert(trimmed).inserted else { continue }
+            parts.append(trimmed)
+        }
+        return parts.joined(separator: ":")
+    }
+}
+
 /// Runs the CLI either to completion (one JSON document) or streaming (NDJSON).
 enum CLIRunner {
+    /// Environment for the CLI: the app's own, with a usable PATH.
+    static func childEnvironment() -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        environment["PATH"] = ToolPath.augmented(environment["PATH"])
+        environment["PYTHONUNBUFFERED"] = "1"
+        return environment
+    }
+
     /// Run to completion and return captured output. Blocking: call off the main actor.
     static func capture(_ command: CLICommand, _ arguments: [String]) throws -> CLIResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = command.prefix + arguments
         process.currentDirectoryURL = command.workingDirectory
-        var environment = ProcessInfo.processInfo.environment
-        environment["PYTHONUNBUFFERED"] = "1"
-        process.environment = environment
+        process.environment = childEnvironment()
 
         let out = Pipe()
         let err = Pipe()
@@ -172,9 +212,7 @@ enum CLIRunner {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = command.prefix + arguments
         process.currentDirectoryURL = command.workingDirectory
-        var environment = ProcessInfo.processInfo.environment
-        environment["PYTHONUNBUFFERED"] = "1"
-        process.environment = environment
+        process.environment = childEnvironment()
 
         let pipe = Pipe()
         process.standardOutput = pipe

@@ -498,16 +498,15 @@ def test_build_reports_the_cheat_reanchor_in_its_log(tmp_path: Path, monkeypatch
 
 def test_classify_failure_offers_the_engine_override() -> None:
     """The three stops the engine can be told to ignore carry their flag (NX2Apple's "Build anyway")."""
+    damaged_tail = "so the game files are damaged:"
     damaged = [
         "[1/6] extract …",
-        "[RED] 1.0.0: 1 file(s) whose bytes do not start as their names promise, so the game files are damaged:",
+        "[RED] 1.0.0: 1 file(s) whose bytes do not start as their names promise, " + damaged_tail,
         "Pack again from a good copy",
     ]
     metal = ["[RED] own_compilers.py --check-metal: set DM_ALLOW_OTHER_METAL=1 (the NSP script's --allow-other-metal)"]
-    shaders = [
-        "[RED] 3 shaders that translated in the previous build fail in b-4dc2596: a change to the "
-        "translation chain broke them"
-    ]
+    chain = "a change to the translation chain broke them"
+    shaders = ["[RED] 3 shaders that translated in the previous build fail in b-4dc2596: " + chain]
     fatal = ["[RED] no prod.keys found"]
 
     assert classify_failure(damaged).override == "--allow-damaged"  # type: ignore[union-attr]

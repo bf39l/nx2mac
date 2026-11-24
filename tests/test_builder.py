@@ -5,7 +5,14 @@ from pathlib import Path
 import pytest
 from test_doctor import _good_env
 
-from nx2mac.builder import BuildError, build_argv, classify_game, find_prod_keys, run_build
+from nx2mac.builder import (
+    BuildError,
+    build_argv,
+    classify_game,
+    find_prod_keys,
+    run_build,
+    validate_extras,
+)
 from nx2mac.engines import UPSTREAM, ResolvedEngine
 
 SHA = "c" * 40
@@ -77,7 +84,7 @@ def test_build_argv_shape(tmp_path: Path) -> None:
     game_dir = _game_dir(tmp_path)
     keys = tmp_path / "prod.keys"
 
-    argv = build_argv(tmp_path / "py", engine, classify_game(game_dir), keys, tmp_path / "Out.app", ["--gpu", "g18p"])
+    argv = build_argv(tmp_path / "py", engine, game_dir.resolve(), keys, tmp_path / "Out.app", ["--gpu", "g18p"])
 
     assert argv == [
         str(tmp_path / "py"),
@@ -130,3 +137,74 @@ def test_run_build_missing_keys_for_switch1(tmp_path: Path, monkeypatch) -> None
 
     with pytest.raises(BuildError, match="prod.keys"):
         run_build(env, cache, _engine(tmp_path), _game_dir(tmp_path))
+
+
+def test_validate_extras_rejects_bad_inputs(tmp_path: Path) -> None:
+    good = tmp_path / "update.nsp"
+    good.write_bytes(b"\x00")
+    assert validate_extras([good], "--update") == [good.resolve()]
+
+    with pytest.raises(BuildError, match="does not exist"):
+        validate_extras([tmp_path / "nope.nsp"], "--dlc")
+
+    text = tmp_path / "notes.txt"
+    text.write_text("x", encoding="utf-8")
+    with pytest.raises(BuildError, match="not a game package"):
+        validate_extras([text], "--dlc")
+
+    empty = tmp_path / "EmptyDLC"
+    empty.mkdir()
+    with pytest.raises(BuildError, match="holds no game packages"):
+        validate_extras([empty], "--dlc")
+
+
+def test_run_build_stages_update_and_multiple_dlcs(tmp_path: Path, monkeypatch) -> None:
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("NX2MAC_CACHE_ROOT", str(cache))
+    env = _good_env(tmp_path)
+
+    game = _game_dir(tmp_path)
+    (game / "prod.keys").write_text("keys\n", encoding="utf-8")
+    update = tmp_path / "update.nsp"
+    update.write_bytes(b"\x00")
+    dlc_folder = tmp_path / "DLC"
+    dlc_folder.mkdir()
+    for name in ("dlc-a.nsp", "dlc-b.nsp"):
+        (dlc_folder / name).write_bytes(b"\x00")
+
+    result = run_build(env, cache, _engine(tmp_path), game, output=tmp_path / "O.app", updates=[update], dlcs=[dlc_folder])
+
+    argv, _cwd = env.stream_calls[0]
+    staged = Path(argv[2])
+    assert staged != game and staged.is_dir()
+    assert staged == result.input_path
+    names = {entry.name for entry in staged.iterdir()}
+    assert {"base.nsp", "update.nsp", "dlc-a.nsp", "dlc-b.nsp"} <= names
+    assert (staged / "010094500C216000_build").parent.exists()  # staging lives in the cache
+    assert cache in staged.parents
+
+
+def test_run_build_passes_game_folder_unchanged_without_extras(tmp_path: Path, monkeypatch) -> None:
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("NX2MAC_CACHE_ROOT", str(cache))
+    env = _good_env(tmp_path)
+    game = _game_dir(tmp_path)
+    (game / "prod.keys").write_text("keys\n", encoding="utf-8")
+
+    result = run_build(env, cache, _engine(tmp_path), game)
+
+    assert result.input_path == game.resolve()
+    assert env.stream_calls[0][0][2] == str(game.resolve())
+
+
+def test_run_build_rejects_extras_for_nup(tmp_path: Path, monkeypatch) -> None:
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("NX2MAC_CACHE_ROOT", str(cache))
+    env = _good_env(tmp_path)
+    nup = tmp_path / "game.nup"
+    nup.write_bytes(b"\x00")
+    update = tmp_path / "update.nsp"
+    update.write_bytes(b"\x00")
+
+    with pytest.raises(BuildError, match="already carries its own updates and DLC"):
+        run_build(env, cache, _engine(tmp_path), nup, updates=[update])

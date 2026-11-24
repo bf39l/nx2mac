@@ -22,7 +22,9 @@ from .config import load as load_config
 from .config import save as save_config
 from .doctor import DoctorContext, DoctorReport, run_checks
 from .engines import EngineError, EngineSource, all_sources, describe, ensure_checkout, source_by_id
-from .pyenv import PyEnvError, ensure_venv
+from .installer import InstallResult, install
+from .pyenv import PyEnvError
+from .remedies import Remedy, installable_names, remedy_for
 from .runner import Env, RealEnv
 
 app = typer.Typer(
@@ -69,6 +71,11 @@ def _enter(ctx: typer.Context, json_flag: bool) -> bool:
     state = _state(ctx, json_flag)
     ctx.obj = state
     return state.json
+
+
+def _interactive() -> bool:
+    """Seam for tests: whether we may ask the user yes/no questions."""
+    return sys.stdin.isatty()
 
 
 def _get_env() -> Env:
@@ -167,49 +174,136 @@ def doctor(ctx: typer.Context, json_flag: bool = _json_option()) -> None:
 
 
 @app.command()
-def setup(ctx: typer.Context, json_flag: bool = _json_option()) -> None:
-    """Prepare what can be automated (managed Python env), then show remaining work."""
+def setup(
+    ctx: typer.Context,
+    json_flag: bool = _json_option(),
+    install_names: list[str] = typer.Option(
+        [],
+        "--install",
+        "-i",
+        help="install these checks without prompting (repeatable), e.g. --install zstd --install glslangValidator.",
+    ),
+    install_all: bool = typer.Option(
+        False, "--all", help="install every fixable check without prompting."
+    ),
+    assume_yes: bool = typer.Option(
+        False, "--yes", "-y", help="say yes to every install prompt (interactive mode)."
+    ),
+    no_prompt: bool = typer.Option(
+        False, "--no-prompt", help="never ask; only report what is missing."
+    ),
+) -> None:
+    """Check the prerequisites and offer to install each missing piece."""
     env = _get_env()
     cache = cache_root().expanduser()
     machine_readable = _enter(ctx, json_flag)
 
-    if not machine_readable:
-        console.print("[bold]Preparing the managed Python environment...[/]")
+    report = run_checks(DoctorContext(env=env))
 
-    python_problem: str | None = None
-    venv_python: Path | None = None
-    try:
-        venv_status = ensure_venv(cache, env=env)
-        venv_python = venv_status.python
-        if not machine_readable:
-            console.print(f"[green]Python env ready:[/] [dim]{venv_status.python}[/]")
-    except PyEnvError as error:
-        python_problem = str(error)
-        if not machine_readable:
-            console.print(f"[yellow]{python_problem}[/]")
+    # --json / --no-prompt: report only, with the remedies the GUI turns into buttons.
+    if machine_readable and not (install_names or install_all):
+        emit.emit(report.to_dict())
+        raise typer.Exit(code=0 if report.ok else 1)
+    if no_prompt and not (install_names or install_all):
+        _print_report(report)
+        _print_manual_steps(report)
+        raise typer.Exit(code=0 if report.ok else 1)
+
+    wanted: list[Remedy] = _select_remedies(report, install_names, install_all)
+    if not machine_readable and not wanted and not no_prompt and _interactive():
+        wanted = _ask_which_to_install(report, assume_yes)
+
+    results: list[InstallResult] = []
+    for remedy in wanted:
+        if machine_readable:
+            emit.event("install-start", check=remedy.name, command=list(remedy.argv or ()))
+        elif not no_prompt:
+            console.print(f"\n[bold]Installing {remedy.name}[/] [dim]({remedy.summary})[/]")
+
+        result = install(
+            env,
+            remedy,
+            cache,
+            on_line=emit.log_line if machine_readable else None,
+        )
+        results.append(result)
+
+        if machine_readable:
+            emit.event("install-done", **result.to_dict())
+        elif not no_prompt:
+            if result.ok:
+                console.print(f"[green]{remedy.name} installed.[/]")
+            else:
+                console.print(f"[red]{remedy.name} install failed[/] ({result.command}): {result.message or 'see output'}")
 
     report = run_checks(DoctorContext(env=env))
     if machine_readable:
-        emit.emit(
-            {
-                "ok": report.ok and python_problem is None,
-                "python": {"path": str(venv_python) if venv_python else None, "error": python_problem},
-                "doctor": report.to_dict(),
-            }
+        emit.event(
+            "setup",
+            ok=report.ok,
+            installed=[result.to_dict() for result in results],
+            doctor=report.to_dict(),
         )
-        raise typer.Exit(code=0 if (report.ok and python_problem is None) else 1)
+        raise typer.Exit(code=0 if report.ok else 1)
 
     console.print("[bold]Current prerequisite status:[/]")
     _print_report(report)
-
-    remaining = report.failures()
-    if not remaining and python_problem is None:
+    if report.ok and not results:
         console.print("\n[green]All prerequisites met - you can build.[/]")
         return
+    _print_manual_steps(report)
+    raise typer.Exit(code=0 if report.ok else 1)
+
+
+def _select_remedies(
+    report: DoctorReport, install_names: list[str], install_all: bool
+) -> list[Remedy]:
+    """Remedies chosen explicitly (--install/--all), in doctor order."""
+    valid = set(installable_names())
+    for name in install_names:
+        if name not in valid:
+            raise typer.BadParameter(
+                f"unknown or non-installable check {name!r}; installable: {', '.join(sorted(valid))}"
+            )
+    failing = [check.name for check in report.failures()]
+    chosen = set(install_names)
+    remedy_names = [name for name in failing if name in valid and (install_all or name in chosen)]
+    # A named check that currently passes is skipped silently (nothing to fix).
+    return [remedy for name in remedy_names if (remedy := remedy_for(name)) is not None]
+
+
+def _ask_which_to_install(report: DoctorReport, assume_yes: bool) -> list[Remedy]:
+    """Interactive yes/no per installable failing check."""
+    wanted: list[Remedy] = []
+    for check in report.failures():
+        remedy = remedy_for(check.name)
+        if remedy is None:
+            continue
+        if remedy.argv is None:
+            console.print(f"[yellow]{check.name}[/]: {remedy.summary}")
+            if remedy.note:
+                console.print(f"  [dim]{remedy.note}[/]")
+            continue
+        question = f"Install {check.name}? ({remedy.summary})"
+        # The managed venv is ours and touches nothing system-wide: default to yes.
+        default = remedy.kind == "internal"
+        if assume_yes or typer.confirm(question, default=default):
+            wanted.append(remedy)
+    return wanted
+
+
+def _print_manual_steps(report: DoctorReport) -> None:
+    """Show the fixes we cannot do ourselves."""
+    manual = [check for check in report.failures() if not check.installable]
+    if not manual:
+        return
     console.print("\n[bold red]Still to do manually:[/]")
-    for command in report.fix_commands():
-        console.print(f"  [yellow]$ {command}[/]")
-    raise typer.Exit(code=0 if not remaining and python_problem is None else 1)
+    for check in manual:
+        console.print(f"  [yellow]{check.name}[/]: {check.fix or check.detail}")
+        if check.note:
+            console.print(f"    [dim]{check.note}[/]")
+        if check.link:
+            console.print(f"    [dim]{check.link}[/]")
 
 
 @app.command()
@@ -256,6 +350,17 @@ def build(
     output: Path | None = typer.Option(
         None, "--output", "-o", help="where to write the .app (default: engine default)."
     ),
+    update: list[Path] = typer.Option(
+        [],
+        "--update",
+        "-u",
+        help="update package (.nsp/.nsz) to include; repeatable. Staged with the game.",
+    ),
+    dlc: list[Path] = typer.Option(
+        [],
+        "--dlc",
+        help="DLC package (.nsp/.nsz) or a folder of them to include; repeatable. Staged with the game.",
+    ),
     source_id: str | None = typer.Option(None, "--source", help="engine id override (upstream|fork)."),
     ref: str | None = typer.Option(None, "--ref", help="pin a branch/tag/commit for this build."),
 ) -> None:
@@ -268,6 +373,8 @@ def build(
         emit.event("engine", engine=resolved.to_dict())
     else:
         console.print(f"[dim]Using engine:[/] {describe(resolved)}")
+        if update or dlc:
+            console.print(f"[dim]Extras:[/] {len(update)} update(s), {len(dlc)} DLC package(s) staged with the game")
 
     try:
         result = run_build(
@@ -278,6 +385,8 @@ def build(
             prod_keys=keys,
             output=output,
             on_line=emit.log_line if machine_readable else None,
+            updates=update,
+            dlcs=dlc,
         )
     except (BuildError, PyEnvError) as error:
         _fail(ctx, str(error))

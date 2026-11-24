@@ -13,15 +13,25 @@ from pathlib import Path
 
 from .doctor import BUILD_PREFLIGHT_EXCLUDE, DoctorContext, run_checks
 from .engines import ResolvedEngine
+from .inputs import GAME_EXTENSIONS, KEYS_FILENAMES, NSO_EXTENSION, SWITCH1_EXTENSIONS
 from .pyenv import ensure_venv
 from .runner import Env
+from .staging import prepare_staging
 
-#: Switch 1 container extensions the engine script understands.
-SWITCH1_EXTENSIONS: frozenset[str] = frozenset({".nsp", ".nsz", ".xci", ".xcz"})
-#: A Nintendo Update Package file (Switch 2 / NSO game).
-NSO_EXTENSION: str = ".nup"
-#: Filenames we recognise as a console's key set, in lookup order.
-KEYS_FILENAMES: tuple[str, ...] = ("prod.keys", "prod_keys.txt")
+__all__ = [
+    "GAME_EXTENSIONS",
+    "KEYS_FILENAMES",
+    "NSO_EXTENSION",
+    "SWITCH1_EXTENSIONS",
+    "BuildError",
+    "BuildResult",
+    "GameInput",
+    "build_argv",
+    "classify_game",
+    "find_prod_keys",
+    "run_build",
+    "validate_extras",
+]
 
 
 class BuildError(Exception):
@@ -88,13 +98,13 @@ def find_prod_keys(explicit: Path | None, game_dir: Path) -> Path | None:
 def build_argv(
     venv_python: Path,
     engine: ResolvedEngine,
-    game: GameInput,
+    game_dir: Path,
     keys: Path | None,
     output: Path | None,
     extra_args: Sequence[str],
 ) -> list[str]:
     """Assemble the argv for the engine's build script (macOS app target)."""
-    args = [str(venv_python), str(engine.path / "scripts" / "build_ipa_from_nsp.py"), str(game.path)]
+    args = [str(venv_python), str(engine.path / "scripts" / "build_ipa_from_nsp.py"), str(game_dir)]
     if keys is not None:
         args.extend(["-k", str(keys)])
     args.extend(["--platform", "mac-app"])
@@ -104,6 +114,24 @@ def build_argv(
     return args
 
 
+def validate_extras(paths: Sequence[Path], flag: str) -> list[Path]:
+    """Resolve user-chosen update/DLC paths; each must exist and look packable."""
+    resolved: list[Path] = []
+    for raw in paths:
+        path = raw.expanduser().resolve()
+        if not path.exists():
+            raise BuildError(f"{flag} path does not exist: {path}")
+        if path.is_file() and path.suffix.lower() not in GAME_EXTENSIONS:
+            expected = "/".join(sorted(e.lstrip(".") for e in GAME_EXTENSIONS))
+            raise BuildError(f"{flag} {path.name} is not a game package (expected {expected})")
+        if path.is_dir() and not any(
+            entry.suffix.lower() in GAME_EXTENSIONS for entry in path.rglob("*") if entry.is_file()
+        ):
+            raise BuildError(f"{flag} folder holds no game packages: {path}")
+        resolved.append(path)
+    return resolved
+
+
 @dataclass(frozen=True)
 class BuildResult:
     """Outcome of one build attempt."""
@@ -111,6 +139,7 @@ class BuildResult:
     argv: tuple[str, ...]  # full command line that ran (interpreter included)
     app_path: Path | None  # the .app produced when given an explicit -o and exit was 0
     returncode: int
+    input_path: Path | None = None  # folder handed to the engine (a staging dir when extras were chosen)
 
     @property
     def ok(self) -> bool:
@@ -122,6 +151,7 @@ class BuildResult:
             "ok": self.ok,
             "returncode": self.returncode,
             "app_path": str(self.app_path) if self.app_path is not None else None,
+            "input_path": str(self.input_path) if self.input_path is not None else None,
             "argv": list(self.argv),
         }
 
@@ -135,6 +165,8 @@ def run_build(
     output: Path | None = None,
     extra_args: Sequence[str] = (),
     on_line: Callable[[str], None] | None = None,
+    updates: Sequence[Path] = (),
+    dlcs: Sequence[Path] = (),
 ) -> BuildResult:
     """Preflight-check, prepare the Python env and stream the engine build.
 
@@ -160,9 +192,25 @@ def run_build(
             f"in (or next to) {game.path} — one console's key set decrypts that user's games."
         )
 
+    updates = validate_extras(updates, "--update")
+    dlcs = validate_extras(dlcs, "--dlc")
+    input_dir = game.path
+    if updates or dlcs:
+        if game.kind == "nso":
+            raise BuildError(
+                "a .nup already carries its own updates and DLC; pick them inside the container "
+                "(or use the engine's --aoc-dir for separate DLC images) instead of --update/--dlc"
+            )
+        input_dir = prepare_staging(cache_root, game.path, updates, dlcs)
+
     venv = ensure_venv(cache_root, env=env)
     argv = build_argv(
-        venv.python, engine, game, keys if game.needs_prod_keys or prod_keys is not None else None, output, extra_args
+        venv.python,
+        engine,
+        input_dir,
+        keys if game.needs_prod_keys or prod_keys is not None else None,
+        output,
+        extra_args,
     )
     returncode = env.run_stream(argv, cwd=engine.path, on_line=on_line)
 
@@ -170,4 +218,4 @@ def run_build(
     if output is not None and returncode == 0:
         app_path = output.expanduser().resolve()
 
-    return BuildResult(argv=tuple(argv), app_path=app_path, returncode=returncode)
+    return BuildResult(argv=tuple(argv), app_path=app_path, returncode=returncode, input_path=input_dir)

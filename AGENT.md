@@ -72,20 +72,29 @@ through later: `--mac-sign` (codesign identity, default ad-hoc), `--seen-shaders
 
 ```
 nx2mac doctor      # check the whole table above; show what's missing and how to fix it
-nx2mac setup       # install/repair what can be automated (managed Python venv + pip);
-                   # print manual steps for the rest (full Xcode, Metal toolchain, brew tools)
+nx2mac setup       # per missing item: "Install zstd? (brew install zstd) [y/N]" and run it;
+                   # manual-only items (full Xcode, macOS, Homebrew itself) get a note + link
+                   #   --install NAME (repeatable) / --all / --yes / --no-prompt
 nx2mac engine      # select + pin a source; reports branch name + commit hash (--show: no network)
-nx2mac build DIR   # full pipeline above; -k <prod.keys>, -o <out.app>; asks which engine if unset
+nx2mac build DIR   # full pipeline; -k <prod.keys>, -o <out.app>, --update F, --dlc F (repeatable)
 ```
+
+`build --update`/`--dlc` **stage** a folder of symlinks (game + chosen extras) because the engine
+takes exactly one input folder; the staging dir lives in the cache keyed by the selection, so the
+engine's `_build` folder and its caches are reused. Extras are rejected for `.nup` inputs (a NUP
+already carries its updates/DLC).
 
 All commands accept `--json` (before or after the subcommand) — see the interface contract below.
 
 Library layout (`src/nx2mac/`): `cli.py` (typer app, thin renderer), `runner.py` (`Env`
-protocol + `RealEnv`), `doctor.py` (checks + remediation), `engines.py` (GitHub resolve/clone/pin
+protocol + `RealEnv`), `doctor.py` (checks), `remedies.py` (how each check is fixed, and whether
+we may run it), `installer.py` (runs those fixes), `engines.py` (GitHub resolve/clone/pin
 + patch series), `builder.py` (validate inputs, run the nxnative script, stream output),
-`pyenv.py` (arm64 CPython discovery + managed venv), `config.py` (persistent choices),
-`emit.py` (JSON/NDJSON output). Config: `~/.config/nx2mac/config.toml` (XDG-aware); caches under
-`~/Library/Caches/nx2mac` or `$NX2MAC_CACHE_ROOT` (`engines/<source-id>-<ref-slug>`, `python/`).
+`staging.py` (one engine-ready folder from game + update/DLC), `pyenv.py` (arm64 CPython discovery
++ managed venv), `config.py` (persistent choices), `emit.py` (JSON/NDJSON output), `inputs.py`
+(shared extensions). Config: `~/.config/nx2mac/config.toml` (XDG-aware); caches under
+`~/Library/Caches/nx2mac` or `$NX2MAC_CACHE_ROOT` (`engines/<source-id>-<ref-slug>`, `python/`,
+`staging/<game>-<hash>/`).
 
 ## Engine patches (`patches/`)
 
@@ -108,7 +117,10 @@ stable and renderer-agnostic:
   or `{"event":"error","message":"..."}` on failure.
 - Check names are stable machine keys: `macos`, `apple-silicon`, `macos-version`, `xcode`,
   `metal-toolchain`, `git`, `brew`, `zstd`, `glslangValidator`, `make`, `engine-python`,
-  `engine-venv`; each carries `detail` and an actionable `fix` command string.
+  `engine-venv`; each carries `detail`, an actionable `fix` string, plus `installable`, `install`
+  (argv), `kind` (`brew|xcode|internal|manual`), `note` and `link`.
+- `setup --json` (no `--install`) prints one report document; `setup --install N…|--all --json`
+  prints NDJSON (`install-start`, `log`, `install-done`, final `setup` with the refreshed doctor).
 - Exit codes: `0` success, non-zero failure; `build` propagates the engine's exit code. The
   reason is always in the JSON payload, so the GUI never parses human text.
 - Engine payload always includes `source.id|label|url`, `ref`, `branch`, `commit`,
@@ -117,6 +129,22 @@ stable and renderer-agnostic:
 
 Add functionality to the core modules + JSON payloads first; the rich/human output is just a
 renderer of the same results.
+
+## English Swift GUI (`gui/`)
+
+A native SwiftUI app that only shells out to `nx2mac … --json` (no Python imports):
+
+- **Build tab**: pick the dump folder or `.nup`, optional `prod.keys`, optional update(s) and any
+  number of DLC packages/folders, optional output, engine + ref ("Save & Pin"), then Build with a
+  live log and the engine's stage tags (`[8/8] Mac app`); Done reveals/opens the `.app`.
+- **Setup tab**: every prerequisite with an Install button for the fixable ones
+  (`setup --install <name> --json`), Copy command / Open page for manual ones, and "Install all
+  missing" (`setup --all`).
+
+Build it with `./gui/build.sh release [dest]` (SwiftPM + a script that wraps the binary into
+`NX2Mac.app`; no Xcode project). It finds the CLI via `NX2MAC_BIN`, the `cliPath` setting, PATH,
+well-known install dirs, then a dev checkout's `.venv/bin/python -m nx2mac`. Tests:
+`swift test --package-path gui` (add `NX2MAC_LIVE_TESTS=1` to also drive the real CLI).
 
 ## Current state
 
@@ -129,6 +157,9 @@ All v1 slices are implemented with unit tests (run: `uv run pytest`, lint: `uv r
 - `engines.py` — upstream/fork sources, clone/fetch into cache, ref->commit pinning, patch series
 - `builder.py` — game classification (.nsp/.nsz/.xci/.xcz vs .nup), prod.keys lookup, streaming build
 - `cli.py` — `version|doctor|setup|engine|build` with human and `--json` rendering
+- `remedies.py` / `installer.py` — per-check fixes the CLI can run (`setup --install/--all`)
+- `staging.py` — update/DLC staging for the engine's single-folder input model
+- `gui/` — SwiftUI app (Build + Setup tabs), `swift test` covers payload parsing and arg assembly
 - `patches/` — engine patch series + README
 
 **Acceptance test passed** (real build, human + `--json` modes):
@@ -149,6 +180,7 @@ Next: the Swift GUI (shells out to `nx2mac ... --json`, see the contract above).
 ## Open questions
 
 - Whether `build` should accept arbitrary extra nxnative flags verbatim (`-- ...`). `run_build`
-  already has `extra_args`; no CLI flag exposes it yet.
+  already has `extra_args`; no CLI flag exposes it yet (useful ones: `--mac-sign`, `--seen-shaders`,
+  `--prebake`, `-p/--package`, `--aoc-dir`).
 - Optional engine flags worth surfacing: `--mac-sign <identity>`, `--seen-shaders`, `--prebake`.
 - iOS/IPA output stays out of scope; keep the design open to it.

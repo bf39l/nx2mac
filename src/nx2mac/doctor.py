@@ -17,11 +17,12 @@ fake `Env`, injected platform facts and a temporary cache root (see
 import platform as _platform_module
 import re
 import sys as _sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path  # noqa: F401  (kept for future path-based checks)
 
 from .config import cache_root
 from .pyenv import MIN_VERSION, best_engine_interpreter, probe_venv
+from .remedies import remedy_for
 from .runner import Env, RealEnv
 
 #: Minimum macOS point release the engine is expected to run on (26.6+).
@@ -40,10 +41,31 @@ class Check:
     ok: bool
     detail: str  # human explanation of what was found or why it failed
     fix: str = ""  # command / action that resolves a failure (empty when none)
+    #: Command we can run for the user (None = manual only, or the check passed).
+    install: tuple[str, ...] | None = None
+    #: How the remedy works: "brew" | "xcode" | "internal" | "manual".
+    kind: str = "manual"
+    note: str = ""  # explanation for manual remedies
+    link: str = ""  # download/documentation page
+
+    @property
+    def installable(self) -> bool:
+        """Whether `nx2mac setup --install <name>` can fix this check."""
+        return self.install is not None
 
     def to_dict(self) -> dict[str, object]:
         """JSON-ready form used by `nx2mac doctor --json` / the GUI."""
-        return {"name": self.name, "ok": self.ok, "detail": self.detail, "fix": self.fix}
+        return {
+            "name": self.name,
+            "ok": self.ok,
+            "detail": self.detail,
+            "fix": self.fix,
+            "installable": self.installable,
+            "install": list(self.install) if self.install is not None else None,
+            "kind": self.kind,
+            "note": self.note,
+            "link": self.link,
+        }
 
 
 @dataclass(frozen=True)
@@ -229,6 +251,23 @@ def check_engine_venv(ctx: DoctorContext) -> Check:
     return Check(name="engine-venv", ok=True, detail=str(status.python.parent.parent))
 
 
+def _with_remedy(check: Check, env: Env) -> Check:
+    """Attach the actionable remedy to a failing check (passing checks stay bare)."""
+    if check.ok:
+        return check
+    remedy = remedy_for(check.name)
+    if remedy is None:
+        return check
+    return replace(
+        check,
+        fix=remedy.summary,
+        install=remedy.argv if remedy.available(env) else None,
+        kind=remedy.kind,
+        note=remedy.note,
+        link=remedy.link,
+    )
+
+
 def run_checks(ctx: DoctorContext) -> DoctorReport:
     """Run every check in display order."""
     checks = [
@@ -245,4 +284,4 @@ def run_checks(ctx: DoctorContext) -> DoctorReport:
         check_engine_python(ctx),
         check_engine_venv(ctx),
     ]
-    return DoctorReport(checks=checks)
+    return DoctorReport(checks=tuple(_with_remedy(check, ctx.env) for check in checks))

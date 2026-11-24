@@ -922,24 +922,30 @@ def parse_cheat_file(text: str, meta: str | None = None) -> list[dict[str, objec
     return entries
 
 
-def cheat_blocked_reason(cheat: dict[str, object]) -> str | None:
+def cheat_blocked_reason(cheat: dict[str, object], *, force: bool = False) -> str | None:
     """Why this entry must not be switched on here, or None when it is allowed.
 
-    Only evidence blocks an entry:
+    Evidence blocks an entry:
     * the file has not been compiled yet — nothing knows what its addresses mean (build once);
     * the compile could not anchor it (`no anchors`) — its addresses belong to another build, so a
       write lands on unrelated code (that is what crashed Dead Cells);
+    * `cheat_anchor.py` marked it an instruction patch (`kind=patch`: new code in a cave plus the
+      patched word). The Mac port runs the code its *rewriter* produced, so the original
+      instruction is not there to patch: the write either does nothing or takes the game down
+      (Dead Cells ran a single patch cheat and exited 132, then started in safe mode with every
+      cheat off);
     * it is not a switchable cheat at all (a label, a one-pass entry, the off half of a pair).
 
-    An entry that *did* anchor — even one that patches code — is allowed: the tool checked that the
-    words it writes are the ones this build has there (Metal Slug Tactics' ZR cheats anchor
-    `exact` and work), and the game's own Cheats menu offers the same. `warning` below says when it
-    writes code, so the UI can mention the risk without hiding the switch.
+    `kind=code` (a cheat whose own lines are code, like Metal Slug Tactics' ZR cheats) stays
+    allowed: those anchored `exact` and work. `cheat_warning` still mentions the risk, and `--force`
+    overrides any block for a one-off experiment.
     """
     if cheat.get("meta_kind") in (None, "") and cheat.get("resolved") in (None, ""):
         return "not checked yet — build the game once so the cheats can be anchored"
     if cheat.get("resolved") == "no anchors":
         return "could not be anchored to this build"
+    if cheat.get("meta_kind") == "patch" and not force:
+        return "an instruction patch — this port runs the code its rewriter produced, so it cannot apply"
     if not cheat.get("switchable", True):
         return "not a switchable cheat"
     return None
@@ -1233,12 +1239,9 @@ def set_cheat(library: Path, title_id: str, build: str, name: str, enabled: bool
     # entries a compile could not anchor, or a file that has not been checked yet.
     if enabled and not force:
         for cheat in matched:
-            reason = cheat_blocked_reason({**cheat, "switchable": cheat.get("switchable", True)})
+            reason = cheat_blocked_reason({**cheat, "switchable": cheat.get("switchable", True)}, force=force)
             if reason is not None:
-                raise LibraryError(
-                    f"{cheat['name']}: {reason} — it would crash the game. "
-                    "Build the game once (that anchors the file), or pass --force to try it anyway."
-                )
+                raise LibraryError(f"{cheat['name']}: {reason}. Pass --force to switch it on anyway.")
     keys = {str(cheat["key"]) for cheat in matched}
     if not keys:
         keys = {wanted}  # no file to read (a hand-written toggle): keep the name as given

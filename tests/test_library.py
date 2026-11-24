@@ -691,6 +691,36 @@ def test_a_switch_the_compile_proved_unusable_is_turned_off(tmp_path: Path) -> N
 
 
 
+def test_an_instruction_patch_is_blocked_even_when_it_anchored(tmp_path: Path) -> None:
+    """`kind=patch` cannot work on the port: Dead Cells ran one and the host exited 132.
+
+    Its addresses anchor `exact` (the words are the ones this build has), yet the running code is
+    what the rewriter produced, so the patch either does nothing or takes the game down. `--force`
+    stays available for a one-off experiment.
+    """
+    library = _library(tmp_path)
+    folder = cheats_dir(library, TID)
+    folder.mkdir(parents=True)
+    (folder / "0123456789ABCDEF.txt").write_text(
+        "[Infinite health]\n14050000 0013AA2C B9401109\n04000000 0013AA2C 00005431\n20000000\n",
+        encoding="utf-8",
+    )
+    (folder / "0123456789ABCDEF.meta.tsv").write_text(
+        "name\tkind\tsection\ttype\taction\tvalue\task\tvalue_words\tonce\tpair\tresolved\tnote\taddress\n"
+        "Infinite health\tpatch\t\t\t\t\t\t\t\t\texact\t\t\n",
+        encoding="utf-8",
+    )
+
+    listed = cheat_builds(library, TID)[0]["cheats"][0]  # type: ignore[index]
+    assert "instruction patch" in str(listed["blocked"])
+
+    with pytest.raises(LibraryError, match="instruction patch"):
+        set_cheat(library, TID, "0123456789ABCDEF", "Infinite health", True)
+
+    set_cheat(library, TID, "0123456789ABCDEF", "Infinite health", True, force=True)
+    assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "Infinite health\n"
+
+
 def test_a_code_patch_that_anchored_may_be_enabled_with_a_warning(tmp_path: Path) -> None:
     """Metal Slug's ZR cheats anchor exact: the tool verified the words, so they are allowed."""
     library = _library(tmp_path)

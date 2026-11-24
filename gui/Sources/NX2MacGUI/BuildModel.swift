@@ -411,7 +411,7 @@ final class BuildModel: ObservableObject {
     /// Read a game's cheat files, their switches and the engine's master/safe flags.
     func cheats(for game: LibraryGame) async -> (builds: [CheatBuild], state: CheatsState) {
         guard let cli else { return ([], .unknown) }
-        guard let result = try? await Self.run(cli, ["cheats", "--game", game.path, "--json"]),
+        guard let result = try? await Self.run(cli, ["cheats", "--game", game.titleID ?? game.path, "--json"]),
               let data = result.stdout.data(using: .utf8),
               let payload = try? JSONDecoder().decode(CheatsPayload.self, from: data),
               let entry = payload.games.first
@@ -422,20 +422,20 @@ final class BuildModel: ObservableObject {
     /// Turn every cheat off (or back on) with the engine's master switch.
     func setCheatsMaster(for game: LibraryGame, off: Bool) async {
         guard let cli else { return }
-        _ = try? await Self.run(cli, ["cheats", "--game", game.path, off ? "--off" : "--on", "--json"])
+        _ = try? await Self.run(cli, ["cheats", "--game", game.titleID ?? game.path, off ? "--off" : "--on", "--json"])
     }
 
     /// Drop the unclean-exit marker so the saved switches apply again.
     func restoreCheatSwitches(for game: LibraryGame) async {
         guard let cli else { return }
-        _ = try? await Self.run(cli, ["cheats", "--game", game.path, "--restore-safe", "--json"])
+        _ = try? await Self.run(cli, ["cheats", "--game", game.titleID ?? game.path, "--restore-safe", "--json"])
     }
 
     /// Switch one cheat on/off (the same file the in-game Cheats menu writes).
     func setCheat(_ cheat: CheatEntry, build: CheatBuild, for game: LibraryGame, enabled: Bool) async {
         guard let cli else { return }
         let flag = enabled ? "--enable" : "--disable"
-        _ = try? await Self.run(cli, ["cheats", "--game", game.path, flag, cheat.name, "--json"])
+        _ = try? await Self.run(cli, ["cheats", "--game", game.titleID ?? game.path, flag, cheat.name, "--json"])
     }
 
     /// Keep saves local and copy them into a synced folder (iCloud Drive, Dropbox, …).

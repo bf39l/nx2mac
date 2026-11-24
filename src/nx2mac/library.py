@@ -62,6 +62,8 @@ PLAYERS_FILE: str = "players.json"
 PLAYER_NICK_ENV: str = "DM_NICK"
 #: The engine's cloud-saves folder (save_sync.c): it keeps <folder>/<TITLEID>/save.dmsync.
 CLOUD_ENV: str = "DM_SAVE_SYNC"
+#: Colon-separated RomFS folders of the mods to switch on (hle_fs.c / hle_exl.c).
+MODS_ENV: str = "DM_ROMFS_OVERLAY"
 #: How many players one game may have (the engine allows 8 local users; we keep it tidy).
 MAX_PLAYERS: int = 8
 
@@ -525,6 +527,30 @@ def cloud_value(cloud_dir: Path | None, player_id: str | None) -> str | None:
     return str(root / "players" / player_id) if player_id else str(root)
 
 
+def mod_romfs(library: Path, title_id: str) -> list[Path]:
+    """Every RomFS folder of this game's mods, in the order the engine should overlay them.
+
+    A mod is `<mods>/<name>/` holding `romfs` (or an Atmosphère layout,
+    `atmosphere/contents/<TID>/romfs`, or `contents/<TID>/romfs`), like NX2Apple's mods.
+    """
+    root = mods_dir(library, title_id)
+    found: list[Path] = []
+    if not root.is_dir():
+        return found
+    for mod in sorted(root.iterdir()):
+        if not mod.is_dir() or mod.name == "cheats" or mod.name.startswith("."):
+            continue
+        for candidate in (
+            mod / "romfs",
+            mod / "atmosphere" / "contents" / title_id / "romfs",
+            mod / "contents" / title_id / "romfs",
+        ):
+            if candidate.is_dir():
+                found.append(candidate)
+                break
+    return found
+
+
 def write_player_env(library: Path, title_id: str, cloud_dir: Path | None = None) -> Path:
     """Point the engine's saves at the *active player's* store, and name them.
 
@@ -545,6 +571,9 @@ def write_player_env(library: Path, title_id: str, cloud_dir: Path | None = None
         store.mkdir(parents=True, exist_ok=True)
         managed["DM_SAVE"] = str(store)
         managed[PLAYER_NICK_ENV] = player.name
+    overlays = mod_romfs(library, title_id)
+    if overlays:
+        managed[MODS_ENV] = ":".join(str(path) for path in overlays)
     cloud = cloud_value(cloud_dir, player.id if player is not None else None)
     if cloud is not None:
         managed[CLOUD_ENV] = cloud
@@ -736,6 +765,31 @@ def describe_library(library: Path) -> dict[str, object]:
         "exists": library.is_dir(),
         "games": [entry.to_dict() for entry in games],
     }
+
+
+def describe_mods(library: Path) -> list[dict[str, object]]:
+    """Every mod found in the library, for `nx2mac mods --json`."""
+    entries: list[dict[str, object]] = []
+    for game in list_games(library):
+        if not game.title_id:
+            continue
+        overlays = {path.parent for path in mod_romfs(library, game.title_id)}
+        root = mods_dir(library, game.title_id)
+        if not root.is_dir():
+            continue
+        for mod in sorted(root.iterdir()):
+            if not mod.is_dir() or mod.name == "cheats" or mod.name.startswith("."):
+                continue
+            entries.append(
+                {
+                    "game": game.name,
+                    "title_id": game.title_id,
+                    "name": mod.name,
+                    "path": str(mod),
+                    "active": any(mod == overlay or mod in overlay.parents for overlay in overlays),
+                }
+            )
+    return entries
 
 
 def describe_libraries(libraries: Iterable[Path]) -> dict[str, object]:

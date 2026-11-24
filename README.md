@@ -51,7 +51,8 @@ nx2mac doctor                           # per-check status + fix; exit 1 if anyt
 nx2mac setup [--install NAME…|--all]    # install missing pieces (prompts, or non-interactive)
 nx2mac engine [REF] [--source upstream|fork] [--show]      # the two supported engines
 nx2mac probe PATH                      # what a folder holds + which package is the game
-nx2mac library [--set DIR|--clear]     # the game library (no default; must exist)
+nx2mac library [--add DIR|--remove DIR|--clear]   # the game libraries (none by default)
+nx2mac mods                            # list each game's mods and apply them
 nx2mac player [--create NAME|--select NAME|--delete NAME] [--game GAME]
 nx2mac build GAME [-k KEYS] [-o APP] [--out-dir DIR]
                 [--update F…] [--dlc F…] [--source ID] [--ref REF] [--json]
@@ -153,6 +154,52 @@ Everything one game saves sits under its title ID:
 ├── profiles/<player>/     one store per player
 └── pso_user.tsv           DM_PSO_USER — the game's shared pipeline cache
 ```
+
+### Installing mods and cheats
+
+Both live in the game's folder inside the library — `<chosen>/nx2mac_game_lib/<TITLEID>/mods/`.
+Nothing else needs a rebuild: the game reads them at launch.
+
+**Mods (RomFS overlays)**
+
+```
+nx2mac_game_lib/<TITLEID>/mods/
+└── Cool Mod/
+    └── romfs/            the mod's files, replacing the game's own (e.g. romfs/system/...)
+```
+
+```bash
+nx2mac mods                # list them; `on` = the game will load it
+```
+
+`nx2mac mods` (and any `build`/`player` change) writes the mod list into the game's
+`support/env.txt` as `DM_ROMFS_OVERLAY`, which the engine overlays over the game's RomFS. Accepted
+shapes per mod: `romfs/`, `atmosphere/contents/<TITLEID>/romfs/` or `contents/<TITLEID>/romfs/`.
+Pressing "Refresh" in the GUI re-applies them too.
+
+- Mods are loaded in folder-name order, so an earlier name wins a file both replace.
+- **RomFS mods only.** A mod that ships code (`exefs/`) cannot be loaded: the engine would have to
+  rewrite its plugins first (`scripts/prepare_mod.py` in the engine). Such a mod shows up in
+  `nx2mac mods` as `no romfs` and is ignored.
+- A mod that changes the *save* layout (a "cheat-like" mod) is not recommended: saves are per
+  player under `save/` or `players/<id>/save/`.
+
+**Cheats (Atmosphère format)**
+
+```
+nx2mac_game_lib/<TITLEID>/mods/cheats/
+└── <build id>.txt          e.g. 0100646009FBE000's build id, 16 hex digits
+```
+
+- The file name must be the game's **build ID** — cheat sites publish it as
+  `atmosphere/contents/<TITLEID>/cheats/<BUILDID>.txt`; copy it in as-is. Any `.txt` whose name is
+  not 20 characters ending in `.txt` is ignored.
+- In game, open the window's **Cheats** menu (or panel) and switch entries on; the engine remembers
+  the toggles per build in `cheats/<build id>.enabled`.
+- `DM_CHEATS` already points there (it is written into the app's baked env at build time), and
+  `cheats/` sits beside the mods it belongs to.
+- Cheats run once per presented frame, so an "infinite health" style cheat can still let you die for
+  a frame; that is the engine's semantics, documented in its `docs/reference/cheats.md`.
 
 ### Cloud saves (optional)
 

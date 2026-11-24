@@ -421,6 +421,44 @@ def probe(
 
 
 @app.command()
+def mods(
+    ctx: typer.Context,
+    json_flag: bool = _json_option(),
+    refresh: bool = typer.Option(
+        True, "--refresh/--no-refresh", help="rewrite each game's env so the mods in its folder apply."
+    ),
+) -> None:
+    """List the mods in each game's folder (drop a mod into <TITLEID>/mods/ to install one)."""
+    machine_readable = _enter(ctx, json_flag)
+    cfg = load_config()
+    libraries = [Path(entry) for entry in cfg.library_dirs]
+    if not libraries:
+        _fail(ctx, "no game library set; add one with `nx2mac library --add <folder>`")
+
+    entries: list[dict[str, object]] = []
+    for directory in libraries:
+        entries.extend(library_mod.describe_mods(directory))
+    if refresh:
+        library_mod.write_envs_for(libraries, Path(cfg.cloud_dir) if cfg.cloud_dir else None)
+
+    if machine_readable:
+        emit.emit({"mods": entries})
+        return
+    if not entries:
+        console.print("[dim]No mods found.[/]")
+        console.print("[dim]Install one: put its folder in <game>/mods/<mod name>/romfs "
+                      "(cheats: <game>/mods/cheats/<build id>.txt).[/]")
+        return
+    game = ""
+    for entry in entries:
+        if entry["game"] != game:
+            game = str(entry["game"])
+            console.print(f"[bold]{game}[/] [dim]{entry['title_id']}[/]")
+        marker = "[green]on[/]" if entry["active"] else "[yellow]no romfs[/]"
+        console.print(f"  {marker} {entry['name']}")
+
+
+@app.command()
 def clean(
     ctx: typer.Context,
     json_flag: bool = _json_option(),

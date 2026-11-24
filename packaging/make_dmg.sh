@@ -25,12 +25,7 @@ test -x "$app/Contents/Resources/cli/nx2mac" || {
 }
 
 stage="$(mktemp -d)"
-dmg_tmp=""
-cleanup() {
-  rm -rf "$stage"
-  test -n "$dmg_tmp" && rm -f "$dmg_tmp"
-}
-trap cleanup EXIT
+trap 'rm -rf "$stage"' EXIT
 
 ditto "$app" "$stage/$(basename "$app")"
 ln -s /Applications "$stage/Applications"

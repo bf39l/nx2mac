@@ -477,7 +477,7 @@ private struct CheatsSheet: View {
                                     .font(.caption.monospaced())
                                     .foregroundStyle(.secondary)
                                 ForEach(build.cheats) { cheat in
-                                    if cheat.switchable {
+                                    if cheat.switchable && !cheat.codePatch {
                                         Toggle(isOn: Binding(
                                             get: { cheat.enabled },
                                             set: { value in Task { await toggle(cheat, build, value) } }
@@ -496,10 +496,11 @@ private struct CheatsSheet: View {
                                         HStack {
                                             Text(cheat.name).font(.callout)
                                             Spacer()
-                                            Text(cheat.kind == "master" ? "always on"
+                                            Text(cheat.codePatch ? "code patch — cannot work here"
+                                                 : cheat.kind == "master" ? "always on"
                                                  : cheat.broken ? "broken" : "one-pass")
                                                 .font(.caption2)
-                                                .foregroundStyle(.secondary)
+                                                .foregroundStyle(cheat.codePatch ? Color.orange : Color.secondary)
                                         }
                                     }
                                 }
@@ -546,7 +547,7 @@ private struct CheatsSheet: View {
             entry.key == cheat.key
                 ? CheatEntry(name: entry.name, key: entry.key, kind: entry.kind, section: entry.section,
                              broken: entry.broken, switchable: entry.switchable, enabled: enabled,
-                             resolved: entry.resolved, unanchored: entry.unanchored)
+                             resolved: entry.resolved, unanchored: entry.unanchored, codePatch: entry.codePatch)
                 : entry
         }
         builds[index] = CheatBuild(build: build.build, file: build.file, enabledFile: build.enabledFile, cheats: updated)

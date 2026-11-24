@@ -475,6 +475,7 @@ def cheats(
     json_flag: bool = _json_option(),
     game: str | None = typer.Option(None, "--game", metavar="GAME", help="the game (default: every game)."),
     enable: list[str] = typer.Option([], "--enable", metavar="NAME", help="switch a cheat on."),
+    force: bool = typer.Option(False, "--force", help="enable even a code patch (it will crash this port)."),
     disable: list[str] = typer.Option([], "--disable", metavar="NAME", help="switch a cheat off."),
     library: Path | None = typer.Option(None, "--library", metavar="DIR", help="only this library."),
     import_from: list[Path] = typer.Option(
@@ -591,7 +592,7 @@ def cheats(
             for build in builds:
                 build_id = str(build["build"])
                 for name in enable:
-                    library_mod.set_cheat(directory, entry.title_id, build_id, name, True)
+                    library_mod.set_cheat(directory, entry.title_id, build_id, name, True, force=force)
                 for name in disable:
                     library_mod.set_cheat(directory, entry.title_id, build_id, name, False)
             builds = library_mod.cheat_builds(directory, entry.title_id)

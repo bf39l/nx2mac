@@ -1157,7 +1157,7 @@ def _is_build_id(text: str) -> bool:
     return len(text) == 16 and all(char in "0123456789abcdefABCDEF" for char in text)
 
 
-def set_cheat(library: Path, title_id: str, build: str, name: str, enabled: bool) -> Path:
+def set_cheat(library: Path, title_id: str, build: str, name: str, enabled: bool, force: bool = False) -> Path:
     """Switch one cheat on/off in the build's `.enabled` file (what the in-game menu writes).
 
     `name` may be the cheat's name or its key (`Name #2` for a duplicate); the file is rewritten in
@@ -1171,8 +1171,21 @@ def set_cheat(library: Path, title_id: str, build: str, name: str, enabled: bool
     cheats = parse_cheat_file(txt.read_text(encoding="utf-8", errors="replace"), meta) if txt.is_file() else []
 
     wanted = name.strip()
-    keys = {str(cheat["key"]) for cheat in cheats if str(cheat["key"]).casefold() == wanted.casefold()
-            or str(cheat["name"]).casefold() == wanted.casefold()}
+    matched = [
+        cheat
+        for cheat in cheats
+        if str(cheat["key"]).casefold() == wanted.casefold() or str(cheat["name"]).casefold() == wanted.casefold()
+    ]
+    # A code patch writes the Switch's instructions into code this port rebuilt: it does not work and
+    # it takes the game down. Refuse it unless the player insists.
+    if enabled and not force:
+        patches = [cheat for cheat in matched if cheat.get("meta_kind") in ("patch", "code")]
+        if patches:
+            raise LibraryError(
+                f"{patches[0]['name']} patches the game's code, and this port runs code its rewriter "
+                "produced — it cannot work here and crashes the game. Pass --force to enable it anyway."
+            )
+    keys = {str(cheat["key"]) for cheat in matched}
     if not keys:
         keys = {wanted}  # no file to read (a hand-written toggle): keep the name as given
 

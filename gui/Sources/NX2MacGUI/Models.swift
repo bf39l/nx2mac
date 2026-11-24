@@ -375,6 +375,13 @@ struct CheatEntry: Decodable, Identifiable, Hashable {
     /// The compile could not anchor its address: bound to the build it came from.
     let resolved: String?
     let unanchored: Bool
+    /// The entry writes instructions into code the port rebuilt: cannot work, crashes the game.
+    let codePatch: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case name, key, kind, section, broken, switchable, enabled, resolved, unanchored
+        case codePatch = "code_patch"
+    }
 
     var id: String { key }
 }

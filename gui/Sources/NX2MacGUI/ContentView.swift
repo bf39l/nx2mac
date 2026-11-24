@@ -76,9 +76,18 @@ struct BuildTab: View {
                     .font(.callout)
                     .foregroundStyle(model.updateURLs.isEmpty ? .tertiary : .primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                if model.updateIsAuto {
+                    Text("newest")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.12), in: Capsule())
+                        .help("The newest update found beside the game; add or clear to change it")
+                }
                 Button("Add…") { chooseUpdate() }
                 if !model.updateURLs.isEmpty {
-                    Button("Clear") { model.updateURLs.removeAll() }
+                    Button("Clear") { model.chooseUpdate([]) }
                 }
             }
             selectionList(model.updateURLs) { index in model.updateURLs.remove(at: index) }
@@ -395,7 +404,9 @@ extension BuildTab {
         panel.allowsMultipleSelection = true
         panel.message = "Pick the update package(s) for this game — they are staged with the base game."
         panel.prompt = "Add update"
-        if panel.runModal() == .OK { model.updateURLs.append(contentsOf: unique(panel.urls, into: model.updateURLs)) }
+        if panel.runModal() == .OK {
+            model.chooseUpdate(model.updateURLs + unique(panel.urls, into: model.updateURLs))
+        }
     }
 
     /// Pick any number of DLC packages, or whole folders of them.

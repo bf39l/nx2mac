@@ -322,7 +322,8 @@ final class ProbePayloadTests: XCTestCase {
     func testDecodesProbeDocument() throws {
         let json = """
         {"path": "/dumps/Dead Cells", "kind": "switch1",
-         "game_file": "/dumps/Dead Cells/base_0100646009FBE000.nsp", "needs_prod_keys": true,
+         "game_file": "/dumps/Dead Cells/base_0100646009FBE000.nsp",
+         "update": "/dumps/Dead Cells/u_0100646009FBE800.nsp", "needs_prod_keys": true,
          "packages": [{"path": "/dumps/Dead Cells/base_0100646009FBE000.nsp", "extension": ".nsp",
                        "title_id": "0100646009FBE000", "role": "base", "size": 465011002},
                       {"path": "/dumps/Dead Cells/u_0100646009FBE800.nsp", "extension": ".nsp",
@@ -334,6 +335,7 @@ final class ProbePayloadTests: XCTestCase {
         XCTAssertEqual(payload.kind, "switch1")
         XCTAssertTrue(payload.needsProdKeys)
         XCTAssertEqual(payload.packages.map(\.role), ["base", "update"])
+        XCTAssertEqual(payload.update?.hasSuffix("u_0100646009FBE800.nsp"), true)
         XCTAssertEqual(payload.gameFile?.hasSuffix("base_0100646009FBE000.nsp"), true)
     }
 }

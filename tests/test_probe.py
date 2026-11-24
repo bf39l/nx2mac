@@ -97,3 +97,26 @@ def test_ignores_build_folders_and_hidden_files(tmp_path: Path) -> None:
     (game / "Game_0100646009FBE000.nsp").write_bytes(b"\x00" * 10)
 
     assert probe(game).game_file == game / "Game_0100646009FBE000.nsp"
+
+
+def test_probe_picks_the_newest_update_by_version(tmp_path: Path) -> None:
+    game = _folder(
+        tmp_path,
+        (
+            "Game_0100646009FBE000.nsp",
+            "Game_0100646009FBE800_Update_v1.0.1.nsp",
+            "Game_0100646009FBE800_Update_v1.25.0.nsp",  # newer
+            "Game_0100646009FBE800_Update_v1.9.9.nsp",  # "1.9.9" < "1.25.0"
+        ),
+    )
+
+    scan = probe(game)
+
+    assert scan.update is not None and scan.update.name.endswith("Update_v1.25.0.nsp")
+    assert [p.version for p in scan.packages if p.role == "update"] == [(1, 0, 1), (1, 25, 0), (1, 9, 9)]
+
+
+def test_probe_without_an_update_reports_none(tmp_path: Path) -> None:
+    game = _folder(tmp_path, ("Game_0100646009FBE000.nsp",))
+
+    assert probe(game).update is None

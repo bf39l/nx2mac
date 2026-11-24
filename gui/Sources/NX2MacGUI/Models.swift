@@ -332,6 +332,7 @@ struct GamePackage: Decodable, Identifiable, Hashable {
     let path: String
     let role: String
     let size: Int
+    let version: String?
 
     var id: String { path }
     var url: URL { URL(fileURLWithPath: path) }
@@ -343,11 +344,13 @@ struct ProbePayload: Decodable {
     let path: String
     let kind: String
     let gameFile: String?
+    /// The newest update package found next to the game (pre-selected in the Build tab).
+    let update: String?
     let needsProdKeys: Bool
     let packages: [GamePackage]
 
     enum CodingKeys: String, CodingKey {
-        case path, kind, packages
+        case path, kind, packages, update
         case gameFile = "game_file"
         case needsProdKeys = "needs_prod_keys"
     }

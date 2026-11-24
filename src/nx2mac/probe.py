@@ -20,6 +20,9 @@ from .inputs import GAME_EXTENSIONS, NSO_EXTENSION
 #: A 16-hex-digit title ID anywhere in a package name.
 TITLE_ID = re.compile(r"[0-9A-Fa-f]{16}")
 
+#: A version in a package name ("…_Update_v1.25.0.nsp", "…[v65536]").
+VERSION = re.compile(r"[vV](\d+)(?:\.(\d+))?(?:\.(\d+))?")
+
 #: Name fragments that mean "not the base game".
 UPDATE_OR_DLC = re.compile(
     r"(?i)(^|[^a-z])(update|patch|dlc|aoc|addon|add-on|cheat|nsp_update)([^a-z]|$)"
@@ -35,6 +38,7 @@ class Package:
     title_id: str | None
     role: str  # "base" | "update" | "dlc" | "unknown"
     size: int
+    version: tuple[int, int, int] | None = None  # parsed from the name, when it has one
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -43,6 +47,7 @@ class Package:
             "title_id": self.title_id,
             "role": self.role,
             "size": self.size,
+            "version": ".".join(str(part) for part in self.version) if self.version else None,
         }
 
 
@@ -55,12 +60,14 @@ class Scan:
     game_file: Path | None  # the package a UI should pre-select
     needs_prod_keys: bool
     packages: tuple[Package, ...]
+    update: Path | None = None  # the newest update package beside the game, if any
 
     def to_dict(self) -> dict[str, object]:
         return {
             "path": str(self.path),
             "kind": self.kind,
             "game_file": str(self.game_file) if self.game_file is not None else None,
+            "update": str(self.update) if self.update is not None else None,
             "needs_prod_keys": self.needs_prod_keys,
             "packages": [package.to_dict() for package in self.packages],
         }
@@ -93,6 +100,14 @@ def _packages(path: Path) -> list[Package]:
                 size = candidate.stat().st_size
             except OSError:
                 size = 0
+            version = None
+            match_version = VERSION.search(candidate.name)
+            if match_version:
+                version = (
+                    int(match_version.group(1)),
+                    int(match_version.group(2) or 0),
+                    int(match_version.group(3) or 0),
+                )
             found.append(
                 Package(
                     path=candidate,
@@ -100,6 +115,7 @@ def _packages(path: Path) -> list[Package]:
                     title_id=title_id,
                     role=_role_for(candidate.name, title_id),
                     size=size,
+                    version=version,
                 )
             )
             return
@@ -125,6 +141,17 @@ def choose_game_file(packages: list[Package]) -> Path | None:
     return max(candidates, key=lambda package: package.size).path
 
 
+def newest_update(packages: list[Package]) -> Path | None:
+    """The update to play: the highest version in the folder, else the biggest update."""
+    updates = [package for package in packages if package.role == "update"]
+    if not updates:
+        return None
+    numbered = [package for package in updates if package.version is not None]
+    if numbered:
+        return max(numbered, key=lambda package: (package.version or (0, 0, 0), package.size)).path
+    return max(updates, key=lambda package: package.size).path
+
+
 def probe(path: Path) -> Scan:
     """Describe a game folder or file: what it holds and which package is the game."""
     resolved = path.expanduser()
@@ -136,7 +163,14 @@ def probe(path: Path) -> Scan:
             package = Package(resolved, resolved.suffix.lower(), None, "base", _size(resolved))
             return Scan(resolved, "nso", resolved, False, (package,))
         packages = _packages(resolved)
-        return Scan(resolved, "switch1" if packages else "empty", choose_game_file(packages), True, tuple(packages))
+        return Scan(
+            resolved,
+            "switch1" if packages else "empty",
+            choose_game_file(packages),
+            True,
+            tuple(packages),
+            newest_update(packages),
+        )
 
     packages = _packages(resolved)
     if not packages:
@@ -144,7 +178,7 @@ def probe(path: Path) -> Scan:
     if any(package.extension == NSO_EXTENSION for package in packages):
         nup = next(package for package in packages if package.extension == NSO_EXTENSION)
         return Scan(resolved, "nso", nup.path, False, tuple(packages))
-    return Scan(resolved, "switch1", choose_game_file(packages), True, tuple(packages))
+    return Scan(resolved, "switch1", choose_game_file(packages), True, tuple(packages), newest_update(packages))
 
 
 def _size(path: Path) -> int:

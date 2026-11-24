@@ -409,6 +409,8 @@ def probe(
         return
     console.print(f"[bold]{scan.path}[/]  [dim]{scan.kind}[/]")
     console.print(f"game file: [green]{scan.game_file or 'none found'}[/]")
+    if scan.update is not None:
+        console.print(f"latest update: [green]{scan.update}[/]")
     for package in scan.packages:
         selected = "[green]*[/]" if package.path == scan.game_file else " "
         if package.size > 1_000_000_000:

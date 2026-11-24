@@ -76,6 +76,8 @@ final class BuildModel: ObservableObject {
     @Published private(set) var outDirIsAuto = true
     /// Optional update package(s) picked outside the game folder (staged by the CLI).
     @Published var updateURLs: [URL] = []
+    /// True while the update row is just the newest update found beside the game.
+    @Published private(set) var updateIsAuto = false
     /// Optional DLC packages/folders picked outside the game folder (staged by the CLI).
     @Published var dlcURLs: [URL] = []
 
@@ -99,12 +101,15 @@ final class BuildModel: ObservableObject {
         guard let game = buildPath else { return nil }
         // A default output folder means "let the CLI file it into the library".
         let chosenOutDir = outDirIsAuto ? nil : outDirURL
+        // Building the folder lets the engine find its own updates: no need to stage them.
+        let buildingFolder = gameDirURL != nil && gameFileIsAuto
+        let updates = updateIsAuto && buildingFolder ? [] : updateURLs
         return BuildRequest(
             game: game,
             keys: keysURL,
             library: chosenOutDir == nil ? libraryURL : nil,
             outDir: chosenOutDir,
-            updates: updateURLs,
+            updates: updates,
             dlcs: dlcURLs,
             source: engineChoice,
             ref: engineRef
@@ -132,6 +137,12 @@ final class BuildModel: ObservableObject {
         await scanGameDir(url)
     }
 
+    /// The user took over the update choice (or cleared it).
+    func chooseUpdate(_ urls: [URL]) {
+        updateURLs = urls
+        updateIsAuto = false
+    }
+
     /// Pick the package file yourself (or a .nup): this wins over the folder scan.
     func setGameFile(_ url: URL?) {
         gameURL = url
@@ -156,6 +167,16 @@ final class BuildModel: ObservableObject {
         } else {
             gameURL = nil
             gameFileIsAuto = false
+        }
+        // The newest update beside the game is chosen for you; clear or add your own to change it.
+        if updateIsAuto || updateURLs.isEmpty {
+            if let newest = payload.update {
+                updateURLs = [URL(fileURLWithPath: newest)]
+                updateIsAuto = true
+            } else {
+                updateURLs = []
+                updateIsAuto = false
+            }
         }
     }
 

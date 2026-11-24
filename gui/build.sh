@@ -66,6 +66,7 @@ codesign --force --deep --sign - --timestamp=none "$APP" >/dev/null
 
 if [ -n "$DEST" ]; then
   echo "==> copying to $DEST"
+  mkdir -p "$DEST"
   rm -rf "$DEST/nx2mac.app"
   cp -R "$APP" "$DEST/nx2mac.app"
   echo "installed: $DEST/nx2mac.app"

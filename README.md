@@ -112,8 +112,8 @@ cache. Keep them minimal and drop them once upstream lands the fix — see
 
 ## Releases
 
-CI runs the Python and Swift suites (plus a full app assembly) on every push; tagging publishes
-both downloads:
+The release is driven by the tag: pushing `vX.Y.Z` builds and publishes that version (there is no
+manual version input, and no release is created from a branch push).
 
 ```bash
 git tag -a v0.0.1 -m "nx2mac v0.0.1" && git push origin v0.0.1
@@ -125,9 +125,9 @@ git tag -a v0.0.1 -m "nx2mac v0.0.1" && git push origin v0.0.1
 | `nx2mac-app-<version>-macos-arm64.zip` | `nx2mac.app` with that CLI bundled inside |
 | `SHA256SUMS.txt` | checksums for both |
 
-The workflow refuses to publish when the tag, `src/nx2mac/__init__.py` (`VERSION`) and
-`gui/Info.plist` disagree — bump all three together. From the Actions tab you can also run
-*Release* manually (`create_release: false` uploads artifacts only).
+A tag can never publish something other than it says: the job fails unless the tag,
+`VERSION` (`src/nx2mac/__init__.py`) and `CFBundleShortVersionString` (`gui/Info.plist`) all agree —
+bump those two files, commit, then tag.
 
 ## Development
 

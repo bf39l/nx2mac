@@ -1,36 +1,30 @@
 name: Release
 
-# Cutting a release: push a tag (the tag must match VERSION) or run this by hand.
+# Tag-driven only: pushing `vX.Y.Z` publishes that version.
 #
 #   git tag -a v0.0.1 -m "nx2mac v0.0.1" && git push origin v0.0.1
 #
+# The tag decides the version; the build fails when the tag, `VERSION` in
+# src/nx2mac/__init__.py and gui/Info.plist disagree, so a tag can never publish
+# something else than it says.
+#
 # Assets: the standalone CLI (PyInstaller onedir), the GUI app with that CLI
-# bundled inside, and SHA256SUMS.
+# bundled inside, and SHA256SUMS — all named after the tag.
 
 on:
   push:
-    tags: ["v*"]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Tag to publish (must match VERSION in src/nx2mac/__init__.py)"
-        default: v0.0.1
-        required: true
-      create_release:
-        description: "Create a GitHub Release (otherwise the builds are only uploaded as workflow artifacts)"
-        type: boolean
-        default: false
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"  # pre-releases such as v0.0.2-beta.1
 
 permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build CLI + GUI
+  release:
+    name: Release ${{ github.ref_name }}
     # Apple silicon: the engine's tooling and the frozen CLI must be arm64.
     runs-on: macos-15
-    env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -44,25 +38,33 @@ jobs:
       - name: Install
         run: uv sync --locked
 
+      - name: The tag is the version
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "releasing $TAG (version $VERSION)"
+
+      - name: Check the tag matches the package and the app
+        run: |
+          PACKAGE="$(uv run python -c 'import nx2mac; print(nx2mac.VERSION)')"
+          PLIST="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' gui/Info.plist)"
+          if [ "$TAG" != "v$PACKAGE" ]; then
+            echo "::error::tag $TAG does not match VERSION $PACKAGE in src/nx2mac/__init__.py"
+            exit 1
+          fi
+          if [ "$TAG" != "v$PLIST" ]; then
+            echo "::error::tag $TAG does not match CFBundleShortVersionString $PLIST in gui/Info.plist"
+            exit 1
+          fi
+          echo "tag, package version and app version all say $TAG"
+
       - name: Lint and test before shipping
         run: |
           uv run ruff check src/ tests/
           uv run pytest -q
           swift test --package-path gui
-
-      - name: Check that the tag matches the package version
-        run: |
-          VERSION="$(uv run python -c 'import nx2mac; print(nx2mac.VERSION)')"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          if [ "$TAG" != "v$VERSION" ]; then
-            echo "::error::tag $TAG does not match VERSION $VERSION (bump src/nx2mac/__init__.py and gui/Info.plist)"
-            exit 1
-          fi
-          PLIST="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' gui/Info.plist)"
-          if [ "$PLIST" != "$VERSION" ]; then
-            echo "::error::gui/Info.plist has $PLIST but the package is $VERSION"
-            exit 1
-          fi
 
       - name: Build the app (freezes the CLI into Contents/Resources/cli)
         run: ./gui/build.sh release dist
@@ -75,14 +77,14 @@ jobs:
           test -x "$CLI/nx2mac"
           "$CLI/nx2mac" version
 
-          # ditto keeps the bundle structure and symlinks intact.
+          # ditto keeps the bundle structure, permissions and symlinks intact.
           ditto -c -k --sequesterRsrc --keepParent "$CLI" "out/nx2mac-cli-$VERSION-macos-arm64.zip"
           ditto -c -k --sequesterRsrc --keepParent "$APP" "out/nx2mac-app-$VERSION-macos-arm64.zip"
 
           # Prove the app carries a working CLI before publishing it.
           "$APP/Contents/Resources/cli/nx2mac" version
 
-          cd out && shasum -a 256 *.zip > SHA256SUMS.txt && cat SHA256SUMS.txt
+          cd out && shasum -a 256 ./*.zip > SHA256SUMS.txt && cat SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
         with:
@@ -90,8 +92,7 @@ jobs:
           path: out/*
           if-no-files-found: error
 
-      - name: Create the GitHub release
-        if: startsWith(github.ref, 'refs/tags/') || inputs.create_release
+      - name: Publish the release for this tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -99,6 +100,6 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "nx2mac $TAG" \
             --generate-notes \
-            out/nx2mac-cli-"$VERSION"-macos-arm64.zip \
-            out/nx2mac-app-"$VERSION"-macos-arm64.zip \
+            "out/nx2mac-cli-$VERSION-macos-arm64.zip" \
+            "out/nx2mac-app-$VERSION-macos-arm64.zip" \
             out/SHA256SUMS.txt

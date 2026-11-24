@@ -101,15 +101,12 @@ final class BuildModel: ObservableObject {
         guard let game = buildPath else { return nil }
         // A default output folder means "let the CLI file it into the library".
         let chosenOutDir = outDirIsAuto ? nil : outDirURL
-        // Building the folder lets the engine find its own updates: no need to stage them.
-        let buildingFolder = gameDirURL != nil && gameFileIsAuto
-        let updates = updateIsAuto && buildingFolder ? [] : updateURLs
         return BuildRequest(
             game: game,
             keys: keysURL,
             library: chosenOutDir == nil ? libraryURL : nil,
             outDir: chosenOutDir,
-            updates: updates,
+            updates: updateURLs,
             dlcs: dlcURLs,
             source: engineChoice,
             ref: engineRef

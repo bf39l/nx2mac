@@ -743,3 +743,42 @@ def test_a_code_patch_that_anchored_may_be_enabled_with_a_warning(tmp_path: Path
 
     set_cheat(library, TID, "0123456789ABCDEF", "ZR health", True)
     assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "ZR health\n"
+
+
+def test_a_crash_blocks_the_cheat_that_was_on(tmp_path: Path) -> None:
+    """Anchored `exact` + the game died with it on = blocked, listed, and said why.
+
+    The engine sets its safe-mode marker only after an unclean exit while cheats were on, so the
+    marker plus `.enabled` is evidence about those entries — and evidence is what overrides an
+    otherwise fine `exact` anchor.
+    """
+    from nx2mac.library import forget_crashes, note_crashes, safe_mode_marker
+
+    library = _library(tmp_path)
+    folder = cheats_dir(library, TID)
+    folder.mkdir(parents=True)
+    (folder / "0123456789ABCDEF.txt").write_text("[HP]\n04000000 0013AA2C 00005431\n", encoding="utf-8")
+    (folder / "0123456789ABCDEF.meta.tsv").write_text(
+        "name\tkind\tsection\ttype\taction\tvalue\task\tvalue_words\tonce\tpair\tresolved\tnote\taddress\n"
+        "HP\tpatch\t\t\t\t\t\t\t\t\texact\t\t\n",
+        encoding="utf-8",
+    )
+    (folder / "0123456789ABCDEF.enabled").write_text("HP\n", encoding="utf-8")
+    safe_mode_marker(library, TID).write_text("", encoding="utf-8")  # a crashed run left this
+
+    assert note_crashes(library, TID) == ["HP"]
+    # the switch is off now, so clearing the engine's safe mode cannot re-run it
+    assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == ""
+    # reading again does not count the same crash twice
+    assert note_crashes(library, TID) == []
+
+    listed = cheat_builds(library, TID)[0]["cheats"][0]  # type: ignore[index]
+    assert "uncleanly with this on once" in str(listed["blocked"])
+    with pytest.raises(LibraryError, match="uncleanly"):
+        set_cheat(library, TID, "0123456789ABCDEF", "HP", True)
+    set_cheat(library, TID, "0123456789ABCDEF", "HP", True, force=True)
+    assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "HP\n"
+
+    # forgetting the history makes it switchable again
+    assert forget_crashes(library, TID) is True
+    assert cheat_builds(library, TID)[0]["cheats"][0]["blocked"] is None  # type: ignore[index]

@@ -930,19 +930,26 @@ def cheat_blocked_reason(cheat: dict[str, object], *, force: bool = False) -> st
     * the file has not been compiled yet — nothing knows what its addresses mean (build once);
     * the compile could not anchor it (`no anchors`) — its addresses belong to another build, so a
       write lands on unrelated code;
+    * the game died while it was switched on (the engine's safe-mode marker plus `.enabled` is
+      that evidence) — anchoring `exact` only proves the tool found the code, and Dead Cells'
+      `無限血量` anchored `exact` yet took the host down with it twice;
     * it is not a switchable cheat at all (a label, a one-pass entry, the off half of a pair).
 
-    A `kind=patch` entry that the tool anchored (`exact`) is allowed, with `warning` saying it writes
-    code: the tool found the code it patches in *this* build, and Dead Cells' `無限血量` patch is
-    confirmed working on the port. An earlier version blocked every patch and was wrong to — the
-    "0 of 13 writes into the code put back the word already there" line is *not* a verdict on the
-    file: `same` counts restore writes (the "off" half of ASM cheats), and a file of pure patches
-    writes different words by design, so it scores 0 legitimately.
+    What does *not* block an entry: being an instruction patch. `kind=patch` with `resolved=exact`
+    stays switchable (with `warning`), because the tool did find the code it patches in this build,
+    and the "0 of N writes into the code put back the word already there" line is not a verdict —
+    that count is of *restore* writes, and a file of pure patches writes different words by design.
+    Only actual evidence blocks: an anchor that failed, or a crash.
     """
     if cheat.get("meta_kind") in (None, "") and cheat.get("resolved") in (None, ""):
         return "not checked yet — build the game once so the cheats can be anchored"
     if cheat.get("resolved") == "no anchors":
         return "could not be anchored to this build"
+    if cheat.get("crashes") and not force:
+        count = int(cheat["crashes"])  # type: ignore[arg-type]
+        times = "once" if count == 1 else f"{count} times"
+        return (f"the game exited uncleanly with this on {times} — the port cannot run it "
+                "(`--forget-crashes` clears the history)")
     if not cheat.get("switchable", True):
         return "not a switchable cheat"
     return None
@@ -955,6 +962,80 @@ def cheat_warning(cheat: dict[str, object]) -> str:
     return ""
 
 
+#: Names that were switched on when the game last died, and how often. The engine only sets its
+#: safe-mode marker after an *unclean* exit with cheats on, so that marker plus `.enabled` is real
+#: evidence: these entries were running when the host crashed.
+CRASH_LEDGER: str = ".crashes.json"
+
+
+def crash_ledger_path(library: Path, title_id: str) -> Path:
+    return cheats_dir(library, title_id) / CRASH_LEDGER
+
+
+def load_crashes(library: Path, title_id: str) -> dict[str, int]:
+    """`cheat name -> crash count` for this game."""
+    path = crash_ledger_path(library, title_id)
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    runs = payload.get("runs") if isinstance(payload, dict) else None
+    if not isinstance(runs, dict):
+        return {}
+    return {str(name): int(count) for name, count in runs.items() if isinstance(count, (int, float))}
+
+
+def note_crashes(library: Path, title_id: str) -> list[str]:
+    """Record the switches that were on when the last run died; returns the names, once per crash.
+
+    Called when the sheet/listing is read: safe mode plus a non-empty `.enabled` can only mean the
+    host exited uncleanly with those cheats loaded. The marker's mtime keys the entry, so re-reading
+    the same crash does not count twice.
+    """
+    marker = safe_mode_marker(library, title_id)
+    if not marker.exists():
+        return []
+    stamp = str(marker.stat().st_mtime_ns)
+    path = crash_ledger_path(library, title_id)
+    payload: dict[str, object] = {}
+    if path.is_file():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                payload = loaded
+        except (OSError, ValueError):
+            payload = {}
+    already = payload.get("marker") == stamp  # the same crash, read again
+    runs = load_crashes(library, title_id)
+    on: list[str] = []
+    for enabled_file in sorted(cheats_dir(library, title_id).glob("*.enabled")):
+        on.extend(line.strip() for line in enabled_file.read_text(encoding="utf-8").splitlines() if line.strip())
+    if not already:
+        for name in on:
+            runs[name] = runs.get(name, 0) + 1
+    # and switch them off: the saved wish stays in the ledger, not in `.enabled`, so clearing the
+    # engine's safe mode cannot re-run the cheat that crashed
+    crashed = set(runs)
+    for enabled_file in sorted(cheats_dir(library, title_id).glob("*.enabled")):
+        lines = [line for line in enabled_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+        keep = [line for line in lines if line.strip() not in crashed]
+        if len(keep) != len(lines):
+            enabled_file.write_text("".join(f"{line}\n" for line in keep), encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"marker": stamp, "runs": runs}, indent=2, ensure_ascii=False), encoding="utf-8")
+    return [] if already else on
+
+
+def forget_crashes(library: Path, title_id: str) -> bool:
+    """Drop the crash history (after the user changed something and wants to try again)."""
+    path = crash_ledger_path(library, title_id)
+    existed = path.exists()
+    path.unlink(missing_ok=True)
+    return existed
+
+
 def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
     """The cheat files of one game, with their switches and which are on.
 
@@ -965,6 +1046,7 @@ def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
     builds: list[dict[str, object]] = []
     if not folder.is_dir():
         return builds
+    crashes = load_crashes(library, title_id)
     for txt in sorted(folder.glob("*.txt")):
         build = txt.stem
         enabled_file = folder / f"{build}.enabled"
@@ -987,6 +1069,7 @@ def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
                 "unanchored": cheat["resolved"] == "no anchors",
                 "code_patch": cheat["meta_kind"] == "patch",
                 "meta_kind": cheat["meta_kind"],
+                "crashes": crashes.get(str(cheat["name"]), 0),
             }
             for cheat in cheats
         ]
@@ -1244,8 +1327,13 @@ def set_cheat(library: Path, title_id: str, build: str, name: str, enabled: bool
     # Never switch on something the pipeline knows cannot run (it crashes the game): code patches,
     # entries a compile could not anchor, or a file that has not been checked yet.
     if enabled and not force:
+        crashes = load_crashes(library, title_id)
         for cheat in matched:
-            reason = cheat_blocked_reason({**cheat, "switchable": cheat.get("switchable", True)}, force=force)
+            reason = cheat_blocked_reason(
+                {**cheat, "switchable": cheat.get("switchable", True),
+                 "crashes": crashes.get(str(cheat["name"]), 0)},
+                force=force,
+            )
             if reason is not None:
                 raise LibraryError(f"{cheat['name']}: {reason}. Pass --force to switch it on anyway.")
     keys = {str(cheat["key"]) for cheat in matched}

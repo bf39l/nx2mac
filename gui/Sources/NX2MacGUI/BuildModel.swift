@@ -760,7 +760,13 @@ final class BuildModel: ObservableObject {
     // MARK: - Queue
 
     func addSetup() {
-        setups.append(BuildSetup())
+        let newSetup = BuildSetup()
+        // prod.keys is one console's key set, the same for every game it decrypts — inherit it
+        // from an earlier build item so it is not re-picked for each new row.
+        if let keys = setups.last(where: { $0.keysURL != nil })?.keysURL {
+            newSetup.keysURL = keys
+        }
+        setups.append(newSetup)
     }
 
     func removeSetup(_ setup: BuildSetup) {

@@ -420,6 +420,17 @@ final class OutputFolderDefaultTests: XCTestCase {
         XCTAssertEqual(model.setups.count, 1)
     }
 
+    @MainActor
+    func testNewSetupInheritsTheSelectedProdKeys() throws {
+        let model = BuildModel()
+        let keys = URL(fileURLWithPath: "/keys/prod.keys")
+        model.setups[0].keysURL = keys
+
+        model.addSetup()
+
+        XCTAssertEqual(model.setups[1].keysURL, keys)  // one console's key set carries over
+    }
+
     func testOutputFolderFollowsTheGame() throws {
         let (root, folder, file) = try fixture()
         let model = BuildModel()

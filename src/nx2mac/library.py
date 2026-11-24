@@ -928,24 +928,20 @@ def cheat_blocked_reason(cheat: dict[str, object], *, force: bool = False) -> st
     Evidence blocks an entry:
     * the file has not been compiled yet — nothing knows what its addresses mean (build once);
     * the compile could not anchor it (`no anchors`) — its addresses belong to another build, so a
-      write lands on unrelated code (that is what crashed Dead Cells);
-    * `cheat_anchor.py` marked it an instruction patch (`kind=patch`: new code in a cave plus the
-      patched word). The Mac port runs the code its *rewriter* produced, so the original
-      instruction is not there to patch: the write either does nothing or takes the game down
-      (Dead Cells ran a single patch cheat and exited 132, then started in safe mode with every
-      cheat off);
+      write lands on unrelated code;
     * it is not a switchable cheat at all (a label, a one-pass entry, the off half of a pair).
 
-    `kind=code` (a cheat whose own lines are code, like Metal Slug Tactics' ZR cheats) stays
-    allowed: those anchored `exact` and work. `cheat_warning` still mentions the risk, and `--force`
-    overrides any block for a one-off experiment.
+    A `kind=patch` entry that the tool anchored (`exact`) is allowed, with `warning` saying it writes
+    code: the tool found the code it patches in *this* build, and Dead Cells' `無限血量` patch is
+    confirmed working on the port. An earlier version blocked every patch and was wrong to — the
+    "0 of 13 writes into the code put back the word already there" line is *not* a verdict on the
+    file: `same` counts restore writes (the "off" half of ASM cheats), and a file of pure patches
+    writes different words by design, so it scores 0 legitimately.
     """
     if cheat.get("meta_kind") in (None, "") and cheat.get("resolved") in (None, ""):
         return "not checked yet — build the game once so the cheats can be anchored"
     if cheat.get("resolved") == "no anchors":
         return "could not be anchored to this build"
-    if cheat.get("meta_kind") == "patch" and not force:
-        return "an instruction patch — this port runs the code its rewriter produced, so it cannot apply"
     if not cheat.get("switchable", True):
         return "not a switchable cheat"
     return None

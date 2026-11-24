@@ -442,8 +442,8 @@ def test_probe_picks_the_game_package(isolated_paths: Path) -> None:
     assert {package["role"] for package in payload["packages"]} == {"base", "update"}
 
 
-def test_cheats_enable_reports_a_blocked_patch_instead_of_a_traceback(tmp_path, monkeypatch) -> None:
-    """A blocked entry is a user mistake, so it exits 1 with the reason (not a Python traceback)."""
+def test_cheats_enable_reports_an_unrunnable_cheat_instead_of_a_traceback(tmp_path, monkeypatch) -> None:
+    """An entry the compile could not anchor is a user mistake: exit 1 with the reason, no traceback."""
     from nx2mac import config as config_mod
     from nx2mac import library as library_mod
 
@@ -458,14 +458,14 @@ def test_cheats_enable_reports_a_blocked_patch_instead_of_a_traceback(tmp_path, 
     (folder / "0123456789ABCDEF.txt").write_text("[HP]\n04000000 0013AA2C 00005431\n", encoding="utf-8")
     (folder / "0123456789ABCDEF.meta.tsv").write_text(
         "name\tkind\tsection\ttype\taction\tvalue\task\tvalue_words\tonce\tpair\tresolved\tnote\taddress\n"
-        "HP\tpatch\t\t\t\t\t\t\t\t\texact\t\t\n",
+        "HP\tpatch\t\t\t\t\t\t\t\t\tno anchors\t\t\n",
         encoding="utf-8",
     )
 
     result = CliRunner().invoke(app, ["cheats", "--library", str(lib), "--game", tid, "--enable", "HP"])
 
     assert result.exit_code == 1
-    assert "instruction patch" in result.output
+    assert "could not be anchored" in result.output
     assert "Traceback" not in result.output
 
 

@@ -139,10 +139,12 @@ def neutralise(cheats_dir: Path) -> list[str]:
 
 
 def _disable_unrunnable_switches(cheats_dir: Path) -> list[str]:
-    """Turn off switches the compile proved unusable, so a stale toggle cannot crash the game.
+    """Turn off the switches the compile proved cannot apply, i.e. entries with `no anchors`.
 
-    A file imported before it was anchored has no meta yet, so nothing knows its entries patch code;
-    after the build they do. Whatever is on but cannot run is switched off here, and said so.
+    Only that: an unanchored address belongs to another build, so the write lands on unrelated code.
+    A `kind=patch` entry that anchored (`exact`) is left alone — Dead Cells' `無限血量` is one and
+    works on the port. An earlier version switched every patch off here, which silently dropped a
+    working toggle after the next build; that is the regression this note exists to prevent.
     """
     reports: list[str] = []
     for meta_file in sorted(cheats_dir.glob("*.meta.tsv")):
@@ -162,8 +164,7 @@ def _disable_unrunnable_switches(cheats_dir: Path) -> list[str]:
         unusable = {
             row[name_at]
             for row in body
-            if len(row) > max(name_at, kind_at, resolved_at)
-            and (row[kind_at] == "patch" or row[resolved_at] == "no anchors")
+            if len(row) > max(name_at, kind_at, resolved_at) and row[resolved_at] == "no anchors"
         }
         on = [line.strip() for line in enabled_file.read_text(encoding="utf-8").splitlines() if line.strip()]
         keep = [key for key in on if key.split(" #")[0] not in unusable]

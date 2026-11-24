@@ -665,60 +665,65 @@ def test_an_entry_the_compile_could_not_anchor_cannot_be_enabled(tmp_path: Path)
         set_cheat(library, TID, "0123456789ABCDEF", "Old pack", True)
 
 
-def test_a_switch_the_compile_proved_unusable_is_turned_off(tmp_path: Path) -> None:
-    """An imported file has no meta yet; after compiling, a live switch that patches code is off."""
+def test_only_a_switch_that_could_not_be_anchored_is_turned_off(tmp_path: Path) -> None:
+    """A switch stays on when it anchored — only `no anchors` is dropped.
+
+    The version that also dropped every `kind=patch` switch is what made a working Dead Cells toggle
+    silently disappear after a build.
+    """
     from nx2mac.cheats import neutralise
 
     library = _library(tmp_path)
     folder = cheats_dir(library, TID)
     folder.mkdir(parents=True)
     (folder / "0123456789ABCDEF.txt").write_text(
-        "[ZR health]\n04000000 04800158 4B140108\n[Max gold]\n02000000 00000000\n", encoding="utf-8"
+        "[HP]\n04000000 04800158 4B140108\n[Old pack]\n02000000 00000000\n[Max gold]\n02000000 00000000\n",
+        encoding="utf-8",
     )
     (folder / "0123456789ABCDEF.meta.tsv").write_text(
         "name\tkind\tsection\ttype\taction\tvalue\task\tvalue_words\tonce\tpair\tresolved\tnote\taddress\n"
-        "ZR health\tpatch\t\t\t\t\t\t\t\t\texact\t\t\n"
+        "HP\tpatch\t\t\t\t\t\t\t\t\texact\t\t\n"
+        "Old pack\tpatch\t\t\t\t\t\t\t\t\tno anchors\t\t\n"
         "Max gold\tdata\t\t\t\t\t\t\t\t\t0x1234\t\t\n",
         encoding="utf-8",
     )
-    (folder / "0123456789ABCDEF.enabled").write_text("ZR health\nMax gold\n", encoding="utf-8")
+    (folder / "0123456789ABCDEF.enabled").write_text("HP\nOld pack\nMax gold\n", encoding="utf-8")
 
     reports = neutralise(folder)
 
-    assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "Max gold\n"
-    assert any("switched off" in report for report in reports)
+    # the anchored patch and the data cheat stay on; only the entry that could not be anchored goes
+    assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "HP\nMax gold\n"
+    assert any("Old pack" in report for report in reports)
 
 
 
 
-def test_an_instruction_patch_is_blocked_even_when_it_anchored(tmp_path: Path) -> None:
-    """`kind=patch` cannot work on the port: Dead Cells ran one and the host exited 132.
+def test_an_anchored_patch_stays_switchable_with_a_warning(tmp_path: Path) -> None:
+    """`kind=patch` + `resolved=exact` is allowed: the tool found the code it patches in this build.
 
-    Its addresses anchor `exact` (the words are the ones this build has), yet the running code is
-    what the rewriter produced, so the patch either does nothing or takes the game down. `--force`
-    stays available for a one-off experiment.
+    Dead Cells' `無限血量` is such an entry and works on the port. Blocking every patch was wrong;
+    "0 of 13 writes into the code put back the word already there" is not a verdict — that count is
+    of *restore* writes, and a file of pure patches writes different words by design.
     """
     library = _library(tmp_path)
     folder = cheats_dir(library, TID)
     folder.mkdir(parents=True)
     (folder / "0123456789ABCDEF.txt").write_text(
-        "[Infinite health]\n14050000 0013AA2C B9401109\n04000000 0013AA2C 00005431\n20000000\n",
+        "[無限血量]\n14050000 0013AA2C B9401109\n04000000 0013AA2C 00005431\n20000000\n",
         encoding="utf-8",
     )
     (folder / "0123456789ABCDEF.meta.tsv").write_text(
         "name\tkind\tsection\ttype\taction\tvalue\task\tvalue_words\tonce\tpair\tresolved\tnote\taddress\n"
-        "Infinite health\tpatch\t\t\t\t\t\t\t\t\texact\t\t\n",
+        "無限血量\tpatch\t\t\t\t\t\t\t\t\texact\t\t\n",
         encoding="utf-8",
     )
 
     listed = cheat_builds(library, TID)[0]["cheats"][0]  # type: ignore[index]
-    assert "instruction patch" in str(listed["blocked"])
+    assert listed["blocked"] is None
+    assert "writes code" in str(listed["warning"])
 
-    with pytest.raises(LibraryError, match="instruction patch"):
-        set_cheat(library, TID, "0123456789ABCDEF", "Infinite health", True)
-
-    set_cheat(library, TID, "0123456789ABCDEF", "Infinite health", True, force=True)
-    assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "Infinite health\n"
+    set_cheat(library, TID, "0123456789ABCDEF", "無限血量", True)
+    assert (folder / "0123456789ABCDEF.enabled").read_text(encoding="utf-8") == "無限血量\n"
 
 
 def test_a_code_patch_that_anchored_may_be_enabled_with_a_warning(tmp_path: Path) -> None:

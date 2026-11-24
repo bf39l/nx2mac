@@ -23,7 +23,7 @@ the very first launch needs right-click → **Open**; after that it starts norma
 open ~/Applications/nx2mac.app
 
 # and the same disk image a release ships
-./packaging/make_dmg.sh ~/Applications/nx2mac.app 0.0.1 dist
+./packaging/make_dmg.sh ~/Applications/nx2mac.app "$(uv run python -c 'import nx2mac; print(nx2mac.VERSION)')" dist
 
 # optional: the CLI alone, for terminal use
 uv tool install .
@@ -397,14 +397,15 @@ The release itself is driven by the tag: pushing `vX.Y.Z` publishes exactly that
 no manual version input and no release from a branch push.
 
 ```bash
-git tag -a v0.0.1 -m "nx2mac v0.0.1" && git push origin v0.0.1
+git tag -a vX.Y.Z -m "nx2mac vX.Y.Z" && git push origin vX.Y.Z
 ```
 
 | asset | what |
 | --- | --- |
-| `nx2mac-cli-<version>-macos-arm64.zip` | standalone CLI (PyInstaller onedir) |
-| `nx2mac-app-<version>-macos-arm64.zip` | `nx2mac.app` with that CLI bundled inside |
-| `SHA256SUMS.txt` | checksums for both |
+| `nx2mac-<version>-macos-arm64.dmg` | **the download to use**: installable disk image (app + `Applications` shortcut) |
+| `nx2mac-app-<version>-macos-arm64.zip` | the same `nx2mac.app`, zipped with its bundled CLI |
+| `nx2mac-cli-<version>-macos-arm64.zip` | standalone CLI (PyInstaller onedir), for terminals |
+| `SHA256SUMS.txt` | checksums for all three |
 
 A tag can never publish something other than it says: the job fails unless the tag,
 `VERSION` (`src/nx2mac/__init__.py`) and `CFBundleShortVersionString` (`gui/Info.plist`) all agree —

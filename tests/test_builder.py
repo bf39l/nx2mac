@@ -462,3 +462,34 @@ def test_run_build_rejects_a_missing_library(tmp_path: Path, monkeypatch) -> Non
         run_build(env, cache, _engine(tmp_path), game, library_dir=tmp_path / "nope")
 
 
+
+
+def test_build_reports_the_cheat_reanchor_in_its_log(tmp_path: Path, monkeypatch) -> None:
+    """A build with a cheat file logs what the re-anchor did."""
+    import plistlib
+
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("NX2MAC_CACHE_ROOT", str(cache))
+    env = _good_env(tmp_path)
+    game = _game_dir(tmp_path, ("Dead_Cells_0100646009FBE000_v1.0.0.nsp",), name="Dead Cells")
+    (game / "prod.keys").write_text("keys\n", encoding="utf-8")
+    library = tmp_path / "Games"
+    library.mkdir()
+    cheats = library / "nx2mac_game_lib" / "0100646009FBE000" / "mods" / "cheats"
+    cheats.mkdir(parents=True)
+    (cheats / "0123456789ABCDEF.txt").write_text("[Max gold]\n02000000 00000000\n", encoding="utf-8")
+
+    def fake_build(argv: list[str]) -> int:
+        app = Path(argv[argv.index("-o") + 1])
+        (app / "Contents" / "Resources" / "dm").mkdir(parents=True)
+        info = {"CFBundleName": "Dead Cells", "CFBundleShortVersionString": "1.0.0",
+                "CFBundleIdentifier": "org.nxnative.0100646009fbe000"}
+        (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps(info))
+        return 0
+
+    lines: list[str] = []
+    env.stream_effects.append((r"build_ipa_from_nsp\.py", fake_build))
+    run_build(env, cache, _engine(tmp_path), game, library_dir=library, on_line=lines.append)
+
+    # no extraction in this fake build → the build says so instead of failing
+    assert any(line.startswith("cheats:") for line in lines)

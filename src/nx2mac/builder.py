@@ -202,6 +202,7 @@ def _anchor_cheats(
     the build just made lets the engine's `cheat_anchor.py` rewrite them for this build. Missing an
     extracted `main` (or the tool) is not an error: the file is left exactly as it was.
     """
+    say = on_line if on_line is not None else (lambda text: print(text, flush=True))
     folder = library_mod.cheats_dir(library, key)
     files = sorted(folder.glob("*.txt"))
     if not files:
@@ -209,24 +210,23 @@ def _anchor_cheats(
     main = library_mod.extracted_main(library, key)
     script = engine.path / "scripts" / "cheat_anchor.py"
     if main is None or not script.is_file():
-        if on_line is not None:
-            on_line("cheats: no extracted ExeFS/main or cheat_anchor.py; the cheat file is left as it is")
+        say("cheats: no extracted ExeFS/main or cheat_anchor.py; the cheat file is left as it is")
         return
 
-    if on_line is not None:
-        on_line(f"cheats: re-anchoring {files[0].name} for this build …")
+    say(f"cheats: re-anchoring {files[0].name} for this build …")
     toml = library_mod.mods_dir(library, key) / f"{key}.cheats.toml"
     venv = ensure_venv(cache_root, env=env)
     try:
-        anchor_build_cheats(env, venv.python, script, files[0], main, toml, folder, on_line)
+        anchor_build_cheats(
+            env, venv.python, script, files[0], main, toml, folder, on_line=lambda text: say(f"cheats: {text}")
+        )
     except CheatToolError as error:
-        if on_line is not None:
-            on_line(f"cheats: re-anchor failed ({error})")
+        say(f"cheats: re-anchor failed ({error})")
         return
     anchored = sorted(folder.glob("*.txt"))
-    if on_line is not None and anchored:
-        on_line(f"cheats: {anchored[0].name} is anchored to this build")
-        on_line(f"cheats: source kept for later builds: {toml}")
+    if anchored:
+        say(f"cheats: {anchored[0].name} is anchored to this build")
+        say(f"cheats: source kept for later builds: {toml}")
 
 
 def _file_app(library: Path, key: str, produced: Path | None) -> Path | None:

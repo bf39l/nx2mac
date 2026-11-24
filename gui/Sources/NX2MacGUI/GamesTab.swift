@@ -12,19 +12,24 @@ struct GamesTab: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Games").font(.title2.weight(.semibold))
-                    Text(model.libraryDir ?? "No game library yet")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    // No library set: say nothing here rather than an empty-state paragraph.
+                    if let dir = model.libraryDir {
+                        Text(dir)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                 }
                 Spacer()
-                Button {
-                    Task { await model.refreshLibrary() }
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+                if model.libraryDir != nil {
+                    Button {
+                        Task { await model.refreshLibrary() }
+                    } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(model.libraryBusy)
                 }
-                .disabled(model.libraryBusy)
             }
 
             Divider()
@@ -37,10 +42,7 @@ struct GamesTab: View {
     @ViewBuilder
     private var content: some View {
         if model.libraryDir == nil {
-            placeholder(
-                "Choose a game library in the Setup tab.\n"
-                    + "nx2mac files every build into its own folder there: the app plus saves, logs, mods and cheats."
-            )
+            EmptyView()  // nothing to list, and no library folder to talk about
         } else if model.games.isEmpty {
             placeholder("No games built into this library yet.\nGo to the Build tab and build one.")
         } else {

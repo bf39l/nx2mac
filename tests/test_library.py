@@ -573,3 +573,29 @@ def test_unanchored_cheats_are_marked(tmp_path: Path) -> None:
 
     assert by_name["Max gold"]["unanchored"] is False
     assert by_name["Key cheat"]["unanchored"] is True
+
+
+def test_clean_drops_the_packing_key_and_the_manifest(tmp_path: Path, monkeypatch) -> None:
+    """Neither the .app.key nor the nx2mac.json is needed to play: clean removes both."""
+    from typer.testing import CliRunner
+
+    import nx2mac.cli as cli_module
+
+    library = _library(tmp_path)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("NX2MAC_CACHE_ROOT", str(tmp_path / "cache"))
+    app_path = _app(library)
+    write_manifest(app_path.with_suffix(".nx2mac.json"), name="Dead Cells", app_path=app_path, title_id=TID,
+                   version="1.25.0", engine_source="fork", engine_ref="main",
+                   engine_commit="c" * 40, patches=(), inputs={})
+    key = library / f"{TID}.app.key"
+    key.write_text("", encoding="utf-8")
+    (build_dir(library, TID) / "extract").mkdir(parents=True)
+    CliRunner().invoke(cli_module.app, ["library", "--add", str(library)])
+
+    result = CliRunner().invoke(cli_module.app, ["clean", "--library", str(library), "--manifests"])
+
+    assert result.exit_code == 0
+    assert not key.exists()
+    assert not app_path.with_suffix(".nx2mac.json").exists()
+    assert app_path.is_dir()  # the game stays

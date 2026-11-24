@@ -402,8 +402,8 @@ struct BuildTab: View {
                     } label: {
                         Label("Clean build files", systemImage: "trash")
                     }
-                    .help("Delete the extracted files and shader caches — the app keeps working, "
-                          + "the next build extracts them again")
+                    .help("Delete what the build no longer needs: extracted files, shader caches, temp, "
+                          + "the .app.key and the .nx2mac.json — the app and its saves keep working")
                 }
             case .failed(let message):
                 Label(message, systemImage: "xmark.octagon.fill")

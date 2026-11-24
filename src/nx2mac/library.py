@@ -658,6 +658,11 @@ def read_manifest(path: Path) -> dict[str, object] | None:
     return data if isinstance(data, dict) else None
 
 
+def pack_key_for(app: Path) -> Path:
+    """The engine's packing fingerprint beside a built app (`<App>.app.key`)."""
+    return app.with_name(app.name + ".key")
+
+
 def manifest_path_for(app: Path) -> Path:
     """The manifest that belongs to an app filed directly in the library root."""
     return app.with_suffix(".nx2mac.json")

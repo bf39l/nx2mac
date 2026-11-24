@@ -962,7 +962,7 @@ def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
                         "unanchored": cheat["resolved"] == "no anchors",
                         # "patch"/"code" entries write instructions, and this port's rewriter owns
                         # that code: they cannot work here even when the address anchors exactly.
-                        "code_patch": cheat["meta_kind"] in ("patch", "code"),
+                        "code_patch": cheat["meta_kind"] == "patch",
                     }
                     for cheat in cheats
                 ],
@@ -1179,7 +1179,7 @@ def set_cheat(library: Path, title_id: str, build: str, name: str, enabled: bool
     # A code patch writes the Switch's instructions into code this port rebuilt: it does not work and
     # it takes the game down. Refuse it unless the player insists.
     if enabled and not force:
-        patches = [cheat for cheat in matched if cheat.get("meta_kind") in ("patch", "code")]
+        patches = [cheat for cheat in matched if cheat.get("meta_kind") == "patch"]
         if patches:
             raise LibraryError(
                 f"{patches[0]['name']} patches the game's code, and this port runs code its rewriter "

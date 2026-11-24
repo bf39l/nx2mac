@@ -160,7 +160,7 @@ def _code_patch_warning(cheats_dir: Path) -> list[str]:
         switchable = [row for row in body
                       if len(row) > max(name_at, kind_at, resolved_at)
                       and row[resolved_at] != "no anchors"
-                      and row[kind_at] in ("patch", "code")
+                      and row[kind_at] == "patch"
                       and not row[name_at].startswith("--Section")]
         if switchable and len(switchable) == len(body):
             return [

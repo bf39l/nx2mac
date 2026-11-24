@@ -236,6 +236,7 @@ struct GamesTab: View {
 private struct GameRow: View {
     let game: LibraryGame
     @EnvironmentObject private var model: BuildModel
+    @State private var showingCheats = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -268,6 +269,17 @@ private struct GameRow: View {
                 }
                 .help("Play")
                 .disabled(!game.hasApp)
+            }
+
+            Button {
+                showingCheats = true
+            } label: {
+                Image(systemName: "chevron.left.forwardslash.chevron.right")
+            }
+            .help("Cheats: list the switches and turn them on or off")
+            .sheet(isPresented: $showingCheats) {
+                CheatsSheet(game: game)
+                    .environmentObject(model)
             }
 
             Menu {
@@ -330,5 +342,97 @@ private struct GameRow: View {
         let url = URL(fileURLWithPath: path)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         NSWorkspace.shared.open(url)
+    }
+}
+
+
+/// The cheats of one game: the files found in its `mods/cheats`, with a switch per cheat.
+private struct CheatsSheet: View {
+    let game: LibraryGame
+    @EnvironmentObject private var model: BuildModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var builds: [CheatBuild] = []
+    @State private var loading = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Cheats — \(game.name)").font(.title3.weight(.semibold))
+                    Text("What the in-game Cheats menu shows; the switches are saved per game build.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+
+            if loading {
+                ProgressView().frame(maxWidth: .infinity, alignment: .center)
+            } else if builds.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("No cheat files yet.").font(.callout)
+                    Text("Put an Atmosphère cheat file at\n<game>/mods/cheats/<build id>.txt")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                    Button("Open the cheats folder") {
+                        try? FileManager.default.createDirectory(at: URL(fileURLWithPath: cheatsFolder),
+                                                                 withIntermediateDirectories: true)
+                        NSWorkspace.shared.open(URL(fileURLWithPath: cheatsFolder))
+                    }
+                }
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(builds) { build in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("build \(build.build)")
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                ForEach(build.cheats) { cheat in
+                                    Toggle(isOn: Binding(
+                                        get: { cheat.enabled },
+                                        set: { value in Task { await toggle(cheat, build, value) } }
+                                    )) {
+                                        Text(cheat.name).font(.callout)
+                                    }
+                                    .toggleStyle(.switch)
+                                }
+                            }
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                        }
+                    }
+                }
+            }
+
+            HStack {
+                Button("Open the cheats folder") {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: cheatsFolder))
+                }
+                Spacer()
+                Button("Refresh") { Task { await load() } }
+            }
+        }
+        .padding(16)
+        .frame(width: 520, height: 420)
+        .task { await load() }
+    }
+
+    private var cheatsFolder: String {
+        URL(fileURLWithPath: game.mods).appendingPathComponent("cheats").path
+    }
+
+    private func load() async {
+        loading = true
+        builds = await model.cheats(for: game)
+        loading = false
+    }
+
+    private func toggle(_ cheat: CheatEntry, _ build: CheatBuild, _ enabled: Bool) async {
+        await model.setCheat(cheat, build: build, for: game, enabled: enabled)
+        await load()
     }
 }

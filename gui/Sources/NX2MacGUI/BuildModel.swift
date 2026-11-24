@@ -353,6 +353,23 @@ final class BuildModel: ObservableObject {
         struct Removed: Decodable { let game: String; let path: String }
     }
 
+    /// Read a game's cheat files and their switches (empty when it has none).
+    func cheats(for game: LibraryGame) async -> [CheatBuild] {
+        guard let cli else { return [] }
+        guard let result = try? await Self.run(cli, ["cheats", "--game", game.path, "--json"]),
+              let data = result.stdout.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(CheatsPayload.self, from: data)
+        else { return [] }
+        return payload.games.first?.builds ?? []
+    }
+
+    /// Switch one cheat on/off (the same file the in-game Cheats menu writes).
+    func setCheat(_ cheat: CheatEntry, build: CheatBuild, for game: LibraryGame, enabled: Bool) async {
+        guard let cli else { return }
+        let flag = enabled ? "--enable" : "--disable"
+        _ = try? await Self.run(cli, ["cheats", "--game", game.path, flag, cheat.name, "--json"])
+    }
+
     /// Keep saves local and copy them into a synced folder (iCloud Drive, Dropbox, …).
     func setCloud(_ url: URL) async {
         guard let cli else { return }

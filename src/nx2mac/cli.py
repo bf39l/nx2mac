@@ -459,6 +459,75 @@ def mods(
 
 
 @app.command()
+def cheats(
+    ctx: typer.Context,
+    json_flag: bool = _json_option(),
+    game: str | None = typer.Option(None, "--game", metavar="GAME", help="the game (default: every game)."),
+    enable: list[str] = typer.Option([], "--enable", metavar="NAME", help="switch a cheat on."),
+    disable: list[str] = typer.Option([], "--disable", metavar="NAME", help="switch a cheat off."),
+) -> None:
+    """List a game's cheat files and which switches are on (what the in-game Cheats menu writes)."""
+    machine_readable = _enter(ctx, json_flag)
+    cfg = load_config()
+    libraries = [Path(entry) for entry in cfg.library_dirs]
+    if not libraries:
+        _fail(ctx, "no game library set; add one with `nx2mac library --add <folder>`")
+
+    games = []
+    for directory in libraries:
+        if game:
+            try:
+                games.append((directory, library_mod.find_game(directory, game)))
+            except library_mod.LibraryError:
+                continue
+        else:
+            games.extend((directory, entry) for entry in library_mod.list_games(directory))
+    if not games:
+        _fail(ctx, f"no game called {game!r}" if game else "no games built yet")
+
+    payload: list[dict[str, object]] = []
+    for directory, entry in games:
+        if not entry.title_id:
+            continue
+        builds = library_mod.cheat_builds(directory, entry.title_id)
+        if enable or disable:
+            for build in builds:
+                build_id = str(build["build"])
+                for name in enable:
+                    library_mod.set_cheat(directory, entry.title_id, build_id, name, True)
+                for name in disable:
+                    library_mod.set_cheat(directory, entry.title_id, build_id, name, False)
+            builds = library_mod.cheat_builds(directory, entry.title_id)
+        payload.append(
+            {
+                "game": entry.name,
+                "title_id": entry.title_id,
+                "library": str(directory),
+                "folder": str(library_mod.cheats_dir(directory, entry.title_id)),
+                "builds": builds,
+            }
+        )
+
+    if machine_readable:
+        emit.emit({"games": payload})
+        return
+    if not any(entry["builds"] for entry in payload):
+        console.print("[dim]No cheat files yet.[/]")
+        console.print("[dim]Install some: <game>/mods/cheats/<build id>.txt "
+                      "(cheat sites publish atmosphere/contents/<title id>/cheats/<build id>.txt).[/]")
+        return
+    for entry in payload:
+        if not entry["builds"]:
+            continue
+        console.print(f"[bold]{entry['game']}[/] [dim]{entry['title_id']}[/]")
+        for build in entry["builds"]:  # type: ignore[union-attr]
+            console.print(f"  build [dim]{build['build']}[/]")
+            for cheat in build["cheats"]:  # type: ignore[union-attr]
+                marker = "[green]on [/]" if cheat["enabled"] else "[dim]off[/]"
+                console.print(f"    {marker} {cheat['name']}")
+
+
+@app.command()
 def clean(
     ctx: typer.Context,
     json_flag: bool = _json_option(),

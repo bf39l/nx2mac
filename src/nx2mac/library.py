@@ -767,6 +767,53 @@ def describe_library(library: Path) -> dict[str, object]:
     }
 
 
+def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
+    """The cheat files of one game, with their switches and which are on.
+
+    A cheat file is `<mods>/cheats/<build id>.txt`; the engine remembers the switches
+    that are on in `<build id>.enabled`, one cheat name per line (hle_cheats.c).
+    """
+    folder = cheats_dir(library, title_id)
+    builds: list[dict[str, object]] = []
+    if not folder.is_dir():
+        return builds
+    for txt in sorted(folder.glob("*.txt")):
+        build = txt.stem
+        enabled_file = folder / f"{build}.enabled"
+        enabled: set[str] = set()
+        if enabled_file.is_file():
+            enabled = {line.strip() for line in enabled_file.read_text(encoding="utf-8").splitlines() if line.strip()}
+        names: list[str] = []
+        for line in txt.read_text(encoding="utf-8", errors="replace").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("[") and stripped.endswith("]") and "--" not in stripped:
+                names.append(stripped[1:-1])
+        builds.append(
+            {
+                "build": build,
+                "file": str(txt),
+                "enabled_file": str(enabled_file),
+                "cheats": [{"name": name, "enabled": name in enabled} for name in names],
+            }
+        )
+    return builds
+
+
+def set_cheat(library: Path, title_id: str, build: str, name: str, enabled: bool) -> Path:
+    """Switch one cheat on/off in the build's `.enabled` file (what the in-game menu writes)."""
+    folder = cheats_dir(library, title_id)
+    path = folder / f"{build}.enabled"
+    current: list[str] = []
+    if path.is_file():
+        current = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    names = [line for line in current if line.casefold() != name.casefold()]
+    if enabled:
+        names.append(name)
+    folder.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(f"{line}\n" for line in names), encoding="utf-8")
+    return path
+
+
 def describe_mods(library: Path) -> list[dict[str, object]]:
     """Every mod found in the library, for `nx2mac mods --json`."""
     entries: list[dict[str, object]] = []

@@ -196,6 +196,9 @@ nx2mac_game_lib/<TITLEID>/mods/cheats/
   not 20 characters ending in `.txt` is ignored.
 - In game, open the window's **Cheats** menu (or panel) and switch entries on; the engine remembers
   the toggles per build in `cheats/<build id>.enabled`.
+- From nx2mac: `nx2mac cheats --game "Dead Cells"` lists them, `--enable NAME` / `--disable NAME`
+  switches one (same file the game writes), and the GUI's **Games** tab has a cheats button per game
+  (⌘-clickable list with switches).
 - `DM_CHEATS` already points there (it is written into the app's baked env at build time), and
   `cheats/` sits beside the mods it belongs to.
 - Cheats run once per presented frame, so an "infinite health" style cheat can still let you die for

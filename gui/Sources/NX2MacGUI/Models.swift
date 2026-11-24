@@ -355,3 +355,43 @@ struct ProbePayload: Decodable {
         case needsProdKeys = "needs_prod_keys"
     }
 }
+
+
+/// One switch inside a cheat file.
+struct CheatEntry: Decodable, Identifiable, Hashable {
+    let name: String
+    let enabled: Bool
+    var id: String { name }
+}
+
+/// One cheat file: the game build it belongs to and its switches.
+struct CheatBuild: Decodable, Identifiable, Hashable {
+    let build: String
+    let file: String
+    let enabledFile: String
+    let cheats: [CheatEntry]
+
+    var id: String { build }
+
+    enum CodingKeys: String, CodingKey {
+        case build, file, cheats
+        case enabledFile = "enabled_file"
+    }
+}
+
+/// `nx2mac cheats --game … --json`
+struct CheatsPayload: Decodable {
+    let games: [GameCheats]
+
+    struct GameCheats: Decodable {
+        let game: String
+        let titleID: String?
+        let folder: String
+        let builds: [CheatBuild]
+
+        enum CodingKeys: String, CodingKey {
+            case game, folder, builds
+            case titleID = "title_id"
+        }
+    }
+}

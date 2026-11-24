@@ -29,6 +29,7 @@ from nx2mac.library import (
     build_env_path,
     cheats_dir,
     check_library_choice,
+    cheat_builds,
     cloud_value,
     create_player,
     delete_player,
@@ -48,6 +49,7 @@ from nx2mac.library import (
     save_dir,
     screenshots_dir,
     select_player,
+    set_cheat,
     support_dir,
     support_env_path,
     touch_last_played,
@@ -434,3 +436,28 @@ def test_clean_never_touches_the_app_its_saves_the_engine_or_a_dump(tmp_path: Pa
     assert (store / "save.dat").is_file()  # the save stays
     assert (dump / "base.nsp").is_file()  # the dump stays
     assert (engine / "scripts" / "build_ipa_from_nsp.py").is_file()  # the engine stays
+
+
+def test_cheat_files_and_switches_round_trip(tmp_path: Path) -> None:
+    """`nx2mac cheats` reads the file's [Name] headers and the engine's <build>.enabled."""
+    library = _library(tmp_path)
+    folder = cheats_dir(library, TID)
+    folder.mkdir(parents=True)
+    (folder / "0123456789ABCDEF.txt").write_text(
+        "[Unlimited health]\n01000000 00000000\n[Max gold]\n02000000 00000000\n",
+        encoding="utf-8",
+    )
+
+    builds = cheat_builds(library, TID)
+
+    assert [b["build"] for b in builds] == ["0123456789ABCDEF"]
+    cheats = builds[0]["cheats"]
+    assert [c["name"] for c in cheats] == ["Unlimited health", "Max gold"]  # type: ignore[index]
+    assert not any(c["enabled"] for c in cheats)  # type: ignore[index]
+
+    path = set_cheat(library, TID, "0123456789ABCDEF", "Max gold", True)
+    assert path.read_text(encoding="utf-8") == "Max gold\n"
+    assert [c["enabled"] for b in cheat_builds(library, TID) for c in b["cheats"]] == [False, True]  # type: ignore[index]
+
+    set_cheat(library, TID, "0123456789ABCDEF", "Max gold", False)
+    assert path.read_text(encoding="utf-8") == ""

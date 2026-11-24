@@ -1,0 +1,50 @@
+diff --git a/dm/host/hle_account.c b/dm/host/hle_account.c
+index 4873244c..eb0d08e5 100644
+--- a/dm/host/hle_account.c
++++ b/dm/host/hle_account.c
+@@ -68,22 +68,30 @@ static Result select_user(Uid *out, const uint8_t *settings, int creator) {
+     if (settings && settings[0x81] && !settings[0x84]) return RES_FAIL;
+     if (!creator && settings && settings[0x80] && !settings[0x83] && !excluded &&
+         !(users & (users - 1)) && !settings[0x81]) { *out = k_uid; return RES_OK; }
+-    int fresh = -1;
+-    for (int i = 1; i < DM_USERS; i++) if (!((users | excluded) & (1u << i))) { fresh = i; break; }
+-    front_user choices[DM_USERS]; int n = 0;
+-    pthread_mutex_lock(&g_account_lock); unsigned opened = opened_users(); pthread_mutex_unlock(&g_account_lock);
+-    for (int i = 0; i < DM_USERS; i++) if (eligible & (1u << i)) {
+-        choices[n].slot = i; choices[n].open = !!(opened & (1u << i)); user_nickname(choices[n].nickname, i); n++;
++    for (;;) {   // adding a user asks again, so the player still chooses who plays
++        int fresh = -1;
++        for (int i = 1; i < DM_USERS; i++) if (!((users | excluded) & (1u << i))) { fresh = i; break; }
++        front_user choices[DM_USERS]; int n = 0;
++        pthread_mutex_lock(&g_account_lock); unsigned opened = opened_users(); pthread_mutex_unlock(&g_account_lock);
++        for (int i = 0; i < DM_USERS; i++) if (eligible & (1u << i)) {
++            choices[n].slot = i; choices[n].open = !!(opened & (1u << i)); user_nickname(choices[n].nickname, i); n++;
++        }
++        int skip = settings && settings[0x82];
++        if (!n && fresh < 0 && !skip) return RES_ACC_CANCELED;
++        int choice = front_user_select(choices, n, fresh >= 0, skip);
++        if (choice == FRONT_USER_SKIP && skip) { *out = (Uid){{0, 0}}; return RES_OK; }
++        if (choice == FRONT_USER_CREATE && fresh >= 0) {
++            if (dm_account_create_user(fresh)) return RES_FAIL;
++            // The new user joins the list; the picker comes back so the player chooses, as the
++            // system dialog does — a created user is not silently the one who plays.
++            users = dm_account_users();
++            eligible = creator ? 0 : users & ~excluded;
++            if (!users) return RES_FAIL;
++            continue;
++        }
++        if (choice < 0 || choice >= DM_USERS || !(eligible & (1u << choice))) return RES_ACC_CANCELED;
++        *out = user_uid(choice); LOG("account user selector: user %d selected", choice + 1); return RES_OK;
+     }
+-    int skip = settings && settings[0x82];
+-    if (!n && fresh < 0 && !skip) return RES_ACC_CANCELED;
+-    int choice = front_user_select(choices, n, fresh >= 0, skip);
+-    if (choice == FRONT_USER_SKIP && skip) { *out = (Uid){{0, 0}}; return RES_OK; }
+-    if (choice == FRONT_USER_CREATE && fresh >= 0) {
+-        if (dm_account_create_user(fresh)) return RES_FAIL;
+-        choice = fresh;
+-    } else if (choice < 0 || choice >= DM_USERS || !(eligible & (1u << choice))) return RES_ACC_CANCELED;
+-    *out = user_uid(choice); LOG("account user selector: user %d selected", choice + 1); return RES_OK;
+ }
+ static Result show_selector(Uid *out, const void *settings, int creator) {
+     // A dialog is a blocking applet: peers must still run while the player chooses.

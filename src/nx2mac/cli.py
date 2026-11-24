@@ -593,9 +593,15 @@ def cheats(
             for build in builds:
                 build_id = str(build["build"])
                 for name in enable:
-                    library_mod.set_cheat(directory, entry.title_id, build_id, name, True, force=force)
+                    try:
+                        library_mod.set_cheat(directory, entry.title_id, build_id, name, True, force=force)
+                    except library_mod.LibraryError as error:  # e.g. an instruction patch: not a crash
+                        _fail(ctx, str(error))
                 for name in disable:
-                    library_mod.set_cheat(directory, entry.title_id, build_id, name, False)
+                    try:
+                        library_mod.set_cheat(directory, entry.title_id, build_id, name, False)
+                    except library_mod.LibraryError as error:
+                        _fail(ctx, str(error))
             builds = library_mod.cheat_builds(directory, entry.title_id)
         payload.append(
             {

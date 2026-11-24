@@ -408,7 +408,7 @@ def _entry(directory: Path, app: Path | None) -> GameEntry:
     # A game built before the manifest existed (or moved in by hand) still shows
     # its real name/version: they are in the bundle's Info.plist.
     metadata: dict[str, str | None] = {}
-    if app is not None and not manifest:
+    if app is not None and (not manifest or not manifest.get("version") or not manifest.get("name")):
         metadata = app_metadata(app)
 
     return GameEntry(

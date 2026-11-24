@@ -132,8 +132,9 @@ that sets `DM_SUPPORT_DIR`/`DM_LOG_DIR`/`DM_SAVE`/`DM_CHEATS`/`DM_ALBUM_DIR` to 
 (engine patch `patches/0001-launcher-state-dirs.patch`). `nx2mac library --json` lists what is in
 the library — only *built* games (a game folder with a manifest or an `.app`, plus `.app`s sitting
 directly in the library root), so pointing the library at a folder that also holds your dumps, keys
-and tool checkouts shows no phantom entries; the GUI's **Games** tab shows each game with its icon, Play (records "recently
-played"), a Data menu for saves/logs/mods/cheats/screenshots, and a Players menu.
+and tool checkouts shows no phantom entries; the GUI's **Games** tab lists only built games, one row each: the app's icon, its
+name and version, with Play (records "recently played"), a Players menu and a Data menu for
+saves/logs/mods/cheats/screenshots.
 
 ### Players
 

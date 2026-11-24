@@ -70,37 +70,31 @@ struct GamesTab: View {
     }
 }
 
-/// One library row: the app's own icon, what it is, and the folders beside it.
+/// One built game: its own app icon, the name, and the version it was built at.
 private struct GameRow: View {
     let game: LibraryGame
     @EnvironmentObject private var model: BuildModel
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(spacing: 12) {
             icon
-            VStack(alignment: .leading, spacing: 2) {
-                Text(game.name).font(.callout.weight(.semibold))
-                if !game.subtitle.isEmpty {
-                    Text(game.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                HStack(spacing: 10) {
-                    Label(game.sizeLabel, systemImage: "internaldrive")
-                    Text(game.builtLabel)
-                    if let played = game.lastPlayed, let described = ISODate.describe(played) {
-                        Label("played \(described)", systemImage: "clock")
-                    }
-                    if !game.hasApp {
-                        Label("app missing", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                    }
-                }
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(game.name)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
+                Text(versionLabel)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
             Spacer(minLength: 8)
+
+            if !game.hasApp {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .help("The app is missing from this folder")
+            }
 
             if model.playing == game.name {
                 ProgressView().controlSize(.small)
@@ -108,8 +102,9 @@ private struct GameRow: View {
                 Button {
                     Task { await model.play(game) }
                 } label: {
-                    Label("Play", systemImage: "play.fill")
+                    Image(systemName: "play.fill")
                 }
+                .help("Play")
                 .disabled(!game.hasApp)
             }
 
@@ -123,11 +118,19 @@ private struct GameRow: View {
                 Button("Screenshots") { open(game.screenshots) }
                 Divider()
                 Button("Game folder") { open(game.path) }
+                if let commit = game.engineCommit {
+                    Divider()
+                    Text("\(game.engineRef ?? "engine") @ \(commit.prefix(12))")
+                }
+                if let played = game.lastPlayed, let described = ISODate.describe(played) {
+                    Text("last played \(described)")
+                }
             } label: {
-                Label("Data", systemImage: "folder")
+                Image(systemName: "folder")
             }
             .menuStyle(.borderlessButton)
-            .frame(width: 88)
+            .frame(width: 40)
+            .help("Saves, logs, mods, cheats and the game folder")
 
             Button {
                 if let app = game.appURL { NSWorkspace.shared.activateFileViewerSelecting([app]) }
@@ -139,6 +142,28 @@ private struct GameRow: View {
         }
         .padding(9)
         .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    /// "v1.25.0", or a plain note when the bundle carries no version.
+    private var versionLabel: String {
+        guard let version = game.version, !version.isEmpty else { return "version unknown" }
+        return version.hasPrefix("v") ? version : "v\(version)"
+    }
+
+    /// The built app's own icon (Finder-style); a symbol when it is gone.
+    private var icon: some View {
+        Group {
+            if let app = game.appURL, game.hasApp {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: app.path))
+                    .resizable()
+                    .frame(width: 44, height: 44)
+            } else {
+                Image(systemName: "app.dashed")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44)
+            }
+        }
     }
 
     /// Who plays this game: pick an existing player or add one with a preferred name.
@@ -160,20 +185,12 @@ private struct GameRow: View {
                 Divider()
             }
             Button("New player…") { createPlayer() }
-            if let active = model.players[game.path]?.activeName {
-                Divider()
-                Text("playing as \(active)")
-            }
         } label: {
-            Label(playersLabel, systemImage: "person.crop.circle")
+            Image(systemName: "person.crop.circle")
         }
         .menuStyle(.borderlessButton)
-        .frame(width: 118)
-        .help("Choose who plays this game; each player keeps their own saves")
-    }
-
-    private var playersLabel: String {
-        model.players[game.path]?.activeName ?? "Players"
+        .frame(width: 40)
+        .help(model.players[game.path]?.activeName.map { "Playing as \($0)" } ?? "Choose who plays")
     }
 
     private func createPlayer() {
@@ -190,22 +207,6 @@ private struct GameRow: View {
         let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         Task { await model.createPlayer(for: game, name: name) }
-    }
-
-    /// The built app's own icon (Finder-style); a symbol when it is gone.
-    private var icon: some View {
-        Group {
-            if let app = game.appURL, game.hasApp {
-                Image(nsImage: NSWorkspace.shared.icon(forFile: app.path))
-                    .resizable()
-                    .frame(width: 40, height: 40)
-            } else {
-                Image(systemName: "app.dashed")
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 40, height: 40)
-            }
-        }
     }
 
     private func open(_ path: String) {

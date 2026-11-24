@@ -228,6 +228,13 @@ file in `mods/cheats/` changes the game even with every switch off — that is n
 adds, it is the contract every front end (NX2Apple included) works with. Hence the master switch:
 while `.cheats-off-<title id>` exists, no cheat runs at all — that is the safe state to play in.
 
+**A whole file can be unusable.** Dead Cells' `6E35EE0A24029143.txt` (Aug 2024) is made of
+*code patches*: every one of its 15 entries writes to `0x0813AA10 … 0x0813AC7C`, i.e. absolute
+instructions of the game's code. This Mac port relocates that code, so those writes land on whatever
+now lives at those addresses and the game dies as soon as that code runs (`exited with 139`). There is
+nothing to toggle — the file, not the switches, is the problem. Value cheats (`0X…` writes into
+game data rather than code) are the kind that survives a port.
+
 Observed with Dead Cells' `6E35EE0A24029143.txt`: its *key-press* cheats (`08010000 0813AA10 …`,
 e.g. `激活修改`, `無限跳`) write into the game's rewritten code and make the host exit with
 `139`. A plain value cheat (`0X…` writes to data, e.g. gold, items) is the safer kind to try first.

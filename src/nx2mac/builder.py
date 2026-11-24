@@ -12,6 +12,7 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import icons
 from . import library as library_mod
 from .cheats import CheatToolError, anchor_build_cheats
 from .doctor import BUILD_PREFLIGHT_EXCLUDE, DoctorContext, run_checks
@@ -477,6 +478,10 @@ def run_build(
 
     title_id = title_id_of(game) if (library is not None or out_dir is not None) else None
     key = title_id or library_mod.safe_name(game.path.stem if game.path.is_file() else game.path.name)
+    # The app icon lives beside the game's data; fetch the known art now, before the build, so a
+    # game that carries none (a Switch 2 NUP, a dump) still gets its real icon.
+    game_folder: Path | None = library_mod.game_root(library, key) if library is not None else None
+    icons.ensure_game_icon(game_folder, title_id, env)
     work_dir: Path | None = None
     env_file: Path | None = None
     if library is not None:
@@ -531,7 +536,7 @@ def run_build(
         extra_args,
         work_dir=work_dir,
         env_file=env_file,
-        fallback_icon=fallback_icon_path(title_id, game_folder=library_mod.game_root(library, key) if library is not None else None),
+        fallback_icon=fallback_icon_path(title_id, game_folder=game_folder),
     )
     returncode = env.run_stream(argv, cwd=engine.path, on_line=watch)
 

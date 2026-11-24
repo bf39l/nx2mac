@@ -105,12 +105,13 @@ nx2mac build "/path/to/Game [0100...]" --out-dir ~/Develop/MyGame \
 | path | what |
 | --- | --- |
 | `DIR/<Game>.app` | the finished app (the engine names it) |
-| `DIR/<game>_build/` | the engine's build folder — extracted files + shader caches, reused on rebuild |
+| `<library>/build/<TID>_build/` | the engine's build folder — extracted files + shader caches, reused on rebuild |
 
 ### The game library (CLI + GUI)
 
-`nx2mac library --set DIR` (GUI: *Setup → Game library*) picks a folder that already exists —
-there is no default and nx2mac never creates it. A folder holding game packages is refused: that
+`nx2mac library --add DIR` (**Games** tab → *Library ▾ → Add folder…*) adds a folder that already
+exists — there is no default, nx2mac never creates it, and **more than one library is fine** (every
+library's games appear in the tab, `--remove DIR` forgets one). A folder holding game packages is refused: that
 is a dump, and builds must not be scattered into it. Choosing a game folder in the Build tab never
 changes this setting. Building with the library set files each game into
 its own folder, and everything the game writes stays there:
@@ -121,7 +122,8 @@ its own folder, and everything the game writes stays there:
 ├── logs/                 the engine's run log        (DM_LOG_DIR)
 ├── saves/                the default save store      (DM_SAVE)
 ├── players/<name>/saves/ one store per player — each is user 1, so each keeps their own name
-├── cheats/               <build id>.txt cheat files   (DM_CHEATS)
+├── mods/<TID>/           the game's mods (each mod's romfs overlay)
+│   └── cheats/           DM_CHEATS — cheat files live in the mods tree
 ├── screenshots/          the in-game album            (DM_ALBUM_DIR)
 ├── mods/                 loose mod files
 ├── support/              the engine's own state: env.txt, temp/, its user registry

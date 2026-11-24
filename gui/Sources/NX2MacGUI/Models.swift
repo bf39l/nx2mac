@@ -246,12 +246,14 @@ struct LibraryGame: Decodable, Identifiable, Hashable {
     let mods: String
     let cheats: String
     let screenshots: String
+    /// The library folder this game was found in (more than one library is allowed).
+    let library: String?
 
     var id: String { path }
     var appURL: URL? { appPath.map { URL(fileURLWithPath: $0) } }
 
     enum CodingKeys: String, CodingKey {
-        case name, path, version, saves, logs, mods, cheats, screenshots
+        case name, path, version, saves, logs, mods, cheats, screenshots, library
         case appPath = "app_path"
         case hasApp = "has_app"
         case iconPath = "icon_path"
@@ -281,10 +283,10 @@ struct LibraryGame: Decodable, Identifiable, Hashable {
     }
 }
 
-/// `nx2mac library --json`
+/// `nx2mac library --json`: every library folder and the games in them.
 struct LibraryPayload: Decodable {
-    let dir: String?
-    let exists: Bool
+    let dirs: [String]
+    let missing: [String]?
     let games: [LibraryGame]
 }
 

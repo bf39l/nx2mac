@@ -18,13 +18,12 @@ from rich.table import Table
 from . import VERSION, emit
 from . import library as library_mod
 from .builder import BuildError, run_build
-from .config import Config, cache_root
+from .config import cache_root, primary_library
 from .config import load as load_config
 from .config import save as save_config
 from .doctor import DoctorContext, DoctorReport, run_checks
 from .engines import EngineError, EngineSource, all_sources, describe, ensure_checkout, source_by_id
 from .installer import InstallResult, install
-from .probe import probe as probe_path
 from .pyenv import PyEnvError
 from .remedies import Remedy, installable_names, remedy_for
 from .runner import Env, RealEnv
@@ -346,105 +345,52 @@ def engine(
 def library(
     ctx: typer.Context,
     json_flag: bool = _json_option(),
-    set_dir: Path | None = typer.Option(
-        None,
-        "--set",
-        metavar="DIR",
-        help="choose the game library folder (must already exist; nx2mac never creates it).",
-    ),
-    clear: bool = typer.Option(False, "--clear", help="forget the saved library folder."),
-    played: str | None = typer.Option(
-        None, "--played", metavar="GAME", help="record that GAME was just launched (keeps 'recently played' order)."
-    ),
+    add: Path | None = typer.Option(None, "--add", metavar="DIR", help="add a folder to your game libraries."),
+    remove: Path | None = typer.Option(None, "--remove", metavar="DIR", help="forget one of the folders."),
+    clear: bool = typer.Option(False, "--clear", help="forget every game library folder."),
 ) -> None:
-    """Show or choose the game library, and list the games built into it."""
+    """Show or choose the folders that hold your built games (more than one is fine)."""
     machine_readable = _enter(ctx, json_flag)
     cfg = load_config()
+    dirs = list(cfg.library_dirs)
+    changed = False
 
+    if add is not None:
+        try:
+            chosen = str(library_mod.check_library_choice(add))
+        except library_mod.LibraryError as error:
+            _fail(ctx, str(error))
+        if chosen not in dirs:
+            dirs.append(chosen)
+            changed = True
+    if remove is not None:
+        wanted = str(remove.expanduser().resolve())
+        if wanted not in dirs:
+            _fail(ctx, f"{wanted} is not one of your game libraries")
+        dirs = [entry for entry in dirs if entry != wanted]
+        changed = True
     if clear:
-        cfg = Config(engine_id=cfg.engine_id, engine_ref=cfg.engine_ref, library_dir=None)
-        save_config(cfg)
-        if machine_readable:
-            emit.emit({"dir": None, "exists": False, "games": []})
-        else:
-            console.print("[green]Cleared the game library setting.[/]")
-        return
+        dirs = []
+        changed = True
+    if changed:
+        save_config(replace(cfg, library_dirs=tuple(dirs)))
+        library_mod.write_envs_for([Path(entry) for entry in dirs], Path(cfg.cloud_dir) if cfg.cloud_dir else None)
 
-    if set_dir is not None:
-        try:
-            chosen = library_mod.check_library_choice(set_dir)
-        except library_mod.LibraryError as error:
-            _fail(ctx, str(error))
-        save_config(replace(cfg, library_dir=str(chosen)))
-        payload = library_mod.describe_library(chosen)
-        if machine_readable:
-            emit.emit(payload)
-        else:
-            console.print(f"[green]Game library:[/] {chosen}")
-            console.print(f"[dim]{len(payload['games'])} game(s) in it.[/]")  # type: ignore[arg-type]
-        return
-
-    configured = Path(cfg.library_dir) if cfg.library_dir else None
-
-    if played is not None:
-        if configured is None:
-            _fail(ctx, "no game library set; choose one with `nx2mac library --set <folder>`")
-        try:
-            entry = library_mod.find_game(library_mod.require_library(configured), played)
-        except library_mod.LibraryError as error:
-            _fail(ctx, str(error))
-        stamp = library_mod.touch_last_played(entry.path)
-        if machine_readable:
-            emit.emit({"name": entry.name, "last_played": stamp, "app_path": str(entry.app_path or "")})
-        else:
-            console.print(f"[green]Played:[/] {entry.name} [dim]({stamp})[/]")
-        return
-
-    if configured is None:
-        if machine_readable:
-            emit.emit({"dir": None, "exists": False, "games": []})
-        else:
-            console.print("[yellow]No game library set.[/] Choose one with `nx2mac library --set <existing folder>`, "
-                          "or in the app's Setup tab.")
-        return
-
-    path = configured.expanduser().resolve()
-    payload = library_mod.describe_library(path)
+    payload = library_mod.describe_libraries([Path(entry) for entry in dirs])
     if machine_readable:
         emit.emit(payload)
         return
-    if not path.is_dir():
-        console.print(f"[red]Game library is missing:[/] {path}")
-        console.print("[dim]Point nx2mac at an existing folder with `nx2mac library --set DIR`.[/]")
-        raise typer.Exit(code=1)
-    console.print(f"[bold]Game library:[/] {path}")
+    if not dirs:
+        console.print("[yellow]No game library set.[/] Add one with `nx2mac library --add <existing folder>`.")
+        return
+    for directory in payload["dirs"]:  # type: ignore[union-attr]
+        console.print(f"[bold]Game library:[/] {directory}")
     games = payload["games"]
     if not games:
-        console.print("[dim]No games built into it yet.[/]")
+        console.print("[dim]No games built into them yet.[/]")
         return
     for game in games:  # type: ignore[assignment]
         console.print(f"  [green]{game['name']}[/] [dim]{game['version'] or ''} {game['title_id'] or ''}[/]")
-        console.print(f"    [dim]{game['path']}[/]")
-
-
-@app.command()
-def probe(
-    ctx: typer.Context,
-    json_flag: bool = _json_option(),
-    path: Path = typer.Argument(..., metavar="PATH", help="Game folder or package file to inspect."),
-) -> None:
-    """Say what a folder holds and which package is the game (the GUI pre-picks it)."""
-    machine_readable = _enter(ctx, json_flag)
-    scan = probe_path(path)
-    if machine_readable:
-        emit.emit(scan.to_dict())
-        return
-    console.print(f"[bold]{scan.path}[/]  [dim]{scan.kind}[/]")
-    console.print(f"game file: [green]{scan.game_file or 'none found'}[/]")
-    for package in scan.packages:
-        selected = "[green]*[/]" if package.path == scan.game_file else " "
-        size = f"{package.size / 1_000_000_000:.2f} GB" if package.size > 1_000_000_000 else f"{package.size / 1_000_000:.0f} MB"
-        console.print(f" {selected} {package.role:8} {package.path.name} [dim]{size}[/]")
 
 
 @app.command()
@@ -460,9 +406,7 @@ def cloud(
 
     if clear:
         save_config(replace(cfg, cloud_dir=None))
-        library_dir = Path(cfg.library_dir) if cfg.library_dir else None
-        if library_dir is not None and library_dir.is_dir():
-            library_mod.write_all_player_envs(library_dir)
+        library_mod.write_envs_for([Path(entry) for entry in cfg.library_dirs])
         if machine_readable:
             emit.emit({"dir": None, "env_files": []})
         else:
@@ -474,10 +418,7 @@ def cloud(
         if not folder.is_dir():
             _fail(ctx, f"cloud folder does not exist: {folder} (create it first, e.g. in iCloud Drive)")
         save_config(replace(cfg, cloud_dir=str(folder)))
-        library_dir = Path(cfg.library_dir) if cfg.library_dir else None
-        written = (
-            library_mod.write_all_player_envs(library_dir, folder) if library_dir and library_dir.is_dir() else []
-        )
+        written = library_mod.write_envs_for([Path(entry) for entry in cfg.library_dirs], folder)
         if machine_readable:
             emit.emit({"dir": str(folder), "env_files": [str(path) for path in written]})
         else:
@@ -503,10 +444,10 @@ def player(
     """List, create or choose this game's players (each gets their own saves and name)."""
     machine_readable = _enter(ctx, json_flag)
     cfg = load_config()
-    try:
-        library_dir = library_mod.require_library(Path(cfg.library_dir) if cfg.library_dir else None)
-    except library_mod.LibraryError as error:
-        _fail(ctx, str(error))
+    libraries = [Path(entry) for entry in cfg.library_dirs]
+    if not libraries:
+        _fail(ctx, "no game library set; add one with `nx2mac library --add <folder>`")
+    library_dir = library_mod.require_library(libraries[0])
 
     try:
         if create is not None:
@@ -517,9 +458,7 @@ def player(
             library_mod.delete_player(library_dir, delete)
         players, active = library_mod.load_players(library_dir)
         # every built game reads the active player from its own env file
-        env_files = library_mod.write_all_player_envs(
-            library_dir, Path(cfg.cloud_dir) if cfg.cloud_dir else None
-        )
+        env_files = library_mod.write_envs_for(libraries, Path(cfg.cloud_dir) if cfg.cloud_dir else None)
     except library_mod.LibraryError as error:
         _fail(ctx, str(error))
 
@@ -590,7 +529,7 @@ def build(
     # A configured library takes over as the output folder (unless -o/--out-dir say otherwise).
     library_dir = library
     if library_dir is None and out_dir is None:
-        configured = load_config().library_dir
+        configured = primary_library(load_config())
         library_dir = Path(configured) if configured else None
     if library_dir is not None:
         try:

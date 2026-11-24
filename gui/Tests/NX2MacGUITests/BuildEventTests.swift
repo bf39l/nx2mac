@@ -385,7 +385,7 @@ final class OutputFolderDefaultTests: XCTestCase {
         let library = root.appendingPathComponent("Games")
         let model = BuildModel()
 
-        model.applyLibrary(library.path)
+        model.applyLibraries([library.path])
         XCTAssertEqual(model.outDirURL?.standardizedFileURL.path, library.standardizedFileURL.path)
 
         model.setGameFile(file)

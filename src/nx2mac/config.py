@@ -19,7 +19,7 @@ class Config:
     engine_ref: str | None = None  # branch, tag, or commit hash; None = source default
     # Where built games live (their .app, saves, logs, mods, cheats). No default:
     # the user picks an existing folder; nx2mac never creates it.
-    library_dir: str | None = None
+    library_dirs: tuple[str, ...] = ()  # every folder the user keeps built games in
     # A synced folder (iCloud Drive, Dropbox, …) the engine copies each game's save into.
     cloud_dir: str | None = None
 
@@ -75,10 +75,17 @@ def load(path: Path | None = None) -> Config:
         value = table.get(key)
         return value if isinstance(value, str) and value else None
 
+    raw_dirs = library.get("dirs")
+    dirs: tuple[str, ...] = ()
+    if isinstance(raw_dirs, list):
+        dirs = tuple(str(entry) for entry in raw_dirs if isinstance(entry, str) and entry)
+    elif isinstance(library.get("dir"), str) and library["dir"]:
+        dirs = (str(library["dir"]),)  # written by an older nx2mac
+
     return Config(
         engine_id=opt(engine, "id"),
         engine_ref=opt(engine, "ref"),
-        library_dir=opt(library, "dir"),
+        library_dirs=dirs,
         cloud_dir=opt(cloud, "dir"),
     )
 
@@ -93,9 +100,16 @@ def save(config: Config, path: Path | None = None) -> None:
             lines.append(f"id = {_format_str(config.engine_id)}")
         if config.engine_ref is not None:
             lines.append(f"ref = {_format_str(config.engine_ref)}")
-    if config.library_dir is not None:
-        lines += ["", "[library]", f"dir = {_format_str(config.library_dir)}"]
+    if config.library_dirs:
+        lines += ["", "[library]", "dirs = ["]
+        lines += [f"  {_format_str(entry)}," for entry in config.library_dirs]
+        lines.append("]")
     if config.cloud_dir is not None:
         lines += ["", "[cloud]", f"dir = {_format_str(config.cloud_dir)}"]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def primary_library(config: Config) -> str | None:
+    """The first configured library (what `build` files into unless told otherwise)."""
+    return config.library_dirs[0] if config.library_dirs else None

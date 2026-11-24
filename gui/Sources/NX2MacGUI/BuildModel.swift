@@ -35,7 +35,7 @@ final class BuildModel: ObservableObject {
     // MARK: Library
 
     /// The game library folder (nil until the user picks one in Setup).
-    @Published private(set) var libraryDir: String?
+    @Published private(set) var libraryDirs: [String] = []
     @Published private(set) var games: [LibraryGame] = []
     @Published private(set) var libraryBusy = false
     /// Why the library folder was refused (or "" when it was accepted).
@@ -183,13 +183,13 @@ final class BuildModel: ObservableObject {
         outDirURL = defaultOutDir
     }
 
-    /// The game library the build files into (what the user chose in Setup).
-    var libraryURL: URL? { libraryDir.map { URL(fileURLWithPath: $0) } }
+    /// The library the build files into (the first one configured).
+    var libraryURL: URL? { libraryDirs.first.map { URL(fileURLWithPath: $0) } }
 
-    /// Apply a library folder (the CLI's answer, or a test's): keeps the shown
+    /// Apply the library folders (the CLI's answer, or a test's): keeps the shown
     /// output folder in step while it is still the default.
-    func applyLibrary(_ directory: String?) {
-        libraryDir = directory
+    func applyLibraries(_ directories: [String]) {
+        libraryDirs = directories
         if outDirIsAuto { outDirURL = defaultOutDir }
     }
 
@@ -274,18 +274,28 @@ final class BuildModel: ObservableObject {
               let data = result.stdout.data(using: .utf8),
               let payload = try? JSONDecoder().decode(LibraryPayload.self, from: data)
         else { return }
-        applyLibrary(payload.dir)
+        applyLibraries(payload.dirs)
         games = payload.games
         await refreshPlayers()
     }
 
-    /// Choose the library folder (it must already exist: nx2mac never creates it).
-    func setLibrary(_ url: URL) async {
+    /// Add another folder to the libraries (it must exist and must not be a game dump).
+    func addLibrary(_ url: URL) async {
+        await runLibraryCommand(["--add", url.path])
+    }
+
+    /// Forget one library folder (the games stay where they are).
+    func removeLibrary(_ directory: String) async {
+        await runLibraryCommand(["--remove", directory])
+    }
+
+    /// Run a `library` sub-command and refresh what the tab shows.
+    private func runLibraryCommand(_ extra: [String]) async {
         guard let cli else { return }
         libraryBusy = true
-        defer { libraryBusy = false }
         libraryError = ""
-        guard let result = try? await Self.run(cli, ["library", "--set", url.path, "--json"]),
+        defer { libraryBusy = false }
+        guard let result = try? await Self.run(cli, ["library", "--json"] + extra),
               let data = result.stdout.data(using: .utf8)
         else { return }
         if let problem = try? JSONDecoder().decode(CliErrorPayload.self, from: data) {
@@ -293,8 +303,10 @@ final class BuildModel: ObservableObject {
             return
         }
         guard let payload = try? JSONDecoder().decode(LibraryPayload.self, from: data) else { return }
-        applyLibrary(payload.dir)
+        applyLibraries(payload.dirs)
         games = payload.games
+        await refreshPlayers()
+        await refreshCloud()
     }
 
     /// Keep saves local and copy them into a synced folder (iCloud Drive, Dropbox, …).
@@ -326,14 +338,6 @@ final class BuildModel: ObservableObject {
 
     private struct CloudPayload: Decodable {
         let dir: String?
-    }
-
-    /// Forget the library setting.
-    func clearLibrary() async {
-        guard let cli else { return }
-        _ = try? await Self.run(cli, ["library", "--clear", "--json"])
-        applyLibrary(nil)
-        games = []
     }
 
     /// The name of the player who plays, for the picker's label.

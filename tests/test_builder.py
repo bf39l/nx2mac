@@ -406,8 +406,11 @@ def test_run_build_files_the_game_into_the_library(tmp_path: Path, monkeypatch) 
     assert f"DM_SUPPORT_DIR={library / 'support' / tid}" in build_env
     assert f"DM_LOG_DIR={library / 'logs'}" in build_env
     assert f"DM_SAVE={library / 'save' / tid}" in build_env
-    for directory in ("logs", "cheats", "screenshots", "mods", "save", "support", "build"):
+    for directory in ("logs", "screenshots", "mods", "save", "support", "build"):
         assert (library / directory).is_dir()
+    # cheats live inside the game's mods folder, as NX2Apple keeps them
+    assert (library / "mods" / tid / "cheats").is_dir()
+    assert not (library / "cheats").exists()
     # and the scan sees it
     from nx2mac.library import list_games
 

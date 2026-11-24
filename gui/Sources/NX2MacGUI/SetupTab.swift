@@ -49,7 +49,6 @@ struct SetupTab: View {
                 }
             }
 
-            librarySection
 
             ScrollView {
                 LazyVStack(spacing: 6) {
@@ -72,58 +71,6 @@ struct SetupTab: View {
         }
         .task {
             if model.doctor == nil { await model.refresh() }
-        }
-    }
-
-    /// Where built games live; no default, and nx2mac never creates the folder.
-    private var librarySection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text("Game library")
-                    .font(.callout.weight(.medium))
-                if let dir = model.libraryDir {
-                    Text(dir)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(dir)
-                } else {
-                    Text("not set — choose the folder your games are built into")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-                Spacer()
-                Button("Choose folder…") { chooseLibrary() }
-                if model.libraryDir != nil {
-                    Button("Clear") { Task { await model.clearLibrary() } }
-                }
-            }
-            if model.libraryError.isEmpty {
-                Text("Built games are filed there: each app plus its saves, logs, mods and cheats. "
-                     + "The folder must already exist, and must not be a game dump.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            } else {
-                Text(model.libraryError)
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
-            }
-        }
-        .padding(9)
-        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    private func chooseLibrary() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Use as library"
-        panel.message = "Pick the folder that should hold your built games (it is not created here)."
-        if panel.runModal() == .OK, let url = panel.url {
-            Task { await model.setLibrary(url) }
         }
     }
 

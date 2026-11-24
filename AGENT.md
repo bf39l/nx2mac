@@ -115,8 +115,10 @@ we may run it), `installer.py` (runs those fixes), `engines.py` (GitHub resolve/
 
 ## Game library and players
 
-`library_dir` in the config is **unset by default** and must be an existing folder that does not
-hold game packages (a dump is refused; nx2mac never creates the folder). Only
+`[library] dirs` is a **list** (unset by default): each entry must exist and must not hold game
+packages (a dump is refused; nx2mac never creates folders). `library --add/--remove/--clear` manage
+it; `build` files into the first one unless `--library` says otherwise, and the Games tab, the
+player/cloud env rewrites and `library --json` cover every library. Only
 `library --set`/`--clear` (Setup tab) change it — picking a game dir or output folder in the Build
 tab must never touch it. With it set, `build` writes into `<library>/<Game>/` and bakes
 `support/build-env.txt` into the app via the engine's `--env-file`, so the launcher keeps its

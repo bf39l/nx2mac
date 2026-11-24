@@ -20,6 +20,7 @@ screenshots and logs at the library without touching the signed app.
 import json
 import plistlib
 import shutil
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,12 +35,12 @@ MANIFEST_NAME: str = "nx2mac.json"
 #:   save/<TID>/profiles/   one store per player
 #:   save/<TID>/pso_user.tsv  DM_PSO_USER - the game's shared pipeline cache
 #:   logs/<TID>.log         DM_LOG_DIR=<library>/logs (the launcher names the file)
-#:   mods/<TID>/            where this game's mods live
-#:   cheats/<TID>/          DM_CHEATS
+#:   mods/<TID>/            the game's mods: <mod>/romfs (or atmosphere/contents/<TID>/romfs)
+#:   mods/<TID>/cheats/     DM_CHEATS - cheat files live in the mods tree, like NX2Apple
 #:   screenshots/<TID>/     DM_ALBUM_DIR
 #:   support/<TID>/         DM_SUPPORT_DIR - the engine's state, env.txt, temp
 #:   build/<TID>_build/     the engine's work folder
-LIBRARY_DIRS: tuple[str, ...] = ("save", "logs", "mods", "cheats", "screenshots", "support", "build")
+LIBRARY_DIRS: tuple[str, ...] = ("save", "logs", "mods", "screenshots", "support", "build")
 
 #: Marks a folder as an nx2mac library (NX2Apple uses the same idea).
 LIBRARY_MARKER: str = ".nx2mac-library"
@@ -400,7 +401,8 @@ def mods_dir(library: Path, title_id: str) -> Path:
 
 
 def cheats_dir(library: Path, title_id: str) -> Path:
-    return library / "cheats" / title_id
+    """Cheat files live inside the game's mods folder (NX2Apple keeps them there too)."""
+    return mods_dir(library, title_id) / "cheats"
 
 
 def screenshots_dir(library: Path, title_id: str) -> Path:
@@ -694,10 +696,36 @@ def touch_last_played(manifest_file: Path) -> str:
 
 
 def describe_library(library: Path) -> dict[str, object]:
-    """JSON payload for `nx2mac library --json` (the GUI's Games tab)."""
+    """JSON payload for one library."""
     games = list_games(library)
     return {
         "dir": str(library),
         "exists": library.is_dir(),
         "games": [entry.to_dict() for entry in games],
     }
+
+
+def describe_libraries(libraries: Iterable[Path]) -> dict[str, object]:
+    """JSON payload for `nx2mac library --json`: every library and the games in them."""
+    dirs = [path.expanduser().resolve() for path in libraries]
+    games: list[dict[str, object]] = []
+    for directory in dirs:
+        for entry in list_games(directory):
+            payload = entry.to_dict()
+            payload["library"] = str(directory)
+            games.append(payload)
+    games.sort(key=lambda game: (str(game.get("last_played") or ""), str(game.get("built_at") or "")), reverse=True)
+    return {
+        "dirs": [str(directory) for directory in dirs],
+        "missing": [str(directory) for directory in dirs if not directory.is_dir()],
+        "games": games,
+    }
+
+
+def write_envs_for(libraries: Iterable[Path], cloud_dir: Path | None = None) -> list[Path]:
+    """Rewrite the player/cloud env of every game in every library."""
+    written: list[Path] = []
+    for directory in libraries:
+        if directory.is_dir():
+            written.extend(write_all_player_envs(directory, cloud_dir))
+    return written

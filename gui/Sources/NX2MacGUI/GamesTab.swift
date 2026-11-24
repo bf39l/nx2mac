@@ -13,16 +13,20 @@ struct GamesTab: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Games").font(.title2.weight(.semibold))
                     // No library set: say nothing here rather than an empty-state paragraph.
-                    if let dir = model.libraryDir {
-                        Text(dir)
+                    if !model.libraryDirs.isEmpty {
+                        Text(model.libraryDirs.count == 1
+                             ? model.libraryDirs[0]
+                             : "\(model.libraryDirs.count) libraries")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
+                            .help(model.libraryDirs.joined(separator: "\n"))
                     }
                 }
                 Spacer()
-                if model.libraryDir != nil {
+                if !model.libraryDirs.isEmpty {
+                    libraryMenu
                     cloudMenu
                     playerPicker
                     Button {
@@ -39,6 +43,46 @@ struct GamesTab: View {
             content
         }
         .task { await model.refreshLibrary() }
+    }
+
+    /// The library folders: add another one, or forget one.
+    private var libraryMenu: some View {
+        Menu {
+            ForEach(Array(model.libraryDirs.enumerated()), id: \.offset) { _, directory in
+                Menu(directory) {
+                    Button("Reveal in Finder") {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: directory))
+                    }
+                    Button("Remove from libraries") {
+                        Task { await model.removeLibrary(directory) }
+                    }
+                }
+            }
+            Divider()
+            Button("Add folder…") { chooseLibrary() }
+            if !model.libraryError.isEmpty {
+                Divider()
+                Text(model.libraryError)
+            }
+        } label: {
+            Label("Library", systemImage: "folder.badge.plus")
+        }
+        .menuStyle(.borderlessButton)
+        .frame(width: 105)
+        .help("Folders that hold your built games (more than one is fine)")
+    }
+
+    private func chooseLibrary() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Add as library"
+        panel.message = "Pick a folder for built games (it must not be a game dump)."
+        if panel.runModal() == .OK, let url = panel.url {
+            Task { await model.addLibrary(url) }
+        }
     }
 
     /// Where the engine copies each game's save (iCloud Drive, Dropbox, …); local first.
@@ -122,7 +166,7 @@ struct GamesTab: View {
 
     @ViewBuilder
     private var content: some View {
-        if model.libraryDir == nil {
+        if model.libraryDirs.isEmpty {
             EmptyView()  // nothing to list, and no library folder to talk about
         } else if model.games.isEmpty {
             placeholder("No games built into this library yet.\nGo to the Build tab and build one.")

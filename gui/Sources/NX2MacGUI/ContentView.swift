@@ -70,6 +70,7 @@ struct BuildTab: View {
             packageList
 
             updateRow
+            updateList
             row(title: "DLC") {
                 Text(model.dlcURLs.isEmpty
                      ? "optional — pick one or more DLC .nsp/.nsz (or a folder)"
@@ -190,36 +191,57 @@ struct BuildTab: View {
             .help("Found in the folder above; pick a file to override it")
     }
 
+    /// The update package, listed the same way as the game package.
+    @ViewBuilder
+    private var updateList: some View {
+        if let update = model.updateURL {
+            packageLine(url: update)
+        }
+    }
+
     /// The one package this build uses — the auto-picked game. Other packages in
     /// the folder (updates, DLC) are not listed: pick a different file with
     /// "Game → Choose…" if that is what you want to build.
     @ViewBuilder
     private var packageList: some View {
-        if model.gameURL != nil, let chosen = model.chosenPackage {
-            HStack(spacing: 6) {
-                Image(systemName: "largecircle.fill.circle")
-                    .font(.caption2)
-                    .foregroundStyle(Color.accentColor)
-                Text(chosen.name)
-                    .font(.caption.monospaced())
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(chosen.path)
-                Text(chosen.role)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                Spacer(minLength: 4)
-                Text(ByteCountFormatter.string(fromByteCount: Int64(chosen.size), countStyle: .file))
+        if let game = model.gameURL {
+            packageLine(url: game)
+        }
+    }
+
+    /// One package as a single list row: name, role, version, size — like Finder's list view.
+    private func packageLine(url: URL) -> some View {
+        let known = model.packages.first { $0.path == url.path }
+        return HStack(spacing: 6) {
+            Image(systemName: "largecircle.fill.circle")
+                .font(.caption2)
+                .foregroundStyle(Color.accentColor)
+            Text(url.lastPathComponent)
+                .font(.caption.monospaced())
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(url.path)
+            Text(known?.role ?? "package")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            if let version = known?.version {
+                Text(version.hasPrefix("v") ? version : "v\(version)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 4)
+            if let size = known?.size {
+                Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, SelectionList.padding / 2)
-            .frame(height: SelectionList.height(for: 1))
-            .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
-            .padding(.leading, 104)
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, SelectionList.padding / 2)
+        .frame(height: SelectionList.height(for: 1))
+        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
+        .padding(.leading, 104)
     }
 
     /// The chosen files as a vertical, scrollable list — many DLCs must stay readable.

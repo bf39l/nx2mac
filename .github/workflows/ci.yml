@@ -2,13 +2,13 @@ name: CI
 
 # Policy:
 #   pull_request  -> lint, test, and build (a newer commit cancels the previous run)
-#   push to main  -> the same, and the release build is uploaded as an artifact; runs are never
-#                    cancelled by a later push, so a job that waited in the macOS queue finishes
-#   tag vX.Y.Z    -> see release.yml, which publishes the release
+#   push          -> the same for any branch, so a branch shows green before a PR exists; runs are
+#                    never cancelled by a later push, so a job that waited in the macOS queue still
+#                    finishes. Tags are excluded: release.yml owns those.
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: ["**"]
   workflow_dispatch:
 
 concurrency:

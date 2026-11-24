@@ -1,16 +1,14 @@
 name: CI
 
 # Policy:
-#   pull_request  -> lint, test, and build (a newer commit cancels the previous run)
-#   push          -> the same for any branch, so a branch shows green before a PR exists; runs are
-#                    never cancelled by a later push, so a job that waited in the macOS queue still
-#                    finishes. Tags are excluded: release.yml owns those.
+#   pull_request  -> lint, test, and build the release artifacts (the PR is the merge gate)
+#   push          -> branches run lint + test only (fast, green before a PR); main also builds the
+#                    release artifacts, since that is the tree a release would tag
+#   workflow_dispatch -> full, whatever branch you pick
 on:
   pull_request:
-  # Only main pushes run here: branch work is covered by its PR run, and a push that also opens a
-  # PR would otherwise fire a second, redundant run on every commit (those push runs failed).
   push:
-    branches: [main]
+    branches: ["**"]
   workflow_dispatch:
 
 concurrency:
@@ -65,11 +63,14 @@ jobs:
       - name: Test
         run: swift test --package-path gui
 
-      # Also freezes the CLI into Contents/Resources/cli, exactly like a release.
+      # The release build (freeze the CLI, pack the DMG) is slow, so a branch push skips it and
+      # only proves the tests are green; the PR run and the main push after merge build it.
       - name: Assemble the app bundle
+        if: github.event_name != 'push' || github.ref == 'refs/heads/main'
         run: ./gui/build.sh release dist
 
       - name: Smoke test the bundled CLI
+        if: github.event_name != 'push' || github.ref == 'refs/heads/main'
         run: |
           CLI=dist/nx2mac.app/Contents/Resources/cli/nx2mac
           test -x "$CLI"
@@ -77,6 +78,7 @@ jobs:
           codesign -v dist/nx2mac.app
 
       - name: Package the release build
+        if: github.event_name != 'push' || github.ref == 'refs/heads/main'
         run: |
           VERSION="$(uv run python -c 'import nx2mac; print(nx2mac.VERSION)')"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
@@ -90,6 +92,7 @@ jobs:
           cd out && shasum -a 256 ./*.zip ./*.dmg > SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v7
+        if: github.event_name != 'push' || github.ref == 'refs/heads/main'
         with:
           name: nx2mac-${{ env.VERSION }}-macos-arm64-${{ github.event_name }}
           path: out/*

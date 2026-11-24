@@ -82,7 +82,9 @@ struct BuildTab: View {
             row(title: "DLC") {
                 Text(model.dlcURLs.isEmpty
                      ? "optional — pick one or more DLC .nsp/.nsz (or a folder)"
-                     : "\(model.dlcURLs.count) selected")
+                     : SelectionList.scrolls(at: model.dlcURLs.count)
+                        ? "\(model.dlcURLs.count) selected — scroll the list"
+                        : "\(model.dlcURLs.count) selected")
                     .font(.callout)
                     .foregroundStyle(model.dlcURLs.isEmpty ? .tertiary : .primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -127,7 +129,7 @@ struct BuildTab: View {
     private func selectionList(_ urls: [URL], remove: @escaping (Int) -> Void) -> some View {
         if !urls.isEmpty {
             ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(urls.enumerated()), id: \.offset) { index, url in
                         HStack(spacing: 6) {
                             Image(systemName: "shippingbox")
@@ -148,13 +150,14 @@ struct BuildTab: View {
                             .foregroundStyle(.secondary)
                             .help("Remove")
                         }
-                        .padding(.vertical, 1)
+                        .frame(height: SelectionList.rowHeight)
                     }
                 }
                 .padding(.horizontal, 8)
-                .padding(.vertical, 5)
+                .padding(.vertical, SelectionList.padding / 2)
             }
-            .frame(maxHeight: 104)
+            // Auto height: one row per item, at most five visible rows, then it scrolls.
+            .frame(height: SelectionList.height(for: urls.count))
             .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
             .padding(.leading, 104)

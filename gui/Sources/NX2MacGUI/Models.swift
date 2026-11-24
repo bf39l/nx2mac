@@ -200,3 +200,26 @@ enum Progress {
         return tag.contains("/") ? tag : nil  // only "k/n" step tags count as progress
     }
 }
+
+/// Geometry of the scrollable selection lists in the Build tab (updates, DLCs):
+/// the box grows with the number of items and is capped at five visible rows,
+/// after which it scrolls.
+enum SelectionList {
+    /// Height of one row (name + remove button).
+    static let rowHeight: CGFloat = 18
+    /// Rows shown before the list starts scrolling.
+    static let maxVisibleRows: Int = 5
+    /// Container padding (5pt top + 5pt bottom).
+    static let padding: CGFloat = 10
+
+    /// Height for *count* rows: 0 when empty, growing one row at a time, capped.
+    static func height(for count: Int) -> CGFloat {
+        guard count > 0 else { return 0 }
+        return CGFloat(min(count, maxVisibleRows)) * rowHeight + padding
+    }
+
+    /// Whether the list needs scrolling at this count.
+    static func scrolls(at count: Int) -> Bool {
+        count > maxVisibleRows
+    }
+}

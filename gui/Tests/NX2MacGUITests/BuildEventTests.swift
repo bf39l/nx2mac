@@ -221,6 +221,22 @@ private final class LockedLines {
     }
 }
 
+final class SelectionListTests: XCTestCase {
+    func testHeightGrowsOneRowPerItem() {
+        XCTAssertEqual(SelectionList.height(for: 0), 0)
+        XCTAssertEqual(SelectionList.height(for: 1), SelectionList.rowHeight + SelectionList.padding)
+        XCTAssertEqual(SelectionList.height(for: 3), 3 * SelectionList.rowHeight + SelectionList.padding)
+    }
+
+    func testHeightStopsAfterFiveRows() {
+        let five = SelectionList.height(for: 5)
+        XCTAssertEqual(SelectionList.height(for: 6), five)
+        XCTAssertEqual(SelectionList.height(for: 200), five)
+        XCTAssertFalse(SelectionList.scrolls(at: 5))
+        XCTAssertTrue(SelectionList.scrolls(at: 6))
+    }
+}
+
 final class EngineCommandTests: XCTestCase {
     func testPinKeepsRefOutOfTheSourceOption() {
         let arguments = EngineCommand.pin(source: "fork", ref: " fork-customizations ")

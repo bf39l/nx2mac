@@ -531,7 +531,7 @@ def run_build(
         extra_args,
         work_dir=work_dir,
         env_file=env_file,
-        fallback_icon=fallback_icon_path(title_id),
+        fallback_icon=fallback_icon_path(title_id, game_folder=library_mod.game_root(library, key) if library is not None else None),
     )
     returncode = env.run_stream(argv, cwd=engine.path, on_line=watch)
 

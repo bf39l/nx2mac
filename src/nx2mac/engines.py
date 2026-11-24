@@ -7,7 +7,6 @@ cache dir is reused for repeated builds of the same ref, so subsequent runs are
 just ``git fetch`` + checkout instead of full clones.
 """
 
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -158,17 +157,12 @@ def _shipped_icons_dir() -> Path | None:
     return None
 
 
-def user_icons_dir() -> Path:
-    """Where a user drops their own per-game icons (`<title id>.png`), beside the config file."""
-    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "nx2mac" / "icons"
-
-
-def fallback_icon_path(title_id: str | None) -> Path | None:
+def fallback_icon_path(title_id: str | None, *, game_folder: Path | None = None) -> Path | None:
     """The app icon for a game that carries none: a `<title id>.png`/`.jpg` (case-insensitive) the
-    user dropped in `~/.config/nx2mac/icons`, or nx2mac ships in `resources/icons`, when the title
-    matches; else nx2mac's own `app-icon.png`."""
-    for directory in (user_icons_dir(), _shipped_icons_dir()):
+    user dropped beside the game's data (its library folder), or that nx2mac ships in
+    `resources/icons`, when the title matches; else nx2mac's own `app-icon.png`."""
+    directories: list[Path | None] = [game_folder, _shipped_icons_dir()]
+    for directory in directories:
         if directory is None or title_id is None:
             continue
         for suffix in (".png", ".jpg", ".jpeg"):

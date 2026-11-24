@@ -222,18 +222,16 @@ def test_apply_patches_only_picks_patch_files(tmp_path: Path) -> None:
 
 def test_fallback_icon_prefers_a_title_id_named_icon(tmp_path: Path, monkeypatch) -> None:
     """A game with no icon of its own gets `<title id>.png` when one is dropped, else the generic."""
-    from nx2mac.engines import default_icon_path, fallback_icon_path, user_icons_dir
-
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
-    icons = user_icons_dir()
-    icons.mkdir(parents=True, exist_ok=True)
+    from nx2mac.engines import default_icon_path, fallback_icon_path
 
     generic = default_icon_path()
     assert fallback_icon_path("04007EF01F8AE000") == generic  # nothing dropped yet
     assert fallback_icon_path(None) == generic
 
-    # a user-dropped icon, named in lowercase, matches the uppercase title id
-    (icons / "04007ef01f8ae000.png").write_bytes(b"\x89PNG")
-    found = fallback_icon_path("04007EF01F8AE000")
-    assert found is not None and found.is_file() and found.parent == icons
-    assert found.stem.lower() == "04007ef01f8ae000"  # case-insensitive, both macOS and Linux
+    # the game's own library folder: a dropped icon (lowercase) matches the uppercase title id
+    game = tmp_path / "lib" / "nx2mac_game_lib" / "04007EF01F8AE000"
+    game.mkdir(parents=True)
+    (game / "04007ef01f8ae000.png").write_bytes(b"\x89PNG")
+    found = fallback_icon_path("04007EF01F8AE000", game_folder=game)
+    assert found is not None and found.is_file() and found.parent == game
+    assert found.stem.lower() == "04007ef01f8ae000"

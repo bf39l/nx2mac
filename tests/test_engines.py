@@ -17,6 +17,7 @@ from nx2mac.engines import (
     default_patches_dir,
     describe,
     ensure_checkout,
+    repo_slug,
     source_by_id,
 )
 from nx2mac.runner import RunResult
@@ -47,9 +48,17 @@ def test_sources_catalog() -> None:
 
 
 def test_checkout_dir_slugs_refs() -> None:
+    """The folder names the repository, not just the source id."""
     root = Path("/cache")
-    assert checkout_dir(root, UPSTREAM, "main") == root / "engines" / "upstream-main"
-    assert checkout_dir(root, FORK, "game/xcom-2!") == root / "engines" / "fork-game-xcom-2"
+    assert checkout_dir(root, UPSTREAM, "main") == root / "engines" / "seedds-nxnative_main"
+    assert checkout_dir(root, FORK, "game/xcom-2!") == root / "engines" / "bf39l-nxnative_game-xcom-2"
+    assert checkout_dir(root, FORK, "fork-customizations").name == "bf39l-nxnative_fork-customizations"
+
+
+def test_repo_slug_reads_https_and_ssh_urls() -> None:
+    assert repo_slug("https://github.com/bf39l/nxnative.git") == "bf39l-nxnative"
+    assert repo_slug("https://github.com/seedds/nxnative") == "seedds-nxnative"
+    assert repo_slug("git@github.com:bf39l/nxnative.git") == "bf39l-nxnative"
 
 
 def test_fresh_clone_resolves_branch(tmp_path: Path) -> None:

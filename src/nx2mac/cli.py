@@ -126,8 +126,8 @@ def _resolve_selection(
     Exits the CLI with an error when the resolved id is unknown.
     """
     cfg = load_config()
-    selected_id: str | None = source_id or cfg.engine_id
     selected_ref: str | None = ref if ref is not None else cfg.engine_ref
+    selected_id: str | None = source_id or cfg.engine_id
 
     if selected_id is None:
         sources = all_sources()

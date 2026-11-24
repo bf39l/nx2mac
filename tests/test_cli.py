@@ -39,7 +39,7 @@ def _make_env(tmp: Path) -> FakeEnv:
 
 def _prepare_checkout(tmp: Path) -> Path:
     """An already-fetched engine checkout at its canonical cache location."""
-    checkout = tmp / "cache" / "engines" / "upstream-main"
+    checkout = tmp / "cache" / "engines" / "seedds-nxnative_main"
     (checkout / ".git").mkdir(parents=True)
     (checkout / "scripts").mkdir()
     (checkout / "scripts" / "build_ipa_from_nsp.py").write_text("print(1)\n", encoding="utf-8")
@@ -114,7 +114,7 @@ def test_build_runs_engine_script_streams(isolated_paths: Path, monkeypatch: pyt
 
     assert result.exit_code == 0 and "Done." in result.output
     argv, cwd = env.stream_calls[0]
-    script = tmp / "cache" / "engines" / "upstream-main" / "scripts" / "build_ipa_from_nsp.py"
+    script = tmp / "cache" / "engines" / "seedds-nxnative_main" / "scripts" / "build_ipa_from_nsp.py"
     assert argv[:2] == [str(tmp / "cache" / "python" / "bin" / "python3"), str(script)]
     assert "--platform" in argv and "mac-app" in argv and "-k" in argv and cwd is not None
 

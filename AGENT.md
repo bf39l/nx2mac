@@ -210,7 +210,9 @@ All v1 slices are implemented with unit tests (run: `uv run pytest`, lint: `uv r
 - `config.py` — TOML `engine.id` / `engine.ref`, XDG config path, `NX2MAC_CACHE_ROOT`
 - `pyenv.py` — arm64 CPython >= 3.12 discovery, managed venv at `<cache>/python`, pip specs
 - `doctor.py` — 12 individually-addressable checks with fix commands
-- `engines.py` — upstream/fork sources, clone/fetch into cache, ref->commit pinning, patch series
+- `engines.py` — the closed source catalog (upstream `seedds/nxnative`, fork `bf39l/nxnative`;
+  no free-form URL, because `patches/` targets those repos), clone/fetch into
+  `<cache>/engines/<owner>-<repo>_<ref>`, ref->commit pinning, patch series
 - `builder.py` — game classification (.nsp/.nsz/.xci/.xcz vs .nup), prod.keys lookup, streaming build
 - `cli.py` — `version|doctor|setup|engine|build` with human and `--json` rendering
 - `remedies.py` / `installer.py` — per-check fixes the CLI can run (`setup --install/--all`)

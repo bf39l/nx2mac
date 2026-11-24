@@ -49,7 +49,7 @@ next to/inside the game (explicit `--keys` always wins and is never copied).
 nx2mac version                          # version (also --json)
 nx2mac doctor                           # per-check status + fix; exit 1 if anything fails
 nx2mac setup [--install NAME…|--all]    # install missing pieces (prompts, or non-interactive)
-nx2mac engine [REF] [--source upstream|fork] [--show]
+nx2mac engine [REF] [--source upstream|fork] [--show]      # the two supported engines
 nx2mac probe PATH                      # what a folder holds + which package is the game
 nx2mac library [--set DIR|--clear]     # the game library (no default; must exist)
 nx2mac player [--create NAME|--select NAME|--delete NAME] [--game GAME]
@@ -147,6 +147,13 @@ nx2mac player                         # list them; * marks the active one
 
 Each player gets their own save store and their own `DM_NICK`, which is how every player keeps a
 custom name (the engine hard-codes user 2..8, and only reads `DM_NICK` for user 1).
+
+## Engine sources
+
+There are exactly two: upstream `seedds/nxnative` and the fork `bf39l/nxnative`. A free-form
+clone URL is intentionally not offered — `patches/` is written against these repositories, so an
+arbitrary engine could not be built. Checkouts live in the cache as
+`<owner>-<repo>_<ref>` (e.g. `bf39l-nxnative_fork-customizations`).
 
 ## Engine patches
 

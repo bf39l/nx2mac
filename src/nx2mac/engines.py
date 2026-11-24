@@ -44,7 +44,11 @@ class EngineError(Exception):
 
 
 def all_sources() -> tuple[EngineSource, ...]:
-    """The selectable sources, in display order."""
+    """The selectable sources, in display order.
+
+    Deliberately a closed catalog: nx2mac ships a patch series (`patches/`) written
+    against these repositories, so a free-form clone URL could not be built.
+    """
     return (UPSTREAM, FORK)
 
 
@@ -89,9 +93,25 @@ def _slug(ref: str) -> str:
     return slug[:48] or "ref"
 
 
+def repo_slug(url: str) -> str:
+    """`<owner>-<repo>` for a clone URL, so a checkout's folder says whose repo it is."""
+    cleaned = url.strip().rstrip("/")
+    cleaned = cleaned.removesuffix(".git")
+    cleaned = cleaned.replace(":", "/")  # git@github.com:owner/repo
+    parts = [part for part in cleaned.split("/") if part]
+    if len(parts) >= 2:
+        return _slug(f"{parts[-2]}-{parts[-1]}")
+    return _slug(parts[-1]) if parts else "engine"
+
+
 def checkout_dir(cache_root: Path, source: EngineSource, ref: str) -> Path:
-    """Where the (source id + ref) checkout lives under a cache root."""
-    return cache_root / "engines" / f"{source.id}-{_slug(ref)}"
+    """Where this (repo + ref) checkout lives: `<owner>-<repo>_<ref>`.
+
+    Naming the folder after the repository — `bf39l-nxnative_fork-customizations`
+    rather than `fork-fork-customizations` — makes several engines side by side
+    readable at a glance; the underscore separates the ref from the repo.
+    """
+    return cache_root / "engines" / f"{repo_slug(source.url)}_{_slug(ref)}"
 
 
 def _resolve_commit(env: Env, repo: Path, rev: str) -> str | None:

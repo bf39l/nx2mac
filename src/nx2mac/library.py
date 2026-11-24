@@ -19,6 +19,7 @@ screenshots and logs at the library without touching the signed app.
 
 import json
 import plistlib
+import re
 import shutil
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
@@ -1087,6 +1088,11 @@ def import_cheats(library: Path, title_id: str, sources: Sequence[Path], enable:
         stem = path.stem
         if path.suffix.lower() == ".tsv" and stem.endswith(".meta"):
             stem = stem[: -len(".meta")]
+        # A download called `6E35EE0A24029143 (1).txt` or `6E35EE0A24029143 - copy.txt` is still for
+        # that build: take the leading build id rather than making the user rename it.
+        leading = re.match(r"^([0-9A-Fa-f]{16})(?![0-9A-Fa-f])", stem)
+        if leading:
+            stem = leading.group(1).upper()
         if not _is_build_id(stem):
             # A pasted/renamed file: name it after the built game's build ID, which is what the host
             # matches the file against (the app records it in dm/main.fixups.tsv).
@@ -1099,7 +1105,11 @@ def import_cheats(library: Path, title_id: str, sources: Sequence[Path], enable:
                     "cheat sites name their files that way"
                 )
         suffix = ".tsv" if path.name.endswith(".meta.tsv") else path.suffix
-        renamed = path.name if path.name.startswith(stem) else f"{stem}{'.meta.tsv' if suffix == '.tsv' else suffix}"
+        # Always land on `<build id>.txt` / `<build id>.meta.tsv`: a download called
+        # `6E35EE0A24029143 (1).txt` would otherwise keep that name, and the host — which matches the
+        # file by build id — would ignore it, while the compile's meta and switches (keyed by build
+        # id) got deleted as "another file".
+        renamed = f"{stem}.meta.tsv" if suffix == ".tsv" else f"{stem}{path.suffix}"
         target = folder / renamed
         data = path.read_text(encoding="utf-8", errors="replace")
         rebased, changed = rebase_cheats(data)

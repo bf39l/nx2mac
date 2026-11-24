@@ -187,29 +187,44 @@ struct DoctorBadge: View {
 }
 
 /// Monospaced, auto-scrolling log pane used by both tabs.
+///
+/// The whole log is one `Text` with selection enabled, so ⌘A/⌘C copy exactly what is on screen —
+/// users paste it into bug reports — and a Copy button does the same in one click.
 struct LogView: View {
     let lines: [String]
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 1) {
-                    ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                        Text(line)
-                            .font(.system(.caption, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .id(index)
-                    }
+        VStack(alignment: .leading, spacing: 4) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    Text(display)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                        .id("log-end")
                 }
-                .padding(8)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary))
+                .onChange(of: lines.count) { _, _ in
+                    withAnimation(.linear(duration: 0.1)) { proxy.scrollTo("log-end", anchor: .bottom) }
+                }
             }
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary))
-            .onChange(of: lines.count) { _, count in
-                guard count > 0 else { return }
-                withAnimation(.linear(duration: 0.1)) { proxy.scrollTo(count - 1, anchor: .bottom) }
+            HStack(spacing: 8) {
+                Spacer()
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(display, forType: .string)
+                } label: {
+                    Label("Copy log", systemImage: "doc.on.doc")
+                }
+                .help("Copy the whole log (⌘A then ⌘C works in the log too)")
+                .disabled(lines.isEmpty)
             }
         }
+    }
+
+    private var display: String {
+        lines.isEmpty ? "No output yet." : lines.joined(separator: "\n")
     }
 }

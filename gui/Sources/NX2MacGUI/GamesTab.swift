@@ -482,7 +482,14 @@ private struct CheatsSheet: View {
                                             get: { cheat.enabled },
                                             set: { value in Task { await toggle(cheat, build, value) } }
                                         )) {
-                                            Text(cheat.name).font(.callout)
+                                            HStack(spacing: 6) {
+                                                Text(cheat.name).font(.callout)
+                                                if cheat.unanchored {
+                                                    Text("not working here — don't enable")
+                                                        .font(.caption2)
+                                                        .foregroundStyle(.orange)
+                                                }
+                                            }
                                         }
                                         .toggleStyle(.switch)
                                     } else if cheat.kind != "label" {
@@ -530,9 +537,19 @@ private struct CheatsSheet: View {
         loading = false
     }
 
+    /// Flip one switch: the CLI writes `.enabled`, and the local row is updated in place — the
+    /// whole list is not re-read for one toggle.
     private func toggle(_ cheat: CheatEntry, _ build: CheatBuild, _ enabled: Bool) async {
         await model.setCheat(cheat, build: build, for: game, enabled: enabled)
-        await load()
+        guard let index = builds.firstIndex(where: { $0.build == build.build }) else { return }
+        let updated = builds[index].cheats.map { entry in
+            entry.key == cheat.key
+                ? CheatEntry(name: entry.name, key: entry.key, kind: entry.kind, section: entry.section,
+                             broken: entry.broken, switchable: entry.switchable, enabled: enabled,
+                             resolved: entry.resolved, unanchored: entry.unanchored)
+                : entry
+        }
+        builds[index] = CheatBuild(build: build.build, file: build.file, enabledFile: build.enabledFile, cheats: updated)
     }
 }
 

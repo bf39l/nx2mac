@@ -637,7 +637,10 @@ def cheats(
                     marker = "[dim] one-pass[/]"
                 else:
                     marker = "[green]on [/]" if cheat["enabled"] else "[dim]off[/]"
-                console.print(f"    {marker} {cheat['name']}")
+                note = ""
+                if cheat.get("unanchored") and cheat["switchable"]:
+                    note = "  [red]not working on this port — do not enable[/]"
+                console.print(f"    {marker} {cheat['name']}{note}")
 
 
 @app.command()

@@ -900,12 +900,14 @@ def parse_cheat_file(text: str, meta: str | None = None) -> list[dict[str, objec
             row = rows.get(str(entry["name"]))
             if not row:
                 continue
+            entry["resolved"] = row.get("resolved", "")
             if row.get("once", "").lower() in ("1", "true"):
                 entry["once"] = True
             if row.get("pair", ""):
                 entry["pair_off"] = row.get("kind") == "off"
 
     for entry in entries:
+        entry.setdefault("resolved", "")
         entry["switchable"] = (
             entry["kind"] == "cheat" and not entry["broken"] and not entry["once"] and not entry["pair_off"]
         )
@@ -946,6 +948,11 @@ def cheat_builds(library: Path, title_id: str) -> list[dict[str, object]]:
                         "broken": cheat["broken"],
                         "switchable": cheat["switchable"],
                         "enabled": cheat["key"] in enabled,
+                        # A cheat_anchor.py compile that could not anchor an address bound it to the
+                        # build it was written for: on this port the write lands nowhere (or on the
+                        # wrong instruction), so the UI marks it as not to be enabled.
+                        "resolved": cheat["resolved"],
+                        "unanchored": cheat["resolved"] == "no anchors",
                     }
                     for cheat in cheats
                 ],

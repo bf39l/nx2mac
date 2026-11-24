@@ -550,3 +550,26 @@ def test_compiled_cheats_land_in_the_mods_folder(tmp_path: Path) -> None:
     assert compiled.is_file()  # exactly where DM_CHEATS points
     assert toml.parent == mods and toml.is_file()  # the source stays in mods/, untouched
     assert folder.parent.name == "mods"
+
+
+def test_unanchored_cheats_are_marked(tmp_path: Path) -> None:
+    """A compile that could not anchor an address marks the entry: not working on this port."""
+    library = _library(tmp_path)
+    folder = cheats_dir(library, TID)
+    folder.mkdir(parents=True)
+    (folder / "0123456789ABCDEF.txt").write_text(
+        "[Max gold]\n02000000 00000000\n[Key cheat]\n08010000 00000000 00000000 00000000\n",
+        encoding="utf-8",
+    )
+    (folder / "0123456789ABCDEF.meta.tsv").write_text(
+        "name\tkind\tsection\ttype\taction\tvalue\task\tvalue_words\tonce\tpair\tresolved\tnote\taddress\n"
+        "Max gold\tdata\t\t\t\t\t\t\t\t\t0x1234\t\t\n"
+        "Key cheat\tcode\t\t\t\t\t\t\t\t\tno anchors\t\t\n",
+        encoding="utf-8",
+    )
+
+    build = cheat_builds(library, TID)[0]
+    by_name = {cheat["name"]: cheat for cheat in build["cheats"]}  # type: ignore[index]
+
+    assert by_name["Max gold"]["unanchored"] is False
+    assert by_name["Key cheat"]["unanchored"] is True

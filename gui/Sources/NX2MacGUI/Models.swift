@@ -372,6 +372,9 @@ struct CheatEntry: Decodable, Identifiable, Hashable {
     let broken: Bool
     let switchable: Bool
     let enabled: Bool
+    /// The compile could not anchor its address: bound to the build it came from.
+    let resolved: String?
+    let unanchored: Bool
 
     var id: String { key }
 }

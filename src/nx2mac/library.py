@@ -20,7 +20,7 @@ screenshots and logs at the library without touching the signed app.
 import json
 import plistlib
 import shutil
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path

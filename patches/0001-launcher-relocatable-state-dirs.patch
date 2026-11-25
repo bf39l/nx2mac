@@ -1,0 +1,129 @@
+diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
+index d28f4804..bb69b6e9 100644
+--- a/dm/mac/launcher.c
++++ b/dm/mac/launcher.c
+@@ -68,10 +68,44 @@ static int modules_present(const char *dm) {   // the packer's inventory detects
+     return 1;
+ }
+ 
+-static void mkdirs(const char *path) {   // mkdir -p
++static int mkdirs(const char *path) {   // mkdir -p; 0 on success (or already present), -1 on failure
+     char p[PATH_MAX]; snprintf(p, sizeof p, "%s", path);
+-    for (char *s = p + 1; *s; s++) if (*s == '/') { *s = 0; mkdir(p, 0755); *s = '/'; }
+-    mkdir(p, 0755);
++    for (char *s = p + 1; *s; s++) if (*s == '/') {
++        *s = 0;
++        if (mkdir(p, 0755) && errno != EEXIST) { *s = '/'; return -1; }
++        *s = '/';
++    }
++    if (mkdir(p, 0755) && errno != EEXIST) return -1;
++    return 0;
++}
++
++// Resolve a state path the env files may give relative to the library folder (the app's parent),
++// so a game moved with its folder still finds its state. An absolute value is left alone.
++static void resolve_env_path(const char *var, const char *base) {
++    const char *value = getenv(var);
++    if (!value || !*value || value[0] == '/') return;
++    char resolved[PATH_MAX];
++    snprintf(resolved, sizeof resolved, "%s/%s", base, value);
++    setenv(var, resolved, 1);
++}
++
++// DM_ROMFS_OVERLAY lists the enabled mods' RomFS folders, ':'-separated; resolve each relative
++// entry against the library folder the same way, so mods follow a game moved with its folder.
++static void resolve_env_pathlist(const char *var, const char *base) {
++    const char *value = getenv(var);
++    if (!value || !*value) return;
++    char *copy = strdup(value); if (!copy) return;
++    char resolved[PATH_MAX]; size_t used = 0; int ok = 1;
++    for (char *save = NULL, *tok = strtok_r(copy, ":", &save); tok && ok; tok = strtok_r(NULL, ":", &save)) {
++        if (used >= sizeof resolved - 1) { ok = 0; break; }
++        if (used) resolved[used++] = ':';
++        int n = (*tok == '/') ? snprintf(resolved + used, sizeof resolved - used, "%s", tok)
++                              : snprintf(resolved + used, sizeof resolved - used, "%s/%s", base, tok);
++        if (n < 0 || (size_t)n >= sizeof resolved - used) { ok = 0; break; }
++        used += (size_t)n;
++    }
++    free(copy);
++    if (ok) setenv(var, resolved, 1);
+ }
+ 
+ static void env_file(const char *path) {   // KEY=VALUE lines, # starts a comment; a variable already set stays
+@@ -88,6 +122,22 @@ static void env_file(const char *path) {   // KEY=VALUE lines, # starts a commen
+     fclose(f);
+ }
+ 
++// The player's own file (sup/env.txt) wins over the bundled one: its DM_SAVE points at the
++// active player's store, and an already-set value must not keep the player's choice out.
++static void env_file_overrides(const char *path) {
++    FILE *f = fopen(path, "r"); if (!f) return;
++    char ln[4096];
++    while (fgets(ln, sizeof ln, f)) {
++        char *s = ln; while (*s == ' ' || *s == '\t') s++;
++        char *e = s + strlen(s); while (e > s && (e[-1] == '\n' || e[-1] == '\r' || e[-1] == ' ' || e[-1] == '\t')) *--e = 0;
++        char *eq = strchr(s, '=');
++        if (*s == '#' || !eq || eq == s) continue;
++        *eq = 0; char *k = s; for (char *t = eq - 1; t > k && (*t == ' ' || *t == '\t'); t--) *t = 0;
++        setenv(k, eq + 1, 1); add_key(&g_file_keys, k); fprintf(stderr, "launcher: env %s=%s (%s)\n", k, eq + 1, path);
++    }
++    fclose(f);
++}
++
+ static int saved_accepted(CFDictionaryRef rule, CFStringRef v, const char *s) {   // a saved choice this build still offers: one of its values, or a number in its range
+     CFTypeRef values = CFDictionaryGetValue(rule, CFSTR("values"));
+     if (values && CFGetTypeID(values) == CFArrayGetTypeID()) {
+@@ -203,20 +253,47 @@ int main(int argc, char **argv) {
+         return 1;
+     }
+     const char *home = getenv("HOME"); if (!home || !*home) return 1;
++    // The library folder is the app's parent; state paths are relative to it so the app can move
++    // with its folder. A read-only /Applications cannot hold the folder, so fall back to a central
++    // one under Application Support (the same nx2mac_game_lib layout).
++    char library[PATH_MAX], state_root[PATH_MAX], probe[PATH_MAX];
++    snprintf(library, sizeof library, "%s/../..", contents);
++    snprintf(state_root, sizeof state_root, "%s", library);
++    snprintf(probe, sizeof probe, "%s/nx2mac_game_lib", library);
++    if (mkdirs(probe)) {
++        snprintf(state_root, sizeof state_root, "%s/Library/Application Support/nx2mac", home);
++        snprintf(probe, sizeof probe, "%s/nx2mac_game_lib", state_root);
++        mkdirs(probe);
++    }
+     char sup[PATH_MAX], save[PATH_MAX], temp[PATH_MAX], logs[PATH_MAX], log[PATH_MAX], prev[PATH_MAX];
+-    snprintf(sup, sizeof sup, "%s/Library/Application Support/nxnative/%s", home, id);
++    // The bundled env file comes first: it may name the folders this app keeps its state in
++    // (DM_SUPPORT_DIR, DM_LOG_DIR), which a wrapper that files each game into its own folder
++    // sets there instead of baking paths into the bundle.
++    snprintf(p, sizeof p, "%s/env.txt", dm); env_file(p);
++    resolve_env_path("DM_SUPPORT_DIR", state_root);
++    resolve_env_path("DM_LOG_DIR", state_root);
++    const char *support = getenv("DM_SUPPORT_DIR");   // empty default: ~/Library/Application Support/nxnative/<id>
++    if (support && *support) snprintf(sup, sizeof sup, "%s", support);
++    else snprintf(sup, sizeof sup, "%s/Library/Application Support/nxnative/%s", home, id);
+     snprintf(save, sizeof save, "%s/save", sup); snprintf(temp, sizeof temp, "%s/temp", sup);
+-    snprintf(logs, sizeof logs, "%s/Library/Logs/nxnative", home);
++    const char *log_dir = getenv("DM_LOG_DIR");   // empty default: ~/Library/Logs/nxnative
++    if (log_dir && *log_dir) snprintf(logs, sizeof logs, "%s", log_dir);
++    else snprintf(logs, sizeof logs, "%s/Library/Logs/nxnative", home);
+     snprintf(log, sizeof log, "%s/%s.log", logs, id); snprintf(prev, sizeof prev, "%s/%s.prev.log", logs, id);
+-    mkdirs(save); mkdirs(temp); mkdirs(logs);
++    mkdirs(sup); mkdirs(save); mkdirs(temp); mkdirs(logs);
+     rename(log, prev);
+     int fd = open(log, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+     if (fd >= 0) { dup2(fd, 1); dup2(fd, 2); close(fd); setvbuf(stdout, NULL, _IOLBF, 0); }
+-    fprintf(stderr, "launcher: %s (%s), host %s\n", name, id, host);
++    fprintf(stderr, "launcher: %s (%s), host %s, state %s, logs %s\n", name, id, host, sup, logs);
+     CFArrayRef rules = setting_rules();   // the settings the launch environment already set: the window shows them, fixed
+     for (CFIndex i = 0; rules && i < CFArrayGetCount(rules); i++) { char env[128]; if (rule_env(CFArrayGetValueAtIndex(rules, i), env, sizeof env) && getenv(env)) add_key(&g_launch_keys, env); }
+-    snprintf(p, sizeof p, "%s/env.txt", sup); env_file(p);
+-    snprintf(p, sizeof p, "%s/env.txt", dm); env_file(p);
++    snprintf(p, sizeof p, "%s/env.txt", sup); env_file_overrides(p);   // the player's own file wins over the bundled one
++    resolve_env_path("DM_SAVE", state_root);
++    resolve_env_path("DM_PSO_USER", state_root);
++    resolve_env_path("DM_TEMP", state_root);
++    resolve_env_path("DM_ALBUM_DIR", state_root);
++    resolve_env_path("DM_CHEATS", state_root);
++    resolve_env_pathlist("DM_ROMFS_OVERLAY", state_root);
+     setenv("DM_ENV_FILE_KEYS", g_file_keys ? g_file_keys : "", 1); setenv("DM_ENV_LAUNCH_KEYS", g_launch_keys ? g_launch_keys : "", 1);
+     free(g_file_keys); free(g_launch_keys);
+     setenv("DM_SAVE", save, 0);   // before the window: its cloud-save check compares this save with the cloud's (Launcher.swift SaveCheck)

@@ -479,6 +479,16 @@ def ensure_layout(library: Path, title_id: str) -> Path:
     return support_dir(library, title_id)
 
 
+
+def _relpath(library: Path, path: Path) -> str:
+    """`path` relative to the library when it sits under it (so the app can move with the folder),
+    else the absolute path (a cloud folder, a path outside the library)."""
+    try:
+        return str(path.relative_to(library))
+    except ValueError:
+        return str(path)
+
+
 def write_build_env(library: Path, title_id: str) -> Path:
     """The env file baked into the app: it points the engine's data at the library.
 
@@ -488,13 +498,13 @@ def write_build_env(library: Path, title_id: str) -> Path:
     """
     support = ensure_layout(library, title_id)
     managed = {
-        "DM_SUPPORT_DIR": str(support),
-        "DM_LOG_DIR": str(logs_dir(library, title_id)),
-        "DM_SAVE": str(save_dir(library, title_id)),
-        "DM_PSO_USER": str(pso_user_path(library, title_id)),
-        "DM_TEMP": str(support / "temp"),
-        "DM_ALBUM_DIR": str(screenshots_dir(library, title_id)),
-        "DM_CHEATS": str(cheats_dir(library, title_id)),
+        "DM_SUPPORT_DIR": _relpath(library, support),
+        "DM_LOG_DIR": _relpath(library, logs_dir(library, title_id)),
+        "DM_SAVE": _relpath(library, save_dir(library, title_id)),
+        "DM_PSO_USER": _relpath(library, pso_user_path(library, title_id)),
+        "DM_TEMP": _relpath(library, support / "temp"),
+        "DM_ALBUM_DIR": _relpath(library, screenshots_dir(library, title_id)),
+        "DM_CHEATS": _relpath(library, cheats_dir(library, title_id)),
     }
     path = build_env_path(support)
     lines = [ENV_HEADER.rstrip(), *[f"{key}={value}" for key, value in managed.items()]]
@@ -576,17 +586,17 @@ def write_player_env(library: Path, title_id: str, cloud_dir: Path | None = None
     path = support_env_path(support)
 
     managed: dict[str, str] = {
-        "DM_SAVE": str(save_dir(library, title_id)),
+        "DM_SAVE": _relpath(library, save_dir(library, title_id)),
     }
     player = active_player(library)
     if player is not None:
         store = player_save_dir(library, title_id, player.id)
         store.mkdir(parents=True, exist_ok=True)
-        managed["DM_SAVE"] = str(store)
+        managed["DM_SAVE"] = _relpath(library, store)
         managed[PLAYER_NICK_ENV] = player.name
     overlays = mod_romfs(library, title_id)
     if overlays:
-        managed[MODS_ENV] = ":".join(str(path) for path in overlays)
+        managed[MODS_ENV] = ":".join(_relpath(library, path) for path in overlays)
     cloud = cloud_value(cloud_dir, player.id if player is not None else None)
     if cloud is not None:
         managed[CLOUD_ENV] = cloud

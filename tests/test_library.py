@@ -146,12 +146,12 @@ def test_build_env_points_every_kind_at_the_library(tmp_path: Path) -> None:
     text = path.read_text(encoding="utf-8")
 
     assert path == build_env_path(support_dir(library, TID))
-    assert f"DM_SUPPORT_DIR={support_dir(library, TID)}" in text
-    assert f"DM_LOG_DIR={logs_dir(library, TID)}" in text
-    assert f"DM_SAVE={library / LIBRARY_SUBDIR / TID / 'save'}" in text
-    assert f"DM_PSO_USER={library / LIBRARY_SUBDIR / TID / 'pso_user.tsv'}" in text
-    assert f"DM_CHEATS={cheats_dir(library, TID)}" in text
-    assert f"DM_ALBUM_DIR={screenshots_dir(library, TID)}" in text
+    assert f"DM_SUPPORT_DIR={support_dir(library, TID).relative_to(library)}" in text
+    assert f"DM_LOG_DIR={logs_dir(library, TID).relative_to(library)}" in text
+    assert f"DM_SAVE={(library / LIBRARY_SUBDIR / TID / 'save').relative_to(library)}" in text
+    assert f"DM_PSO_USER={(library / LIBRARY_SUBDIR / TID / 'pso_user.tsv').relative_to(library)}" in text
+    assert f"DM_CHEATS={cheats_dir(library, TID).relative_to(library)}" in text
+    assert f"DM_ALBUM_DIR={screenshots_dir(library, TID).relative_to(library)}" in text
     assert "~/Library" not in text
 
 
@@ -218,13 +218,13 @@ def test_player_env_follows_the_active_player(tmp_path: Path) -> None:
 
     text = write_player_env(library, TID).read_text(encoding="utf-8")
     assert support_env_path(support_dir(library, TID)).is_file()
-    assert f"DM_SAVE={player_save_dir(library, TID, grace.id)}" in text
+    assert f"DM_SAVE={player_save_dir(library, TID, grace.id).relative_to(library)}" in text
     assert "DM_NICK=Grace" in text
 
     ada = create_player(library, "Ada")
     text = write_player_env(library, TID).read_text(encoding="utf-8")
     assert "DM_NICK=Ada" in text and "DM_NICK=Grace" not in text
-    assert f"DM_SAVE={player_save_dir(library, TID, ada.id)}" in text
+    assert f"DM_SAVE={player_save_dir(library, TID, ada.id).relative_to(library)}" in text
 
 
 def test_player_env_without_players_uses_the_base_store(tmp_path: Path) -> None:
@@ -232,7 +232,7 @@ def test_player_env_without_players_uses_the_base_store(tmp_path: Path) -> None:
 
     text = write_player_env(library, TID).read_text(encoding="utf-8")
 
-    assert f"DM_SAVE={library / LIBRARY_SUBDIR / TID / 'save'}" in text and "DM_NICK=" not in text
+    assert f"DM_SAVE={(library / LIBRARY_SUBDIR / TID / 'save').relative_to(library)}" in text and "DM_NICK=" not in text
 
 
 def test_app_metadata_reads_the_bundle(tmp_path: Path) -> None:
@@ -370,8 +370,8 @@ def test_saves_live_in_one_folder_per_title_id(tmp_path: Path) -> None:
     text = write_build_env(library, TID).read_text(encoding="utf-8")
     root = library / LIBRARY_SUBDIR / TID
 
-    assert f"DM_SAVE={root / 'save'}" in text  # save.users/.work stay inside a folder of the game's
-    assert f"DM_PSO_USER={root / 'pso_user.tsv'}" in text
+    assert f"DM_SAVE={(root / 'save').relative_to(library)}" in text  # save.users/.work stay inside a folder of the game's
+    assert f"DM_PSO_USER={(root / 'pso_user.tsv').relative_to(library)}" in text
     write_player_env(library, TID)
     assert (root / "save").is_dir()
 

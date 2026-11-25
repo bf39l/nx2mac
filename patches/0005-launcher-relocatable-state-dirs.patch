@@ -1,0 +1,71 @@
+diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
+index 9398f476..7eb4c69d 100644
+--- a/dm/mac/launcher.c
++++ b/dm/mac/launcher.c
+@@ -68,10 +68,25 @@ static int modules_present(const char *dm) {   // the packer's inventory detects
+     return 1;
+ }
+ 
+-static void mkdirs(const char *path) {   // mkdir -p
++static int mkdirs(const char *path) {   // mkdir -p; 0 on success (or already present), -1 on failure
+     char p[PATH_MAX]; snprintf(p, sizeof p, "%s", path);
+-    for (char *s = p + 1; *s; s++) if (*s == '/') { *s = 0; mkdir(p, 0755); *s = '/'; }
+-    mkdir(p, 0755);
++    for (char *s = p + 1; *s; s++) if (*s == '/') {
++        *s = 0;
++        if (mkdir(p, 0755) && errno != EEXIST) { *s = '/'; return -1; }
++        *s = '/';
++    }
++    if (mkdir(p, 0755) && errno != EEXIST) return -1;
++    return 0;
++}
++
++// Resolve a state path the env files may give relative to the library folder (the app's parent),
++// so a game moved with its folder still finds its state. An absolute value is left alone.
++static void resolve_env_path(const char *var, const char *base) {
++    const char *value = getenv(var);
++    if (!value || !*value || value[0] == '/') return;
++    char resolved[PATH_MAX];
++    snprintf(resolved, sizeof resolved, "%s/%s", base, value);
++    setenv(var, resolved, 1);
+ }
+ 
+ static void env_file(const char *path) {   // KEY=VALUE lines, # starts a comment; a variable already set stays
+@@ -203,11 +218,25 @@ int main(int argc, char **argv) {
+         return 1;
+     }
+     const char *home = getenv("HOME"); if (!home || !*home) return 1;
++    // The library folder is the app's parent; state paths are relative to it so the app can move
++    // with its folder. A read-only /Applications cannot hold the folder, so fall back to a central
++    // one under Application Support (the same nx2mac_game_lib layout).
++    char library[PATH_MAX], state_root[PATH_MAX], probe[PATH_MAX];
++    snprintf(library, sizeof library, "%s/../..", contents);
++    snprintf(state_root, sizeof state_root, "%s", library);
++    snprintf(probe, sizeof probe, "%s/nx2mac_game_lib", library);
++    if (mkdirs(probe)) {
++        snprintf(state_root, sizeof state_root, "%s/Library/Application Support/nx2mac", home);
++        snprintf(probe, sizeof probe, "%s/nx2mac_game_lib", state_root);
++        mkdirs(probe);
++    }
+     char sup[PATH_MAX], save[PATH_MAX], temp[PATH_MAX], logs[PATH_MAX], log[PATH_MAX], prev[PATH_MAX];
+     // The bundled env file comes first: it may name the folders this app keeps its state in
+     // (DM_SUPPORT_DIR, DM_LOG_DIR), which a wrapper that files each game into its own folder
+     // sets there instead of baking paths into the bundle.
+     snprintf(p, sizeof p, "%s/env.txt", dm); env_file(p);
++    resolve_env_path("DM_SUPPORT_DIR", state_root);
++    resolve_env_path("DM_LOG_DIR", state_root);
+     const char *support = getenv("DM_SUPPORT_DIR");   // empty default: ~/Library/Application Support/nxnative/<id>
+     if (support && *support) snprintf(sup, sizeof sup, "%s", support);
+     else snprintf(sup, sizeof sup, "%s/Library/Application Support/nxnative/%s", home, id);
+@@ -224,6 +253,11 @@ int main(int argc, char **argv) {
+     CFArrayRef rules = setting_rules();   // the settings the launch environment already set: the window shows them, fixed
+     for (CFIndex i = 0; rules && i < CFArrayGetCount(rules); i++) { char env[128]; if (rule_env(CFArrayGetValueAtIndex(rules, i), env, sizeof env) && getenv(env)) add_key(&g_launch_keys, env); }
+     snprintf(p, sizeof p, "%s/env.txt", sup); env_file(p);   // the player's own file wins over the bundled one
++    resolve_env_path("DM_SAVE", state_root);
++    resolve_env_path("DM_PSO_USER", state_root);
++    resolve_env_path("DM_TEMP", state_root);
++    resolve_env_path("DM_ALBUM_DIR", state_root);
++    resolve_env_path("DM_CHEATS", state_root);
+     setenv("DM_ENV_FILE_KEYS", g_file_keys ? g_file_keys : "", 1); setenv("DM_ENV_LAUNCH_KEYS", g_launch_keys ? g_launch_keys : "", 1);
+     free(g_file_keys); free(g_launch_keys);
+     setenv("DM_SAVE", save, 0);   // before the window: its cloud-save check compares this save with the cloud's (Launcher.swift SaveCheck)

@@ -422,9 +422,9 @@ def test_run_build_files_the_game_into_the_library(tmp_path: Path, monkeypatch) 
     argv = env.stream_calls[0][0]
     assert argv[argv.index("--work-dir") + 1] == str(library / "nx2mac_game_lib" / tid / "build")
     build_env = (library / "nx2mac_game_lib" / tid / "support" / "build-env.txt").read_text(encoding="utf-8")
-    assert f"DM_SUPPORT_DIR={library / 'nx2mac_game_lib' / tid / 'support'}" in build_env
-    assert f"DM_LOG_DIR={library / 'nx2mac_game_lib' / tid / 'logs'}" in build_env
-    assert f"DM_SAVE={library / 'nx2mac_game_lib' / tid / 'save'}" in build_env
+    assert f"DM_SUPPORT_DIR={(library / 'nx2mac_game_lib' / tid / 'support').relative_to(library)}" in build_env
+    assert f"DM_LOG_DIR={(library / 'nx2mac_game_lib' / tid / 'logs').relative_to(library)}" in build_env
+    assert f"DM_SAVE={(library / 'nx2mac_game_lib' / tid / 'save').relative_to(library)}" in build_env
     for directory in ("logs", "screenshots", "mods", "save", "support", "build"):
         assert (library / "nx2mac_game_lib" / tid / directory).is_dir()
     # cheats live inside the game's mods folder, as NX2Apple keeps them

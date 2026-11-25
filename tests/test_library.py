@@ -26,6 +26,7 @@ from nx2mac.library import (
     LibraryError,
     active_player,
     app_metadata,
+    app_supports_relative_paths,
     build_dir,
     build_env_path,
     cheat_builds,
@@ -38,6 +39,7 @@ from nx2mac.library import (
     describe_library,
     ensure_layout,
     find_game,
+    GameEntry,
     import_cheats,
     is_library,
     list_games,
@@ -157,7 +159,7 @@ def test_build_env_points_every_kind_at_the_library(tmp_path: Path) -> None:
 
 
 def test_build_env_absolute_rebake(tmp_path: Path) -> None:
-    """relative=False writes absolute paths, for re-baking apps whose launcher predates patch 0005."""
+    """relative=False writes absolute paths, for re-baking apps whose launcher predates the relocatable patch."""
     library = _library(tmp_path)
 
     text = write_build_env(library, TID, relative=False).read_text(encoding="utf-8")
@@ -180,6 +182,15 @@ def test_player_env_drops_removed_mods(tmp_path: Path) -> None:
     shutil.rmtree(mod)
     text = write_player_env(library, TID).read_text(encoding="utf-8")
     assert "DM_ROMFS_OVERLAY=" not in text
+
+
+def test_app_supports_relative_paths_detects_relocatable_launcher() -> None:
+    """Only apps built with the relocatable patch may take relative env paths."""
+    from dataclasses import replace
+    base = GameEntry(name="Game", path=Path("/x"), app_path=None)
+    assert app_supports_relative_paths(replace(base, patches=())) is False
+    assert app_supports_relative_paths(replace(base, patches=("0003-account-user-picker.patch",))) is False
+    assert app_supports_relative_paths(replace(base, patches=("0001-launcher-relocatable-state-dirs.patch",))) is True
 
 
 def test_players_are_library_wide_and_get_a_store_per_game(tmp_path: Path) -> None:
@@ -283,7 +294,7 @@ def test_root_app_with_sidecar_manifest_is_a_game(tmp_path: Path) -> None:
         engine_source="fork",
         engine_ref="fork-customizations",
         engine_commit="69513b66656d",
-        patches=("0001-launcher-state-dirs.patch",),
+        patches=("0001-launcher-relocatable-state-dirs.patch",),
         inputs={"game": "/dumps/Dead Cells"},
     )
 
@@ -293,7 +304,7 @@ def test_root_app_with_sidecar_manifest_is_a_game(tmp_path: Path) -> None:
     game = games[0]
     assert (game.name, game.version, game.title_id) == ("Dead Cells", "1.25.0", TID)
     assert game.has_app and game.icon_path == app / "Contents" / "Resources" / "AppIcon.icns"
-    assert game.engine_commit == "69513b66656d" and game.patches == ("0001-launcher-state-dirs.patch",)
+    assert game.engine_commit == "69513b66656d" and game.patches == ("0001-launcher-relocatable-state-dirs.patch",)
     # the data folders come from the library layout, not from beside the app
     assert Path(str(game.to_dict()["saves"])) == library / LIBRARY_SUBDIR / TID / "save"
     assert Path(str(game.to_dict()["logs"])) == logs_dir(library, TID)  # logs/<TID>/<TID>.log

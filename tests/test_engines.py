@@ -198,7 +198,7 @@ def test_shipped_patch_series_is_applied_on_checkout(tmp_path: Path) -> None:
     engine = ensure_checkout(env, tmp_path, UPSTREAM)  # the repo's own patches/ dir
 
     shipped = sorted(p.name for p in (default_patches_dir() or tmp_path).glob("*.patch"))
-    assert engine.patches == tuple(shipped) and "0001-launcher-state-dirs.patch" in engine.patches
+    assert engine.patches == tuple(shipped) and "0001-launcher-relocatable-state-dirs.patch" in engine.patches
 
 
 def test_default_patches_dir_points_at_shipped_series() -> None:

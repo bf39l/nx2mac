@@ -288,12 +288,23 @@ def delete_player(library: Path, name: str) -> Player:
     return player
 
 
+def app_supports_relative_paths(entry: GameEntry) -> bool:
+    """Whether the built app's launcher resolves relative state paths (the relocatable patch).
+
+    Apps built before that patch (or whose manifest is gone) read env values verbatim, so they
+    must keep absolute paths; the default here is therefore False (absolute).
+    """
+    return any("relocatable" in p for p in entry.patches)
+
+
 def write_all_player_envs(library: Path, cloud_dir: Path | None = None) -> list[Path]:
     """Point every built game at the active player (and the cloud folder, when set)."""
     written: list[Path] = []
     for entry in list_games(library):
         if entry.title_id:
-            written.append(write_player_env(library, entry.title_id, cloud_dir))
+            written.append(
+                write_player_env(library, entry.title_id, cloud_dir, relative=app_supports_relative_paths(entry))
+            )
     return written
 
 
@@ -501,7 +512,7 @@ def write_build_env(library: Path, title_id: str, relative: bool = True) -> Path
     and its own state inside the library (one folder per title ID) instead of ~/Library.
 
     `relative` writes paths relative to the library (the app's own folder) so the app
-    can move with it; the relocatable launcher (patch 0005) resolves them. Pass
+    can move with it; the relocatable launcher patch resolves them. Pass
     `relative=False` to write absolute paths, e.g. when re-baking an app whose launcher
     predates that patch.
     """

@@ -489,22 +489,30 @@ def _relpath(library: Path, path: Path) -> str:
         return str(path)
 
 
-def write_build_env(library: Path, title_id: str) -> Path:
+def write_build_env(library: Path, title_id: str, relative: bool = True) -> Path:
     """The env file baked into the app: it points the engine's data at the library.
 
     The launcher reads this file before it decides where its support dir and log go,
     so `DM_SUPPORT_DIR` and `DM_LOG_DIR` here keep saves, logs, cheats, screenshots
     and its own state inside the library (one folder per title ID) instead of ~/Library.
+
+    `relative` writes paths relative to the library (the app's own folder) so the app
+    can move with it; the relocatable launcher (patch 0005) resolves them. Pass
+    `relative=False` to write absolute paths, e.g. when re-baking an app whose launcher
+    predates that patch.
     """
+    def fmt(path: Path) -> str:
+        return _relpath(library, path) if relative else str(path)
+
     support = ensure_layout(library, title_id)
     managed = {
-        "DM_SUPPORT_DIR": _relpath(library, support),
-        "DM_LOG_DIR": _relpath(library, logs_dir(library, title_id)),
-        "DM_SAVE": _relpath(library, save_dir(library, title_id)),
-        "DM_PSO_USER": _relpath(library, pso_user_path(library, title_id)),
-        "DM_TEMP": _relpath(library, support / "temp"),
-        "DM_ALBUM_DIR": _relpath(library, screenshots_dir(library, title_id)),
-        "DM_CHEATS": _relpath(library, cheats_dir(library, title_id)),
+        "DM_SUPPORT_DIR": fmt(support),
+        "DM_LOG_DIR": fmt(logs_dir(library, title_id)),
+        "DM_SAVE": fmt(save_dir(library, title_id)),
+        "DM_PSO_USER": fmt(pso_user_path(library, title_id)),
+        "DM_TEMP": fmt(support / "temp"),
+        "DM_ALBUM_DIR": fmt(screenshots_dir(library, title_id)),
+        "DM_CHEATS": fmt(cheats_dir(library, title_id)),
     }
     path = build_env_path(support)
     lines = [ENV_HEADER.rstrip(), *[f"{key}={value}" for key, value in managed.items()]]
@@ -574,29 +582,34 @@ def mod_romfs(library: Path, title_id: str) -> list[Path]:
     return found
 
 
-def write_player_env(library: Path, title_id: str, cloud_dir: Path | None = None) -> Path:
+def write_player_env(library: Path, title_id: str, cloud_dir: Path | None = None, relative: bool = True) -> Path:
     """Point the engine's saves at the *active player's* store, and name them.
 
     Each player is user 1 in their own store under `save/<TID>/profiles/`, which is
     the only way to give every player their own name (the engine hard-codes
     "Player 2".. and reads DM_NICK for user 1 only). This file is read after the
     baked one, so it wins. Keys nx2mac does not manage are preserved.
+
+    `relative` is passed through to the path formatting (see `write_build_env`).
     """
+    def fmt(path: Path) -> str:
+        return _relpath(library, path) if relative else str(path)
+
     support = ensure_layout(library, title_id)
     path = support_env_path(support)
 
     managed: dict[str, str] = {
-        "DM_SAVE": _relpath(library, save_dir(library, title_id)),
+        "DM_SAVE": fmt(save_dir(library, title_id)),
     }
     player = active_player(library)
     if player is not None:
         store = player_save_dir(library, title_id, player.id)
         store.mkdir(parents=True, exist_ok=True)
-        managed["DM_SAVE"] = _relpath(library, store)
+        managed["DM_SAVE"] = fmt(store)
         managed[PLAYER_NICK_ENV] = player.name
     overlays = mod_romfs(library, title_id)
     if overlays:
-        managed[MODS_ENV] = ":".join(_relpath(library, path) for path in overlays)
+        managed[MODS_ENV] = ":".join(fmt(path) for path in overlays)
     cloud = cloud_value(cloud_dir, player.id if player is not None else None)
     if cloud is not None:
         managed[CLOUD_ENV] = cloud

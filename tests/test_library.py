@@ -155,6 +155,18 @@ def test_build_env_points_every_kind_at_the_library(tmp_path: Path) -> None:
     assert "~/Library" not in text
 
 
+def test_build_env_absolute_rebake(tmp_path: Path) -> None:
+    """relative=False writes absolute paths, for re-baking apps whose launcher predates patch 0005."""
+    library = _library(tmp_path)
+
+    text = write_build_env(library, TID, relative=False).read_text(encoding="utf-8")
+
+    assert f"DM_SUPPORT_DIR={support_dir(library, TID)}" in text
+    assert f"DM_SAVE={(library / LIBRARY_SUBDIR / TID / 'save')}" in text
+    assert f"DM_CHEATS={cheats_dir(library, TID)}" in text
+    assert "DM_SUPPORT_DIR=nx2mac_game_lib" not in text  # nothing relative
+
+
 def test_players_are_library_wide_and_get_a_store_per_game(tmp_path: Path) -> None:
     """Players belong to the library (NX2Apple does the same), one store per game."""
     library = _library(tmp_path)

@@ -1,8 +1,8 @@
 diff --git a/dm/mac/launcher.c b/dm/mac/launcher.c
-index 9398f476..7eb4c69d 100644
+index 9398f476..cdfc1491 100644
 --- a/dm/mac/launcher.c
 +++ b/dm/mac/launcher.c
-@@ -68,10 +68,25 @@ static int modules_present(const char *dm) {   // the packer's inventory detects
+@@ -68,10 +68,44 @@ static int modules_present(const char *dm) {   // the packer's inventory detects
      return 1;
  }
  
@@ -28,10 +28,29 @@ index 9398f476..7eb4c69d 100644
 +    char resolved[PATH_MAX];
 +    snprintf(resolved, sizeof resolved, "%s/%s", base, value);
 +    setenv(var, resolved, 1);
++}
++
++// DM_ROMFS_OVERLAY lists the enabled mods' RomFS folders, ':'-separated; resolve each relative
++// entry against the library folder the same way, so mods follow a game moved with its folder.
++static void resolve_env_pathlist(const char *var, const char *base) {
++    const char *value = getenv(var);
++    if (!value || !*value) return;
++    char *copy = strdup(value); if (!copy) return;
++    char resolved[PATH_MAX]; size_t used = 0; int ok = 1;
++    for (char *save = NULL, *tok = strtok_r(copy, ":", &save); tok && ok; tok = strtok_r(NULL, ":", &save)) {
++        if (used >= sizeof resolved - 1) { ok = 0; break; }
++        if (used) resolved[used++] = ':';
++        int n = (*tok == '/') ? snprintf(resolved + used, sizeof resolved - used, "%s", tok)
++                              : snprintf(resolved + used, sizeof resolved - used, "%s/%s", base, tok);
++        if (n < 0 || (size_t)n >= sizeof resolved - used) { ok = 0; break; }
++        used += (size_t)n;
++    }
++    free(copy);
++    if (ok) setenv(var, resolved, 1);
  }
  
  static void env_file(const char *path) {   // KEY=VALUE lines, # starts a comment; a variable already set stays
-@@ -203,11 +218,25 @@ int main(int argc, char **argv) {
+@@ -203,11 +237,25 @@ int main(int argc, char **argv) {
          return 1;
      }
      const char *home = getenv("HOME"); if (!home || !*home) return 1;
@@ -57,7 +76,7 @@ index 9398f476..7eb4c69d 100644
      const char *support = getenv("DM_SUPPORT_DIR");   // empty default: ~/Library/Application Support/nxnative/<id>
      if (support && *support) snprintf(sup, sizeof sup, "%s", support);
      else snprintf(sup, sizeof sup, "%s/Library/Application Support/nxnative/%s", home, id);
-@@ -224,6 +253,11 @@ int main(int argc, char **argv) {
+@@ -224,6 +272,12 @@ int main(int argc, char **argv) {
      CFArrayRef rules = setting_rules();   // the settings the launch environment already set: the window shows them, fixed
      for (CFIndex i = 0; rules && i < CFArrayGetCount(rules); i++) { char env[128]; if (rule_env(CFArrayGetValueAtIndex(rules, i), env, sizeof env) && getenv(env)) add_key(&g_launch_keys, env); }
      snprintf(p, sizeof p, "%s/env.txt", sup); env_file(p);   // the player's own file wins over the bundled one
@@ -66,6 +85,7 @@ index 9398f476..7eb4c69d 100644
 +    resolve_env_path("DM_TEMP", state_root);
 +    resolve_env_path("DM_ALBUM_DIR", state_root);
 +    resolve_env_path("DM_CHEATS", state_root);
++    resolve_env_pathlist("DM_ROMFS_OVERLAY", state_root);
      setenv("DM_ENV_FILE_KEYS", g_file_keys ? g_file_keys : "", 1); setenv("DM_ENV_LAUNCH_KEYS", g_launch_keys ? g_launch_keys : "", 1);
      free(g_file_keys); free(g_launch_keys);
      setenv("DM_SAVE", save, 0);   // before the window: its cloud-save check compares this save with the cloud's (Launcher.swift SaveCheck)

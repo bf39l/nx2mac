@@ -65,6 +65,10 @@ PLAYER_NICK_ENV: str = "DM_NICK"
 CLOUD_ENV: str = "DM_SAVE_SYNC"
 #: Colon-separated RomFS folders of the mods to switch on (hle_fs.c / hle_exl.c).
 MODS_ENV: str = "DM_ROMFS_OVERLAY"
+#: The env keys write_player_env owns: it rewrites them each run and drops them when
+#: their source goes away (a removed mod, a cleared cloud folder), instead of keeping a
+#: stale value the "preserve unmanaged keys" rule would otherwise leave behind.
+PLAYER_ENV_KEYS: frozenset[str] = frozenset({PLAYER_NICK_ENV, CLOUD_ENV, MODS_ENV, "DM_SAVE"})
 #: How many players one game may have (the engine allows 8 local users; we keep it tidy).
 MAX_PLAYERS: int = 8
 
@@ -622,7 +626,7 @@ def write_player_env(library: Path, title_id: str, cloud_dir: Path | None = None
             if not stripped or stripped.startswith("#"):
                 continue
             key = stripped.split("=", 1)[0].strip()
-            if key not in managed:
+            if key not in PLAYER_ENV_KEYS:
                 kept.append(stripped)
 
     lines = [ENV_HEADER.rstrip(), *kept]

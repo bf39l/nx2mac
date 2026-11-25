@@ -14,6 +14,7 @@ Layout (NX2Apple-style, keyed by title ID):
 
 import json
 import plistlib
+import shutil
 from pathlib import Path
 
 import pytest
@@ -165,6 +166,20 @@ def test_build_env_absolute_rebake(tmp_path: Path) -> None:
     assert f"DM_SAVE={(library / LIBRARY_SUBDIR / TID / 'save')}" in text
     assert f"DM_CHEATS={cheats_dir(library, TID)}" in text
     assert "DM_SUPPORT_DIR=nx2mac_game_lib" not in text  # nothing relative
+
+
+def test_player_env_drops_removed_mods(tmp_path: Path) -> None:
+    """Removing a mod removes its DM_ROMFS_OVERLAY entry instead of leaving it stale."""
+    library = _library(tmp_path)
+    mod = mods_dir(library, TID) / "TestOverlay"
+    overlay = mod / "romfs"
+    overlay.mkdir(parents=True)
+
+    assert f"DM_ROMFS_OVERLAY={overlay.relative_to(library)}" in write_player_env(library, TID).read_text(encoding="utf-8")
+
+    shutil.rmtree(mod)
+    text = write_player_env(library, TID).read_text(encoding="utf-8")
+    assert "DM_ROMFS_OVERLAY=" not in text
 
 
 def test_players_are_library_wide_and_get_a_store_per_game(tmp_path: Path) -> None:

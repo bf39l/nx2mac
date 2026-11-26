@@ -1,0 +1,13 @@
+diff --git a/scripts/build_ipa_from_nsp.py b/scripts/build_ipa_from_nsp.py
+index 70484764..ecdef41a 100755
+--- a/scripts/build_ipa_from_nsp.py
++++ b/scripts/build_ipa_from_nsp.py
+@@ -1741,7 +1741,7 @@ def extract_aoc(nx, keys, repo, work, app, fam, logs):
+         idx = tid - base - 0x1000
+         PROG.set(step='extracting', done=i, total=len(best), unit='DLC')
+         say(f'DLC index {idx}: {p.name}')
+-        run([nx, keys, '--aoc', p, tmp / f'{idx}.img', '--romfs-image', f'{tid:016x}'], logs / f'aoc_{idx}.log')   # the DLC by its content meta's title ID: a merged package holds several
++        run([nx, keys, '--aoc', p, tmp / f'{idx}.img', '--romfs-image', f'{tid:016x}'] + (['--allow-damaged'] if ALLOW_DAMAGED else []), logs / f'aoc_{idx}.log')   # the DLC by its content meta's title ID: a merged package holds several
+     swap_in(tmp, dst)
+     kf.write_text(f'{fingerprint(key, ("stat", dst))}\n{len(best)} DLC\n')
+     PROG.end(f'{len(best)} DLC')

@@ -52,7 +52,7 @@ def test_checkout_dir_slugs_refs() -> None:
     root = Path("/cache")
     assert checkout_dir(root, UPSTREAM, "main") == root / "engines" / "seedds-nxnative_main"
     assert checkout_dir(root, FORK, "game/xcom-2!") == root / "engines" / "bf39l-nxnative_game-xcom-2"
-    assert checkout_dir(root, FORK, "fork-customizations").name == "bf39l-nxnative_fork-customizations"
+    assert checkout_dir(root, FORK, "main").name == "bf39l-nxnative_main"
 
 
 def test_repo_slug_reads_https_and_ssh_urls() -> None:

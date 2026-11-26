@@ -107,8 +107,8 @@ def repo_slug(url: str) -> str:
 def checkout_dir(cache_root: Path, source: EngineSource, ref: str) -> Path:
     """Where this (repo + ref) checkout lives: `<owner>-<repo>_<ref>`.
 
-    Naming the folder after the repository — `bf39l-nxnative_fork-customizations`
-    rather than `fork-fork-customizations` — makes several engines side by side
+    Naming the folder after the repository — `bf39l-nxnative_main`
+    rather than `fork-main` — makes several engines side by side
     readable at a glance; the underscore separates the ref from the repo.
     """
     return cache_root / "engines" / f"{repo_slug(source.url)}_{_slug(ref)}"

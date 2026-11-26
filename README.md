@@ -80,7 +80,7 @@ Agent-oriented documentation (dependency checklist, engine policy, JSON contract
 ```bash
 nx2mac doctor                  # what this Mac is missing, with a fix per item
 nx2mac setup                   # asks "Install zstd? (brew install zstd) [y/N]" per missing item
-nx2mac engine --source fork fork-customizations   # pin an engine ref (saved to config)
+nx2mac engine --source fork main                  # pin an engine ref (saved to config; main is the default)
 nx2mac build "/path/to/Game [010016...]" \
   --keys ~/switch/prod.keys \
   --out-dir ~/Downloads/MyGame
@@ -417,7 +417,7 @@ own `DM_NICK`, which is how every player keeps a custom name (the engine hard-co
 There are exactly two: upstream `seedds/nxnative` and the fork `bf39l/nxnative`. A free-form
 clone URL is intentionally not offered — `patches/` is written against these repositories, so an
 arbitrary engine could not be built. Checkouts live in the cache as
-`<owner>-<repo>_<ref>` (e.g. `bf39l-nxnative_fork-customizations`).
+`<owner>-<repo>_<ref>` (e.g. `bf39l-nxnative_main`).
 
 ## Engine patches
 

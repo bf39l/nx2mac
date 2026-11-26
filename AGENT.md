@@ -256,10 +256,10 @@ writing).
 ```
 nx2mac build "/Users/bo/switch/1佣兵之翼_伪之不死鸟_Mercenaries_Wings_The_False_Phoenix[010094500C216000]" \
   --keys /Users/bo/switch/prod.keys -o "/Users/bo/switch/Mercenaries Wings.app" \
-  --source fork --ref fork-customizations
+  --source fork --ref main
 ```
 
-Engine pinned at `69513b66` (`fork-customizations`); ~44 s end to end (434 shaders, 211 pipeline
+Engine pinned at `69513b66`; ~44 s end to end (434 shaders, 211 pipeline
 pairs) producing a 241 MB ad-hoc signed `.app` that boots the game's front end. Host prep needed
 was `brew install glslang` + `nx2mac setup`. The engine prints a RED "provisional game profile"
 warning at the end - that is engine-side bring-up (`docs/agents` in the engine), not nx2mac.

@@ -292,7 +292,7 @@ def test_root_app_with_sidecar_manifest_is_a_game(tmp_path: Path) -> None:
         title_id=TID,
         version="1.25.0",
         engine_source="fork",
-        engine_ref="fork-customizations",
+        engine_ref="main",
         engine_commit="69513b66656d",
         patches=("0001-launcher-relocatable-state-dirs.patch",),
         inputs={"game": "/dumps/Dead Cells"},
@@ -392,7 +392,7 @@ def test_manifest_round_trip(tmp_path: Path) -> None:
     library = _library(tmp_path)
     app = _app(library)
     path = write_manifest(app.with_suffix(".nx2mac.json"), name="Dead Cells", app_path=app, title_id=TID,
-                          version="1.25.0", engine_source="fork", engine_ref="fork-customizations",
+                          version="1.25.0", engine_source="fork", engine_ref="main",
                           engine_commit="69513b66656d", patches=(), inputs={"game": "/dumps"})
 
     manifest = json.loads(path.read_text(encoding="utf-8"))

@@ -341,10 +341,13 @@ def _record_in_library(
 
 #: The engine stops that have an override flag — the ones a "build anyway" can get past
 #: (NX2Apple offers exactly these three, BuildFailureKind.overrideFlag).
-OVERRIDABLE: tuple[tuple[str, str, str], ...] = (
-    ("--allow-damaged", "so the game files are damaged", "pack the damaged game files as they are"),
-    ("--allow-other-metal", "ALLOW_OTHER_METAL", "build the shaders with this Mac's Metal compiler"),
-    ("--allow-shader-regressions", "a change to the translation chain broke them",
+OVERRIDABLE: tuple[tuple[str, tuple[str, ...], str], ...] = (
+    ("--allow-damaged",
+     ("so the game files are damaged", "pass --allow-damaged to write them as read"),
+     "pack the damaged game files as they are"),
+    ("--allow-other-metal", ("ALLOW_OTHER_METAL",),
+     "build the shaders with this Mac's Metal compiler"),
+    ("--allow-shader-regressions", ("a change to the translation chain broke them",),
      "pack the app without the shaders that stopped translating"),
 )
 
@@ -364,9 +367,10 @@ class BuildFailure:
 def classify_failure(lines: Sequence[str]) -> BuildFailure | None:
     """Read the engine's output for a stop that has an override, else the last red line."""
     text = "\n".join(lines[-200:])
-    for flag, needle, note in OVERRIDABLE:
-        if needle in text:
-            return BuildFailure(message=needle, override=flag, note=note)
+    for flag, needles, note in OVERRIDABLE:
+        matched = next((needle for needle in needles if needle in text), None)
+        if matched is not None:
+            return BuildFailure(message=matched, override=flag, note=note)
     red = [line for line in lines if "[RED]" in line]
     if red:
         return BuildFailure(message=red[-1].strip()[:400])

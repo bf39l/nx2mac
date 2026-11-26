@@ -521,12 +521,18 @@ def test_classify_failure_offers_the_engine_override() -> None:
         "[RED] 1.0.0: 1 file(s) whose bytes do not start as their names promise, " + damaged_tail,
         "Pack again from a good copy",
     ]
+    hashcheck = [
+        "[RED] hash check failed: /bf3.ard",
+        "[RED] the NSP is damaged: 1 files fail the NCA's hash check (an incomplete copy or a broken download); "
+        + "copy or download it again, or pass --allow-damaged to write them as read",
+    ]
     metal = ["[RED] own_compilers.py --check-metal: set DM_ALLOW_OTHER_METAL=1 (the NSP script's --allow-other-metal)"]
     chain = "a change to the translation chain broke them"
     shaders = ["[RED] 3 shaders that translated in the previous build fail in b-4dc2596: " + chain]
     fatal = ["[RED] no prod.keys found"]
 
     assert classify_failure(damaged).override == "--allow-damaged"  # type: ignore[union-attr]
+    assert classify_failure(hashcheck).override == "--allow-damaged"  # type: ignore[union-attr]
     assert classify_failure(metal).override == "--allow-other-metal"  # type: ignore[union-attr]
     assert classify_failure(shaders).override == "--allow-shader-regressions"  # type: ignore[union-attr]
     assert classify_failure(fatal).override is None  # nothing to build around
